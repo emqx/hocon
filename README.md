@@ -1,6 +1,6 @@
 # Hocon
 
-HOCON configuration Parser for Erlang/OTP
+LALR grammar based HOCON configuration Parser for Erlang/OTP
 
 ## Spec
 
