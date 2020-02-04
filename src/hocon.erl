@@ -16,5 +16,13 @@
 
 -module(hocon).
 
--export([]).
+-export([ load/1
+        , parse/1
+        ]).
+
+load(File) -> load(File, #{}).
+
+load(File, Opts) -> #{}.
+
+parse(_File) -> #{}.
 
