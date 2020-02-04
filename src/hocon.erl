@@ -20,9 +20,14 @@
         , parse/1
         ]).
 
-load(File) -> load(File, #{}).
+load(File) ->
+    {ok, S} = file:read_file(File),
+    parse(S).
 
-load(File, Opts) -> #{}.
-
-parse(_File) -> #{}.
+parse(S) ->
+    {ok, Tokens, _} = hocon_lexer:string(S),
+    io:format("Tokens: ~p~n", [Tokens]),
+    {ok, Result} = hocon_parser:parse(Tokens),
+    io:format("Result: ~p~n", [Result]),
+    Result.
 
