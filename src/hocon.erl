@@ -30,14 +30,29 @@ load(Filename) ->
         Error -> Error
     end.
 
--spec(parse(binary()|string()) -> {ok, config()} | {error, term()}).
-parse(Bin) when is_binary(Bin) ->
-    parse(binary_to_list(Bin));
+-spec(parse(binary()|string()) -> {ok, config()} | {error, Reason}
+      when Reason :: {scan_error | parse_error, string()}).
+parse(Input) when is_binary(Input) ->
+    parse(binary_to_list(Input));
 
-parse(Str) ->
-    case hocon_lexer:string(Str) of
-        {ok, Tokens, _} ->
-            hocon_parser:parse(Tokens);
-        Error -> Error
+parse(Input) when is_list(Input) ->
+    case hocon_scanner:string(Input) of
+        {ok, Tokens, _EndLine} ->
+            do_parse(Tokens);
+        {error, {Line, _Mod, ErrorInfo}, _} ->
+            ErrorInfo1 = hocon_scanner:format_error(ErrorInfo),
+            {error, {scan_error, format_error(ErrorInfo1, Line)}}
     end.
+
+do_parse(Tokens) ->
+    case hocon_parser:parse(Tokens) of
+        {ok, Ret} -> {ok, Ret};
+        {error, {Line, _Module, ErrorInfo}} ->
+            {error, {parse_error, format_error(ErrorInfo, Line)}}
+    end.
+
+format_error(ErrorInfo, Line) ->
+    binary_to_list(
+      iolist_to_binary(
+        [ErrorInfo, io_lib:format(" in line ~w", [Line])])).
 

@@ -1,5 +1,5 @@
 {application, hocon,
- [{description, "An OTP library"},
+ [{description, "HOCON configuration file Parser"},
   {vsn, "0.1.0"},
   {registered, []},
   {applications,
@@ -9,5 +9,8 @@
   {env,[]},
   {modules, []},
   {licenses, ["Apache 2.0"]},
-  {links, []}
+  {maintainers, ["Feng Lee <feng@emqx.io>"]},
+  {links, [{"Homepage", "https://github.com/emqx/hocon"},
+           {"Github", "https://github.com/emqx/hocon"}
+          ]}
  ]}.
