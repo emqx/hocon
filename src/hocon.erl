@@ -16,18 +16,28 @@
 
 -module(hocon).
 
--export([ load/1
-        , parse/1
-        ]).
+-export([load/1, parse/1]).
 
-load(File) ->
-    {ok, S} = file:read_file(File),
-    parse(S).
+-type(config() :: proplists:proplist()).
 
-parse(S) ->
-    {ok, Tokens, _} = hocon_lexer:string(S),
-    io:format("Tokens: ~p~n", [Tokens]),
-    {ok, Result} = hocon_parser:parse(Tokens),
-    io:format("Result: ~p~n", [Result]),
-    Result.
+-export_type([config/0]).
+
+-spec(load(file:filename()) -> {ok, config()} | {error, term()}).
+load(Filename) ->
+    case file:read_file(Filename) of
+        {ok, Config} ->
+            parse(Config);
+        Error -> Error
+    end.
+
+-spec(parse(binary()|string()) -> {ok, config()} | {error, term()}).
+parse(Bin) when is_binary(Bin) ->
+    parse(binary_to_list(Bin));
+
+parse(Str) ->
+    case hocon_lexer:string(Str) of
+        {ok, Tokens, _} ->
+            hocon_parser:parse(Tokens);
+        Error -> Error
+    end.
 

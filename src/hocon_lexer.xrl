@@ -19,7 +19,7 @@
 Definitions.
 
 C = [A-Za-z]
-WS  = ([\000-\s]|%.*)
+WS = ([\000-\s]|%.*)
 D = [0-9]
 H = [0-9a-fA-F]
 
@@ -45,7 +45,7 @@ off : {token, {'false', TokenLine}}.
 : : {token, {':', TokenLine}}.
 , : {token, {',', TokenLine}}.
 
-{WS}+  :   skip_token.
+{WS}+ :   skip_token.
 
 Erlang code.
 

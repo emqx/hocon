@@ -10,6 +10,8 @@ object -> '{' '}' : {[]}.
 members -> member ',' members : ['$1' | '$3'].
 members -> member : ['$1'].
 
+member -> atom ':' element : {element(3, '$1'),'$3'}.
+member -> atom '=' element : {element(3, '$1'),'$3'}.
 member -> string ':' element : {list_to_binary(element(3, '$1')),'$3'}.
 member -> string '=' element : {list_to_binary(element(3, '$1')),'$3'}.
 
