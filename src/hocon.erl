@@ -56,3 +56,13 @@ format_error(ErrorInfo, Line) ->
       iolist_to_binary(
         [ErrorInfo, io_lib:format(" in line ~w", [Line])])).
 
+%% Pipeline: read, scan, parse, apply, maybe setenv or dump to app.config
+
+%% Apply:
+%% - ability to refer to another part of the configuration (set a value to another value)
+%% - import/include another configuration file into the current file
+%% - a mapping to a flat properties list such as Java's system properties
+%% - ability to get values from environment variables
+
+
+

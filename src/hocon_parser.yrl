@@ -1,34 +1,50 @@
-Nonterminals hocon array element elements object members member.
+Nonterminals
+  Hocon
+  Array
+  Object
+  Members
+  Member
+  Elements
+  Element
+  Value.
 
-Terminals '{' '}' '[' ']' ',' ':' '=' bool atom integer float string bytesize duration.
+Terminals
+  '{' '}' '[' ']' ',' ':' '=' '\n'
+   bool atom integer float string
+   bytesize duration.
 
-Rootsymbol hocon.
+Rootsymbol Hocon.
 
-hocon -> element : '$1'.
+Hocon -> Members : '$1'.
+Hocon -> Element : '$1'.
 
-object -> '{' members '}' : {'$2'}.
-object -> '{' '}' : {[]}.
+Object -> '{' Members '}' : {'$2'}.
+Object -> '{' '}' : {[]}.
 
-members -> member ',' members : ['$1' | '$3'].
-members -> member : ['$1'].
+Members -> Member ',' Members : ['$1'|'$3'].
+Members -> Member '\n' Members : ['$1'|'$3'].
+Members -> Member : ['$1'].
 
-member -> atom ':' element : {element(3, '$1'),'$3'}.
-member -> atom '=' element : {element(3, '$1'),'$3'}.
-member -> string ':' element : {iolist_to_binary(element(3, '$1')),'$3'}.
-member -> string '=' element : {iolist_to_binary(element(3, '$1')),'$3'}.
+Member -> atom ':' Element : {element(3, '$1'), '$3'}.
+Member -> atom '=' Element : {element(3, '$1'), '$3'}.
+Member -> string ':' Element : {iolist_to_binary(element(3, '$1')), '$3'}.
+Member -> string '=' Element : {iolist_to_binary(element(3, '$1')), '$3'}.
 
-array -> '[' elements ']' : '$2'.
-array -> '[' ']' : [].
+Array -> '[' Elements ']' : '$2'.
+Array -> '[' ']' : [].
 
-elements -> element ',' elements : ['$1' | '$3'].
-elements -> element : ['$1'].
+Elements -> Element ',' Elements : ['$1'|'$3'].
+Elements -> Element : ['$1'].
 
-element -> bool : element(3, '$1').
-element -> atom : element(3, '$1').
-element -> integer : element(3, '$1').
-element -> float : element(3, '$1').
-element -> string : iolist_to_binary(element(3, '$1')).
-element -> bytesize : element(3, '$1').
-element -> duration : element(3, '$1').
-element -> array : '$1'.
-element -> object : '$1'.
+Element -> Value: '$1'.
+
+Value -> bool : element(3, '$1').
+Value -> atom : element(3, '$1').
+Value -> integer : element(3, '$1').
+Value -> float : element(3, '$1').
+Value -> string : iolist_to_binary(element(3, '$1')).
+Value -> bytesize : element(3, '$1').
+Value -> duration : element(3, '$1').
+Value -> Array : '$1'.
+Value -> Object : '$1'.
+

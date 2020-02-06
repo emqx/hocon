@@ -130,6 +130,7 @@ newline
 
 ## Reference
 
+- https://en.wikipedia.org/wiki/Lexical_analysis#Evaluator
 - https://www.crockford.com/mckeeman.html
 - https://en.wikipedia.org/wiki/Backus–Naur_form
 

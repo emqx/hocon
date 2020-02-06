@@ -1,0 +1,4 @@
+{error,{scan_error,"illegal characters \".\" in line 1"}}
+
+Hocon -> Object : '$1'.
+Hocon -> Members : '$1'.

@@ -20,14 +20,14 @@ Definitions.
 
 %% Unicode  |  Name                |  Escape Char
 %% -------- | -------------------- | -----------------
-%% \x{000A}	|  newline             |  \n
-%% \x{000D}	|  carriage-return     |  \r
+%% \x{0008}	|  backspace           |  \b
 %% \x{0009}	|  tab                 |  \t
-%% \x{0020}	|  space               |  \s
-%% \x{0009}	|  backspace           |  \b
-%% \x{00A0}	|  non-break space     |  ??
-%% \x{000C}	|  form feed           |  \f
+%% \x{000A}	|  line feed           |  \n
 %% \x{000B}	|  line-tab            |
+%% \x{000C}	|  form feed           |  \f
+%% \x{000D}	|  carriage-return     |  \r
+%% \x{0020}	|  space               |  \s
+%% \x{00A0}	|  non-break space     |  ??
 %% \x{2028}	|  line seperator      |
 %% \x{2029}	|  paragraph separator |
 
@@ -35,6 +35,11 @@ Definitions.
 WhiteSpace          = [\x{0009}\x{000B}\x{000C}\x{0020}\x{00A0}]
 LineSeperator       = \x{000A}\x{000D}\x{2028}\x{2029}
 Comment             = (#|//)[^{LineSeperator}]*
+NewLine             = [{LineSeperator}]+
+Ignored             = ({WhiteSpace}|[{LineSeperator}])+
+
+%% Punctuator
+Punctuator          = [{}\[\]=:,]
 
 %% Bool
 Bool                = true|false|on|off
@@ -70,8 +75,9 @@ Duration            = {Digit}+(d|h|m|s|ms|us|ns)
 
 Rules.
 
-{WhiteSpace}+     : skip_token.
 {Comment}         : skip_token.
+{Ignored}         : skip_token.
+{Punctuator}      : {token, {list_to_atom(TokenChars), TokenLine}}.
 {Bool}            : {token, {bool, TokenLine, bool(TokenChars)}}.
 {Name}            : {token, identifier(TokenChars, TokenLine)}.
 {Integer}         : {token, {integer, TokenLine, list_to_integer(TokenChars)}}.
@@ -80,14 +86,6 @@ Rules.
 {MultilineString} : {token, {string, TokenLine, iolist_to_binary(unquote(TokenChars))}}.
 {Bytesize}        : {token, {bytesize, TokenLine, TokenChars}}.
 {Duration}        : {token, {duration, TokenLine, TokenChars}}.
-
-{   : {token, {'{', TokenLine}}.
-}   : {token, {'}', TokenLine}}.
-\[  : {token, {'[', TokenLine}}.
-\]  : {token, {']', TokenLine}}.
-=   : {token, {'=', TokenLine}}.
-:   : {token, {':', TokenLine}}.
-,   : {token, {',', TokenLine}}.
 
 Erlang code.
 
