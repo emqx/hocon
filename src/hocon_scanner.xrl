@@ -31,22 +31,22 @@ Definitions.
 %% \x{2028}	|  line seperator      |
 %% \x{2029}	|  paragraph separator |
 
-%% Whitespace, Comments and Line Seperator
+%% Whitespace, Comments and Line Feed
 WhiteSpace          = [\x{0009}\x{000B}\x{000C}\x{0020}\x{00A0}]
-LineSeperator       = \x{000A}\x{000D}\x{2028}\x{2029}
-Comment             = (#|//)[^{LineSeperator}]*
-NewLine             = [{LineSeperator}]+
-Ignored             = ({WhiteSpace}|[{LineSeperator}])+
+LineFeed            = \x{000A}\x{000D}\x{2028}\x{2029}
+NewLine             = [{LineFeed}]
+Comment             = (#|//)[^{LineFeed}]*
+Ignored             = {WhiteSpace}|{NewLine}|{Comment}
 
 %% Punctuator
-Punctuator          = [{}\[\]=:,]
+Punctuator          = [{}\[\]:=,]
 
 %% Bool
 Bool                = true|false|on|off
 
 %% Name(Atom in Erlang)
 Letter              = [A-Za-z]
-Name                = {Letter}({Letter}|{Digit}|[_\.@])*
+Name                = {Letter}[A-Za-z0-9_\.@]*
 
 %% Integer
 Digit               = [0-9]
@@ -62,22 +62,24 @@ Float               = {Integer}{Fraction}|{Integer}{Fraction}{Exponent}
 Hex                 = [0-9A-Fa-f]
 Escape              = ["\\\/bfnrt]
 UnicodeEscape       = u{Hex}{Hex}{Hex}{Hex}
-Character           = ([^\"{LineSeperator}]|\\{Escape}|\\{UnicodeEscape})
-String              = "{Character}*"
-MultilineCharacter  = ([^"]|"[^"]|""[^"]|\\{Escape}|\\{UnicodeEscape})
-MultilineString     = """{MultilineCharacter}*"""
+Char                = ([^\"{LineFeed}]|\\{Escape}|\\{UnicodeEscape})
+String              = "{Char}*"
+MultilineChar       = ([^"]|"[^"]|""[^"]|\\{Escape}|\\{UnicodeEscape})
+MultilineString     = """{MultilineChar}*"""
 
 %% Bytesize and Duration
+Percent             = {Digit}+%
 Bytesize            = {Digit}+(KB|MB|GB)
 Duration            = {Digit}+(d|h|m|s|ms|us|ns)
 
-%% TODO: Env
+%% Variable
+Literal             = {Bool}|{Integer}|{Float}|{String}|{Percent}{Bytesize}|{Duration}
+Variable            = \$\{{Name}+({WhiteSpace}*\|\|{WhiteSpace}*({Literal}))?\}
 
 Rules.
 
-{Comment}         : skip_token.
 {Ignored}         : skip_token.
-{Punctuator}      : {token, {list_to_atom(TokenChars), TokenLine}}.
+{Punctuator}      : {token, {list_to_atom(string:trim(TokenChars)), TokenLine}}.
 {Bool}            : {token, {bool, TokenLine, bool(TokenChars)}}.
 {Name}            : {token, identifier(TokenChars, TokenLine)}.
 {Integer}         : {token, {integer, TokenLine, list_to_integer(TokenChars)}}.
@@ -85,11 +87,13 @@ Rules.
 {String}          : {token, {string, TokenLine, iolist_to_binary(unquote(TokenChars))}}.
 {MultilineString} : {token, {string, TokenLine, iolist_to_binary(unquote(TokenChars))}}.
 {Bytesize}        : {token, {bytesize, TokenLine, TokenChars}}.
+{Percent}         : {token, {percent, TokenLine, TokenChars}}.
 {Duration}        : {token, {duration, TokenLine, TokenChars}}.
+{Variable}        : {token, {variable, TokenLine, TokenChars}}.
 
 Erlang code.
 
-identifier("include", TokenLine)  -> {directive, TokenLine, 'include'};
+identifier("include", TokenLine)  -> {include, TokenLine};
 identifier(TokenChars, TokenLine) -> {atom, TokenLine, list_to_atom(TokenChars)}.
 
 bool("true")  -> true;
