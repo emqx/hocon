@@ -1,4 +1,7 @@
-{error,{scan_error,"illegal characters \".\" in line 1"}}
+## Tasks
 
-Hocon -> Object : '$1'.
-Hocon -> Members : '$1'.
+- Hocon PR
+- hocon CLI
+- Hacknews
+- Upload to hex.pm
+

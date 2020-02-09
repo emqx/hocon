@@ -8,10 +8,10 @@ See: https://lightbend.github.io/config/
 
 ## TODO
 
-- Paths as keys
 - Substitutions
 - Object merging
 - Include semantics: merging
+- Get values from environment variables
 - Introduction doc
 - hocon CLI
 - Upload to hex.pm
