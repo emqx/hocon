@@ -69,8 +69,9 @@ MultilineString     = """{MultilineChar}*"""
 
 %% Bytesize and Duration
 Percent             = {Digit}+%
-Bytesize            = {Digit}+(KB|MB|GB)
-Duration            = {Digit}+(d|h|m|s|ms|us|ns)
+Bytesize            = {Digit}+(kb|KB|mb|MB|gb|GB)
+Duration            = {Digit}+(d|D|h|H|m|M|s|S|ms|MS)
+%%Duration            = {Digit}+(d|h|m|s|ms|us|ns)
 
 %% Variable
 Literal             = {Bool}|{Integer}|{Float}|{String}|{Percent}{Bytesize}|{Duration}
@@ -86,12 +87,21 @@ Rules.
 {Float}           : {token, {float, TokenLine, list_to_float(TokenChars)}}.
 {String}          : {token, {string, TokenLine, iolist_to_binary(unquote(TokenChars))}}.
 {MultilineString} : {token, {string, TokenLine, iolist_to_binary(unquote(TokenChars))}}.
-{Bytesize}        : {token, {bytesize, TokenLine, TokenChars}}.
-{Percent}         : {token, {percent, TokenLine, TokenChars}}.
-{Duration}        : {token, {duration, TokenLine, TokenChars}}.
+{Bytesize}        : {token, {bytesize, TokenLine, bytesize(TokenChars)}}.
+{Percent}         : {token, {percent, TokenLine, percent(TokenChars)}}.
+{Duration}        : {token, {duration, TokenLine, duration(TokenChars)}}.
 {Variable}        : {token, {variable, TokenLine, TokenChars}}.
 
 Erlang code.
+
+-define(SECOND, 1000).
+-define(MINUTE, (?SECOND*60)).
+-define(HOUR,   (?MINUTE*60)).
+-define(DAY,    (?HOUR*24)).
+
+-define(KILOBYTE, 1024).
+-define(MEGABYTE, (?KILOBYTE*1024)). %1048576
+-define(GIGABYTE, (?MEGABYTE*1024)). %1073741824
 
 identifier("include", TokenLine)  -> {include, TokenLine};
 identifier(TokenChars, TokenLine) -> {atom, TokenLine, list_to_atom(TokenChars)}.
@@ -102,4 +112,30 @@ bool("on")    -> true;
 bool("off")   -> false.
 
 unquote(Str) -> string:strip(Str, both, $").
+
+percent(Str) ->
+    list_to_integer(string:strip(Str, right, $%)) / 100.
+
+bytesize(Str) ->
+    {ok, MP} = re:compile("([0-9]+)(kb|KB|mb|MB|gb|GB)"),
+    {match, [Val,Unit]} = re:run(Str, MP, [{capture, all_but_first, list}]),
+    bytesize(list_to_integer(Val), Unit).
+
+bytesize(Val, "kb") -> Val * ?KILOBYTE;
+bytesize(Val, "KB") -> Val * ?KILOBYTE;
+bytesize(Val, "mb") -> Val * ?MEGABYTE;
+bytesize(Val, "MB") -> Val * ?MEGABYTE;
+bytesize(Val, "gb") -> Val * ?GIGABYTE;
+bytesize(Val, "GB") -> Val * ?GIGABYTE.
+
+duration(Str) ->
+    {ok, MP} = re:compile("([0-9]+)(d|D|h|H|m|M|s|S|ms|MS)"),
+    {match, [Val,Unit]} = re:run(string:to_lower(Str), MP, [{capture, all_but_first, list}]),
+    duration(list_to_integer(Val), Unit).
+
+duration(Val, "d")  -> Val * ?DAY;
+duration(Val, "h")  -> Val * ?HOUR;
+duration(Val, "m")  -> Val * ?MINUTE;
+duration(Val, "s")  -> Val * ?SECOND;
+duration(Val, "ms") -> Val.
 
