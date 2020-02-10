@@ -83,7 +83,7 @@ include(RootMap) ->
 include(File, Map) ->
     case load(File) of
         {ok, MConf} ->
-            maps:merge(Map, MConf);
+            maps:merge(MConf, Map);
         {error, Reason} ->
             error({include_error, File, Reason})
     end.
