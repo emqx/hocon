@@ -6,6 +6,10 @@ LALR grammar based HOCON configuration Parser for Erlang/OTP
 
 See: https://lightbend.github.io/config/
 
+## Test Data
+
+Files in sample-configs are collected from https://github.com/lightbend/config/tree/v1.4.1
+
 ## TODO
 
 - Substitutions
@@ -28,7 +32,7 @@ See: https://lightbend.github.io/config/
 
 Apache License 2.0, see [LICENSE](./LICENSE).
 
-## Author
+## Authors
 
-Feng at emqx.io <feng@emqx.io>
+EMQ X team
 
