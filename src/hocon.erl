@@ -44,7 +44,16 @@ to_list(Config) when is_map(Config) ->
 to_list(Value) -> Value.
 
 -spec(read(file:filename()) -> {ok, binary()} | {error, term()}).
-read(Filename) -> file:read_file(Filename).
+read(Filename) ->
+    case file:read_file(Filename) of
+        {ok, <<239, 187, 191, Rest/binary>>} ->
+            %% Ignore BOM header
+            {ok, Rest};
+        {ok, Bytes} ->
+            {ok, Bytes};
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
 -spec(scan(binary()|string()) -> {ok, config()} | {error, Reason}
      when Reason :: {scan_error, string()}).
