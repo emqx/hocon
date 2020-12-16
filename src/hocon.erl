@@ -17,10 +17,14 @@
 -module(hocon).
 
 -export([load/1, load/2, scan/1, parse/1, dump/2, dump/3]).
+-export([main/1]).
 
 -type(config() :: map()).
 
 -export_type([config/0]).
+
+main(Args) ->
+    hocon_cli:main(Args).
 
 -spec(load(file:filename()) -> {ok, config()} | {error, term()}).
 load(Filename) ->
@@ -168,4 +172,3 @@ format_error(Line, ErrorInfo) ->
     binary_to_list(
       iolist_to_binary(
         [ErrorInfo, io_lib:format(" in line ~w", [Line])])).
-
