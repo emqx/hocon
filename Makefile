@@ -32,3 +32,6 @@ cover:
 dialyzer:
 	$(REBAR) dialyzer
 
+.PHONY: es
+es: compile
+	$(REBAR) escriptize
