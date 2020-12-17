@@ -19,7 +19,8 @@
 -export([load/1, load/2, scan/1, parse/1, dump/2, dump/3]).
 -export([main/1]).
 
--type(config() :: map()).
+-type config() :: map().
+-type ctx() :: map().
 
 -export_type([config/0]).
 
@@ -28,10 +29,18 @@ main(Args) ->
 
 -spec(load(file:filename()) -> {ok, config()} | {error, term()}).
 load(Filename) ->
-    load(Filename, []).
+    load(Filename, #{}).
 
-load(Filename, _Opts) ->
-    pipeline(Filename, [fun read/1, fun scan/1, fun parse/1, fun transform/1]).
+load(Filename0, Ctx0) ->
+    Filename = filename:absname(Filename0),
+    Ctx = inc_stack_push(Ctx0, Filename),
+    pipeline(Filename, Ctx,
+             [ fun read/1
+             , fun scan/1
+             , fun parse/1
+             , fun expand/1
+             , fun transform/2
+             ]).
 
 dump(Config, App) ->
     [{App, to_list(Config)}].
@@ -76,25 +85,38 @@ parse(Tokens) ->
             parse_error(Line, ErrorInfo)
     end.
 
--spec(transform(config()) -> {ok, config()}).
-transform(Config) ->
-    try include(substitute(expand(Config))) of
+-spec(transform(config(), ctx()) -> {ok, config()}).
+transform(Config, Ctx) ->
+    try include(substitute(Config), Ctx) of
         RootMap -> {ok, RootMap}
     catch
-        error:Reason -> {error, Reason}
+        error:Reason:St -> {error, {Reason,St}}
     end.
 
-include(RootMap) ->
+include(RootMap, Ctx) ->
     maps:fold(fun('$include', File, Acc) ->
-                      include(binary_to_list(File), Acc);
+                      include(binary_to_list(File), Ctx, Acc);
                  (Key, MVal, Acc) when is_map(MVal) ->
-                      Acc#{Key => include(MVal)};
+                      Acc#{Key => include(MVal, Ctx)};
                  (Key, Val, Acc) ->
                       Acc#{Key => Val}
               end, #{}, RootMap).
 
-include(File, Map) ->
-    case load(File) of
+include(File0, Ctx, Map) ->
+    %% File0 is the name given in the 'include' literal
+    Stack = inc_stack(Ctx),
+    Cwd = filename:dirname(hd(Stack)),
+    %% Cwd is abs path, if File0 is also abs, filename:join returns File0
+    File = filename:join([Cwd, File0]),
+    case is_included(Ctx, File) of
+        true ->
+            error({include_error, File0, {cycle, Stack}});
+        false ->
+            do_include(File, Ctx, Map)
+    end.
+
+do_include(File, Ctx, Map) ->
+    case load(File, Ctx) of
         {ok, MConf} ->
             maps:merge(MConf, Map);
         {error, Reason} ->
@@ -162,14 +184,17 @@ nested_get([Key|More], Map, Default) ->
         error -> Default
     end.
 
-pipeline(Input, [Fun|Steps]) ->
-    case Fun(Input) of
-        {ok, Output} -> pipeline(Output, Steps);
+pipeline(Input, Ctx, [Fun | Steps]) ->
+    Result = case is_function(Fun, 1) of
+                 true -> Fun(Input);
+                 false -> Fun(Input, Ctx)
+             end,
+    case Result of
+        {ok, Output} -> pipeline(Output, Ctx, Steps);
         {error, Reason} -> {error, Reason};
-        Output -> pipeline(Output, Steps)
+        Output -> pipeline(Output, Ctx, Steps)
     end;
-
-pipeline(Output, []) -> {ok, Output}.
+pipeline(Output, _Ctx, []) -> {ok, Output}.
 
 scan_error(Line, ErrorInfo) ->
     {error, {scan_error, format_error(Line, ErrorInfo)}}.
@@ -181,3 +206,22 @@ format_error(Line, ErrorInfo) ->
     binary_to_list(
       iolist_to_binary(
         [ErrorInfo, io_lib:format(" in line ~w", [Line])])).
+
+inc_stack_push(Ctx, File) ->
+    Includes = inc_stack(Ctx),
+    Ctx#{stack => [File | Includes]}.
+
+is_included(Ctx, File) ->
+    Includes = inc_stack(Ctx),
+    lists:any(fun(F) -> is_same_file(F, File) end, Includes).
+
+inc_stack(Ctx) -> maps:get(stack, Ctx, []).
+
+is_same_file(A, B) ->
+    real_file_name(A) =:= real_file_name(B).
+
+real_file_name(F) ->
+    case file:read_link_all(F) of
+        {ok, Real} -> Real;
+        {error, _} -> F
+    end.
