@@ -46,7 +46,7 @@ Bool                = true|false|on|off
 
 %% Name(Atom in Erlang)
 Letter              = [A-Za-z]
-Name                = {Letter}[A-Za-z0-9_\.@]*
+Name                = {Letter}[A-Za-z0-9_\.@-]*
 
 %% Integer
 Digit               = [0-9]

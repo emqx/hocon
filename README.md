@@ -6,6 +6,12 @@ LALR grammar based HOCON configuration Parser for Erlang/OTP
 
 See: https://lightbend.github.io/config/
 
+## Divergence from Spec and Caveats
+
+- No unicode support (at least not verified).
+- The forbidden character `@` is allowed in unquoted strings.
+- Unquoted strings are parsed as atoms while quoted are parsed as binaries.
+
 ## Test Data
 
 Files in sample-configs are collected from https://github.com/lightbend/config/tree/v1.4.1
