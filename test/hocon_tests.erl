@@ -31,6 +31,10 @@ test_file_load("cycle"++_, F) ->
     ?assertMatch({error, {{include_error, _, _}, _}}, hocon:load(F));
 test_file_load("test13-reference-bad-substitutions", F) ->
     ?assertMatch({error, {{variable_not_found,"b"}, _}}, hocon:load(F));
+test_file_load("test07", F) ->
+    ?assertMatch({error, {{include_error,_, enoent}, _}}, hocon:load(F));
+test_file_load("test08", F) ->
+    ?assertMatch({error, {{include_error,_, enoent}, _}}, hocon:load(F));
 test_file_load(_Name, F) ->
     ?assertMatch({ok, _}, hocon:load(F)).
 
