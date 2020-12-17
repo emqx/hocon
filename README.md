@@ -23,7 +23,6 @@ Files in sample-configs are collected from https://github.com/lightbend/config/t
 - Include semantics: merging
 - Get values from environment variables
 - Introduction doc
-- hocon CLI
 - Upload to hex.pm
 - Grammer file in BNF syntax
 - Grammer file in McKeeman Form
