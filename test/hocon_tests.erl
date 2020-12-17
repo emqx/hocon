@@ -22,8 +22,13 @@
 %% expect no crash
 sample_files_test_() ->
     Wildcard = filename:join([code:lib_dir(hocon), "sample-configs", "*.conf"]),
-    [{filename:basename(F),
-      fun() -> ?assertMatch({ok, _}, hocon:load(F)) end}
-     || F <- filelib:wildcard(Wildcard)].
+    [begin
+        BaseName = filename:basename(F, ".conf"),
+        {BaseName, fun() -> test_file_load(BaseName, F) end}
+     end || F <- filelib:wildcard(Wildcard)].
 
+test_file_load("cycle"++_, F) ->
+    ?assertMatch({error, {{include_error, _, _}, _}}, hocon:load(F));
+test_file_load(_Name, F) ->
+    ?assertMatch({ok, _}, hocon:load(F)).
 
