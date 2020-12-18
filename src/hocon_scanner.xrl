@@ -44,9 +44,13 @@ Punctuator          = [{}\[\]:=,]
 %% Bool
 Bool                = true|false|on|off
 
-%% Name(Atom in Erlang)
+%% Atom (parsed as atom in Erlang) and Unquoted string
+%% Unquoted is a string of 'unforbidden' characters, where
+%% unforbidden is the 'inverse' of what's defined as 'forbidden' in the spec
+%% but no unicode support so far.
 Letter              = [A-Za-z]
-Name                = {Letter}[A-Za-z0-9_\.@-]*
+Atom                = {Letter}[A-Za-z0-9_\.@]*
+Unquoted            = {Letter}[A-Za-z0-9_\.@%\-\|]*
 
 %% Integer
 Digit               = [0-9]
@@ -74,17 +78,18 @@ Duration            = {Digit}+(d|D|h|H|m|M|s|S|ms|MS)
 %%Duration            = {Digit}+(d|h|m|s|ms|us|ns)
 
 %% Variable
-Literal             = {Bool}|{Integer}|{Float}|{String}|{Percent}{Bytesize}|{Duration}
-Variable            = \$\{{Name}+({WhiteSpace}*\|\|{WhiteSpace}*({Literal}))?\}
+Literal             = {Bool}|{Integer}|{Float}|{String}|{Unquoted}|{Percent}{Bytesize}|{Duration}
+Variable            = \$\{{Atom}+({WhiteSpace}*\|\|{WhiteSpace}*({Literal}))?\}
 
 Rules.
 
 {Ignored}         : skip_token.
 {Punctuator}      : {token, {list_to_atom(string:trim(TokenChars)), TokenLine}}.
 {Bool}            : {token, {bool, TokenLine, bool(TokenChars)}}.
-{Name}            : {token, identifier(TokenChars, TokenLine)}.
 {Integer}         : {token, {integer, TokenLine, list_to_integer(TokenChars)}}.
 {Float}           : {token, {float, TokenLine, list_to_float(TokenChars)}}.
+{Atom}            : {token, identifier(TokenChars, TokenLine)}.
+{Unquoted}        : {token, {string, TokenLine, iolist_to_binary(TokenChars)}}.
 {String}          : {token, {string, TokenLine, iolist_to_binary(unquote(TokenChars))}}.
 {MultilineString} : {token, {string, TokenLine, iolist_to_binary(unquote(TokenChars))}}.
 {Bytesize}        : {token, {bytesize, TokenLine, bytesize(TokenChars)}}.
