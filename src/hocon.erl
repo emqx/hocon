@@ -87,7 +87,7 @@ parse(Tokens) ->
 
 -spec(transform(config(), ctx()) -> {ok, config()}).
 transform(Config, Ctx) ->
-    try include(substitute(Config), Ctx) of
+    try include(concat(substitute(Config)), Ctx) of
         RootMap -> {ok, RootMap}
     catch
         error:Reason:St -> {error, {Reason,St}}
@@ -127,14 +127,30 @@ substitute(RootMap) ->
     substitute(RootMap, RootMap).
 
 substitute(MapVal, RootMap) when is_map(MapVal) ->
-    maps:map(fun(_Key, Val) -> substitute(Val, RootMap) end, MapVal);
-substitute("${"++Var, RootMap) ->
-    Varname = string:trim(Var, both, "${}"),
+    maps:map(fun(_Key, Substrings) -> substitute(Substrings, RootMap) end, MapVal);
+substitute(Substrings = [{substr, _S}|_More], RootMap) ->
+    lists:map(fun({substr, S}) -> {substituted, substitute(S, RootMap)} end, Substrings);
+substitute(<<"${", Var/binary>>, RootMap) ->
+    Varname = binary:replace(Var, <<"}">>, <<"">>),
     case nested_get(paths(Varname), RootMap) of
         undefined -> error({variable_not_found, Varname});
-        Val -> Val
+        Val -> substitute(Val, RootMap)
     end;
 substitute(Value, _RootMap) -> Value.
+
+concat(RootMap) when is_map(RootMap) ->
+    maps:map(fun(_Key, Val) -> concat(Val) end, RootMap);
+concat(Substrings = [{substituted, _V}|_More]) ->
+    do_concat(lists:map(fun(V) -> concat(V) end, Substrings));
+concat(L) when is_list(L) ->
+    lists:map(fun(Val) -> concat(Val) end, L);
+concat({substituted, S}) -> concat(S);
+concat(Val) -> Val.
+
+do_concat(L=[V|_More]) when is_binary(V) ->
+    iolist_to_binary(L);
+do_concat([V]) -> V.
+
 
 expand({Members}) ->
     expand(Members);

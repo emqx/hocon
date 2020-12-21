@@ -39,7 +39,17 @@ Comment             = (#|//)[^{LineFeed}]*
 Ignored             = {WhiteSpace}|{NewLine}|{Comment}
 
 %% Punctuator
-Punctuator          = [{}\[\]:=,]
+Punctuator          = [{}\[\],]
+
+%% KeyValue Operator
+KV                  = [:=]
+
+%% Bool
+Bool                = true|false|on|off
+
+%% Unquoted String
+Letter              = [A-Za-z]
+Unquoted            = {Letter}[A-Za-z0-9_\.@%\-\|]*
 
 %% Bool
 Bool                = true|false|on|off
@@ -74,15 +84,18 @@ Duration            = {Digit}+(d|D|h|H|m|M|s|S|ms|MS)
 %%Duration            = {Digit}+(d|h|m|s|ms|us|ns)
 
 %% Variable
-Literal             = {Bool}|{Integer}|{Float}|{String}|{Percent}{Bytesize}|{Duration}
-Variable            = \$\{{Name}+({WhiteSpace}*\|\|{WhiteSpace}*({Literal}))?\}
+Literal             = {Bool}|{Integer}|{Float}|{String}|{Unquoted}|{Percent}{Bytesize}|{Duration}
+Variable            = \$\{{Unquoted}+({WhiteSpace}*\|\|{WhiteSpace}*({Literal}))?\}
+
+Key                 = ({Unquoted}|{String})({WhiteSpace}*){KV}
+ObjectKey           = ({Unquoted}|{String})({WhiteSpace}*){
 
 Rules.
 
 {Ignored}         : skip_token.
 {Punctuator}      : {token, {list_to_atom(string:trim(TokenChars)), TokenLine}}.
 {Bool}            : {token, {bool, TokenLine, bool(TokenChars)}}.
-{Name}            : {token, identifier(TokenChars, TokenLine)}.
+{Unquoted}        : {token, {string, TokenLine, iolist_to_binary(TokenChars)}}.
 {Integer}         : {token, {integer, TokenLine, list_to_integer(TokenChars)}}.
 {Float}           : {token, {float, TokenLine, list_to_float(TokenChars)}}.
 {String}          : {token, {string, TokenLine, iolist_to_binary(unquote(TokenChars))}}.
@@ -91,6 +104,9 @@ Rules.
 {Percent}         : {token, {percent, TokenLine, percent(TokenChars)}}.
 {Duration}        : {token, {duration, TokenLine, duration(TokenChars)}}.
 {Variable}        : {token, {variable, TokenLine, TokenChars}}.
+{Key}             : {token, {key, TokenLine, iolist_to_binary(string:trim(TokenChars, both, "=:\" "))}}.
+{ObjectKey}       : {token, {key, TokenLine, iolist_to_binary(string:trim(TokenChars, both, "\"{ "))}, "{" }.
+
 
 Erlang code.
 

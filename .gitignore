@@ -17,3 +17,6 @@ _build/
 _checkouts/
 src/hocon_parser.erl
 src/hocon_scanner.erl
+
+# IDEs
+/.idea/

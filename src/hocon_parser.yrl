@@ -7,17 +7,17 @@ Nonterminals
   Elements
   Element
   Directive
-  Key
-  Value.
+  Value
+  Substrings.
 
 Terminals
-  '{' '}' '[' ']' ',' ':' '='
-  bool atom integer float string
+  '{' '}' '[' ']' ','
+  bool integer float string
   percent bytesize duration variable
-  include.
+  include key.
 
 Rootsymbol HOCON.
-
+Right 100 string variable.
 HOCON -> Object: '$1'.
 HOCON -> Members : '$1'.
 
@@ -28,9 +28,7 @@ Members -> Member ',' Members : ['$1'|'$3'].
 Members -> Member Members : ['$1'|'$2'].
 Members -> Member : ['$1'].
 
-Member -> Key Object : {'$1', '$2'}.
-Member -> Key ':' Element : {'$1', '$3'}.
-Member -> Key '=' Element : {'$1', '$3'}.
+Member -> key Element : {iolist_to_binary(value_of('$1')), '$2'}.
 Member -> Directive : '$1'.
 
 Array -> '[' Elements ']' : '$2'.
@@ -41,21 +39,22 @@ Elements -> Element Elements : ['$1'|'$2'].
 Elements -> Element : ['$1'].
 
 Element -> Value : '$1'.
+Element -> Substrings : '$1'.
 
 Directive -> include string : {'$include', value_of('$2')}.
 
-Key -> atom : value_of('$1').
-Key -> string : iolist_to_binary(value_of('$1')).
+%% create {substr, Value} tuple to distinguish from an array of strings
+Substrings -> string Substrings : [{substr, iolist_to_binary(value_of('$1'))} | '$2'].
+Substrings -> variable Substrings : [{substr, iolist_to_binary(value_of('$1'))} | '$2'].
+Substrings -> string : [{substr, iolist_to_binary(value_of('$1'))}].
+Substrings -> variable : [{substr, iolist_to_binary(value_of('$1'))}].
 
 Value -> bool : value_of('$1').
-Value -> atom : value_of('$1').
 Value -> integer : value_of('$1').
 Value -> float : value_of('$1').
-Value -> string : iolist_to_binary(value_of('$1')).
 Value -> percent : value_of('$1').
 Value -> bytesize : value_of('$1').
 Value -> duration : value_of('$1').
-Value -> variable : value_of('$1').
 Value -> Array : '$1'.
 Value -> Object : '$1'.
 
