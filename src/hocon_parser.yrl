@@ -8,6 +8,7 @@ Nonterminals
   Element
   Directive
   Value
+  Substring
   Substrings.
 
 Terminals
@@ -39,15 +40,15 @@ Elements -> Element Elements : ['$1'|'$2'].
 Elements -> Element : ['$1'].
 
 Element -> Value : '$1'.
-Element -> Substrings : '$1'.
+Element -> Substrings : maybe_concat('$1').
 
 Directive -> include string : {'$include', value_of('$2')}.
 
-%% create {substr, Value} tuple to distinguish from an array of strings
-Substrings -> string Substrings : [{substr, iolist_to_binary(value_of('$1'))} | '$2'].
-Substrings -> variable Substrings : [{substr, iolist_to_binary(value_of('$1'))} | '$2'].
-Substrings -> string : [{substr, iolist_to_binary(value_of('$1'))}].
-Substrings -> variable : [{substr, iolist_to_binary(value_of('$1'))}].
+Substrings -> Substring Substrings : ['$1' | '$2'].
+Substrings -> Substring : ['$1'].
+
+Substring -> string : iolist_to_binary(value_of('$1')).
+Substring -> variable : value_of('$1').
 
 Value -> bool : value_of('$1').
 Value -> integer : value_of('$1').
@@ -61,4 +62,7 @@ Value -> Object : '$1'.
 Erlang code.
 
 value_of(Token) -> element(3, Token).
+
+maybe_concat([S]) -> S;
+maybe_concat(S) -> {concat, S}.
 

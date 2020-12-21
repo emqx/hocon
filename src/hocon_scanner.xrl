@@ -95,7 +95,7 @@ Rules.
 {Ignored}         : skip_token.
 {Punctuator}      : {token, {list_to_atom(string:trim(TokenChars)), TokenLine}}.
 {Bool}            : {token, {bool, TokenLine, bool(TokenChars)}}.
-{Unquoted}        : {token, {string, TokenLine, iolist_to_binary(TokenChars)}}.
+{Unquoted}        : {token, maybe_include(TokenChars, TokenLine)}.
 {Integer}         : {token, {integer, TokenLine, list_to_integer(TokenChars)}}.
 {Float}           : {token, {float, TokenLine, list_to_float(TokenChars)}}.
 {String}          : {token, {string, TokenLine, iolist_to_binary(unquote(TokenChars))}}.
@@ -103,7 +103,7 @@ Rules.
 {Bytesize}        : {token, {bytesize, TokenLine, bytesize(TokenChars)}}.
 {Percent}         : {token, {percent, TokenLine, percent(TokenChars)}}.
 {Duration}        : {token, {duration, TokenLine, duration(TokenChars)}}.
-{Variable}        : {token, {variable, TokenLine, TokenChars}}.
+{Variable}        : {token, {variable, TokenLine, {var, var_ref_name(TokenChars)}}}.
 {Key}             : {token, {key, TokenLine, iolist_to_binary(string:trim(TokenChars, both, "=:\" "))}}.
 {ObjectKey}       : {token, {key, TokenLine, iolist_to_binary(string:trim(TokenChars, both, "\"{ "))}, "{" }.
 
@@ -119,8 +119,8 @@ Erlang code.
 -define(MEGABYTE, (?KILOBYTE*1024)). %1048576
 -define(GIGABYTE, (?MEGABYTE*1024)). %1073741824
 
-identifier("include", TokenLine)  -> {include, TokenLine};
-identifier(TokenChars, TokenLine) -> {atom, TokenLine, list_to_atom(TokenChars)}.
+maybe_include("include", TokenLine)  -> {include, TokenLine};
+maybe_include(TokenChars, TokenLine) -> {string, TokenLine, iolist_to_binary(TokenChars)}.
 
 bool("true")  -> true;
 bool("false") -> false;
@@ -155,3 +155,6 @@ duration(Val, "m")  -> Val * ?MINUTE;
 duration(Val, "s")  -> Val * ?SECOND;
 duration(Val, "ms") -> Val.
 
+var_ref_name("${" ++ Name_CR) ->
+    [$} | NameRev] = lists:reverse(Name_CR),
+    list_to_atom(string:trim(lists:reverse(NameRev))).
