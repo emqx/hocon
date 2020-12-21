@@ -85,7 +85,7 @@ Duration            = {Digit}+(d|D|h|H|m|M|s|S|ms|MS)
 
 %% Variable
 Literal             = {Bool}|{Integer}|{Float}|{String}|{Unquoted}|{Percent}{Bytesize}|{Duration}
-Variable            = \$\{{Unquoted}+({WhiteSpace}*\|\|{WhiteSpace}*({Literal}))?\}
+Variable            = \$\{{Unquoted}\}
 
 Key                 = ({Unquoted}|{String})({WhiteSpace}*){KV}
 ObjectKey           = ({Unquoted}|{String})({WhiteSpace}*){
