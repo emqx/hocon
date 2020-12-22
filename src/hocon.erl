@@ -16,7 +16,8 @@
 
 -module(hocon).
 
--export([load/1, load/2, scan/1, parse/1, dump/2, dump/3]).
+-export([load/1, load/2, binary/1]).
+-export([scan/1, parse/1, dump/2, dump/3]).
 -export([main/1]).
 
 -type config() :: map().
@@ -37,6 +38,15 @@ load(Filename0, Ctx0) ->
     pipeline(Filename, Ctx,
              [ fun read/1
              , fun scan/1
+             , fun preparse/1
+             , fun parse/1
+             , fun expand/1
+             , fun transform/2
+             ]).
+
+binary(Binary) ->
+    pipeline(Binary, #{},
+             [ fun scan/1
              , fun preparse/1
              , fun parse/1
              , fun expand/1
@@ -138,6 +148,8 @@ substitute(RootMap) ->
 
 substitute(MapVal, RootMap) when is_map(MapVal) ->
     maps:map(fun(_Key, Substrings) -> substitute(Substrings, RootMap) end, MapVal);
+substitute(Array, RootMap) when is_list(Array) ->
+    lists:map(fun(I) -> substitute(I, RootMap) end, Array);
 substitute({concat, Substrings}, RootMap) ->
     iolist_to_binary(lists:map(fun(S) -> substitute(S, RootMap) end, Substrings));
 substitute({var, Name}, RootMap) ->
