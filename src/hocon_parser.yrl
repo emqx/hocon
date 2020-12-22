@@ -1,15 +1,14 @@
 Nonterminals
-  HOCON
-  Array
-  Object
-  Members
-  Member
-  Elements
-  Element
-  Directive
-  Value
-  Substring
-  Substrings.
+  hocon
+  array
+  object
+  fields
+  field
+  directive
+  elements
+  value
+  substring
+  substrings.
 
 Terminals
   '{' '}' '[' ']' ','
@@ -17,47 +16,45 @@ Terminals
   percent bytesize duration variable
   include key.
 
-Rootsymbol HOCON.
+Rootsymbol hocon.
 Right 100 string variable.
-HOCON -> Object: '$1'.
-HOCON -> Members : '$1'.
+hocon -> object : '$1'.
+hocon -> fields : '$1'.
 
-Object -> '{' Members '}' : {'$2'}.
-Object -> '{' '}' : {[]}.
+object -> '{' fields '}' : {'$2'}.
+object -> '{' '}' : {[]}.
 
-Members -> Member ',' Members : ['$1'|'$3'].
-Members -> Member Members : ['$1'|'$2'].
-Members -> Member : ['$1'].
+fields -> field ',' fields : ['$1'|'$3'].
+fields -> field fields : ['$1'|'$2'].
+fields -> field : ['$1'].
 
-Member -> key Element : {iolist_to_binary(value_of('$1')), '$2'}.
-Member -> Directive : '$1'.
+field -> key value : {iolist_to_binary(value_of('$1')), '$2'}.
+field -> directive : '$1'.
 
-Array -> '[' Elements ']' : '$2'.
-Array -> '[' ']' : [].
+array -> '[' elements ']' : '$2'.
+array -> '[' ']' : [].
 
-Elements -> Element ',' Elements : ['$1'|'$3'].
-Elements -> Element Elements : ['$1'|'$2'].
-Elements -> Element : ['$1'].
+elements -> value ',' elements : ['$1'|'$3'].
+elements -> value elements : ['$1'|'$2'].
+elements -> value : ['$1'].
 
-Element -> Value : '$1'.
-Element -> Substrings : maybe_concat('$1').
+directive -> include string : {'$include', value_of('$2')}.
 
-Directive -> include string : {'$include', value_of('$2')}.
+substrings -> substring substrings : ['$1' | '$2'].
+substrings -> substring : ['$1'].
 
-Substrings -> Substring Substrings : ['$1' | '$2'].
-Substrings -> Substring : ['$1'].
+substring -> string : iolist_to_binary(value_of('$1')).
+substring -> variable : value_of('$1').
 
-Substring -> string : iolist_to_binary(value_of('$1')).
-Substring -> variable : value_of('$1').
-
-Value -> bool : value_of('$1').
-Value -> integer : value_of('$1').
-Value -> float : value_of('$1').
-Value -> percent : value_of('$1').
-Value -> bytesize : value_of('$1').
-Value -> duration : value_of('$1').
-Value -> Array : '$1'.
-Value -> Object : '$1'.
+value -> bool : value_of('$1').
+value -> integer : value_of('$1').
+value -> float : value_of('$1').
+value -> percent : value_of('$1').
+value -> bytesize : value_of('$1').
+value -> duration : value_of('$1').
+value -> array : '$1'.
+value -> object : '$1'.
+value -> substrings : maybe_concat('$1').
 
 Erlang code.
 
@@ -65,4 +62,3 @@ value_of(Token) -> element(3, Token).
 
 maybe_concat([S]) -> S;
 maybe_concat(S) -> {concat, S}.
-
