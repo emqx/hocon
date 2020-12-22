@@ -12,7 +12,7 @@ clean: distclean
 
 .PHONY: distclean
 distclean:
-	@rm -rf _build erl_crash.dump rebar3.crashdump rebar.lock
+	@rm -rf _build erl_crash.dump rebar3.crashdump src/hocon_parser.erl src/hocon_scanner.erl
 
 .PHONY: xref
 xref:
