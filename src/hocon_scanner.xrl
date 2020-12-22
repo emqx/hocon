@@ -41,8 +41,8 @@ Ignored             = {WhiteSpace}|{NewLine}|{Comment}
 %% Punctuator
 Punctuator          = [{}\[\],]
 
-%% KeyValue Operator
-KV                  = [:=]
+%% KeyValue
+KvSeparator         = [:=]
 
 %% Bool
 Bool                = true|false|on|off
@@ -53,10 +53,6 @@ Unquoted            = {Letter}[A-Za-z0-9_\.@%\-\|]*
 
 %% Bool
 Bool                = true|false|on|off
-
-%% Name(Atom in Erlang)
-Letter              = [A-Za-z]
-Name                = {Letter}[A-Za-z0-9_\.@-]*
 
 %% Integer
 Digit               = [0-9]
@@ -87,7 +83,8 @@ Duration            = {Digit}+(d|D|h|H|m|M|s|S|ms|MS)
 Literal             = {Bool}|{Integer}|{Float}|{String}|{Unquoted}|{Percent}{Bytesize}|{Duration}
 Variable            = \$\{{Unquoted}\}
 
-Key                 = ({Unquoted}|{String})({WhiteSpace}*){KV}
+%% Key
+Key                 = ({Unquoted}|{String})({WhiteSpace}*){KvSeparator}
 ObjectKey           = ({Unquoted}|{String})({WhiteSpace}*){
 
 Rules.
