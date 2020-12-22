@@ -39,14 +39,20 @@ Comment             = (#|//)[^{LineFeed}]*
 Ignored             = {WhiteSpace}|{NewLine}|{Comment}
 
 %% Punctuator
-Punctuator          = [{}\[\]:=,]
+Punctuator          = [{}\[\],]
+
+%% KeyValue
+KvSeparator         = [:=]
 
 %% Bool
 Bool                = true|false|on|off
 
-%% Name(Atom in Erlang)
+%% Unquoted String
 Letter              = [A-Za-z]
-Name                = {Letter}[A-Za-z0-9_\.@-]*
+Unquoted            = {Letter}[A-Za-z0-9_\.@%\-\|]*
+
+%% Bool
+Bool                = true|false|on|off
 
 %% Integer
 Digit               = [0-9]
@@ -74,15 +80,19 @@ Duration            = {Digit}+(d|D|h|H|m|M|s|S|ms|MS)
 %%Duration            = {Digit}+(d|h|m|s|ms|us|ns)
 
 %% Variable
-Literal             = {Bool}|{Integer}|{Float}|{String}|{Percent}{Bytesize}|{Duration}
-Variable            = \$\{{Name}+({WhiteSpace}*\|\|{WhiteSpace}*({Literal}))?\}
+Literal             = {Bool}|{Integer}|{Float}|{String}|{Unquoted}|{Percent}{Bytesize}|{Duration}
+Variable            = \$\{{Unquoted}\}
+
+%% Key
+Key                 = ({Unquoted}|{String})({WhiteSpace}*){KvSeparator}
+ObjectKey           = ({Unquoted}|{String})({WhiteSpace}*){
 
 Rules.
 
 {Ignored}         : skip_token.
 {Punctuator}      : {token, {list_to_atom(string:trim(TokenChars)), TokenLine}}.
 {Bool}            : {token, {bool, TokenLine, bool(TokenChars)}}.
-{Name}            : {token, identifier(TokenChars, TokenLine)}.
+{Unquoted}        : {token, maybe_include(TokenChars, TokenLine)}.
 {Integer}         : {token, {integer, TokenLine, list_to_integer(TokenChars)}}.
 {Float}           : {token, {float, TokenLine, list_to_float(TokenChars)}}.
 {String}          : {token, {string, TokenLine, iolist_to_binary(unquote(TokenChars))}}.
@@ -90,7 +100,10 @@ Rules.
 {Bytesize}        : {token, {bytesize, TokenLine, bytesize(TokenChars)}}.
 {Percent}         : {token, {percent, TokenLine, percent(TokenChars)}}.
 {Duration}        : {token, {duration, TokenLine, duration(TokenChars)}}.
-{Variable}        : {token, {variable, TokenLine, TokenChars}}.
+{Variable}        : {token, {variable, TokenLine, {var, var_ref_name(TokenChars)}}}.
+{Key}             : {token, {key, TokenLine, iolist_to_binary(string:trim(TokenChars, both, "=:\" "))}}.
+{ObjectKey}       : {token, {key, TokenLine, iolist_to_binary(string:trim(TokenChars, both, "\"{ "))}, "{" }.
+
 
 Erlang code.
 
@@ -103,8 +116,8 @@ Erlang code.
 -define(MEGABYTE, (?KILOBYTE*1024)). %1048576
 -define(GIGABYTE, (?MEGABYTE*1024)). %1073741824
 
-identifier("include", TokenLine)  -> {include, TokenLine};
-identifier(TokenChars, TokenLine) -> {atom, TokenLine, list_to_atom(TokenChars)}.
+maybe_include("include", TokenLine)  -> {include, TokenLine};
+maybe_include(TokenChars, TokenLine) -> {string, TokenLine, iolist_to_binary(TokenChars)}.
 
 bool("true")  -> true;
 bool("false") -> false;
@@ -139,3 +152,6 @@ duration(Val, "m")  -> Val * ?MINUTE;
 duration(Val, "s")  -> Val * ?SECOND;
 duration(Val, "ms") -> Val.
 
+var_ref_name("${" ++ Name_CR) ->
+    [$} | NameRev] = lists:reverse(Name_CR),
+    list_to_atom(string:trim(lists:reverse(NameRev))).

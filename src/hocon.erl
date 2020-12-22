@@ -127,14 +127,18 @@ substitute(RootMap) ->
     substitute(RootMap, RootMap).
 
 substitute(MapVal, RootMap) when is_map(MapVal) ->
-    maps:map(fun(_Key, Val) -> substitute(Val, RootMap) end, MapVal);
-substitute("${"++Var, RootMap) ->
-    Varname = string:trim(Var, both, "${}"),
+    maps:map(fun(_Key, Substrings) -> substitute(Substrings, RootMap) end, MapVal);
+substitute({concat, Substrings}, RootMap) ->
+    iolist_to_binary(lists:map(fun(S) -> substitute(S, RootMap) end, Substrings));
+substitute({var, Name}, RootMap) ->
+    do_substitute(Name, RootMap);
+substitute(Value, _RootMap) -> Value.
+
+do_substitute(Varname, RootMap) ->
     case nested_get(paths(Varname), RootMap) of
         undefined -> error({variable_not_found, Varname});
-        Val -> Val
-    end;
-substitute(Value, _RootMap) -> Value.
+        Val -> substitute(Val, RootMap)
+    end.
 
 expand({Members}) ->
     expand(Members);
