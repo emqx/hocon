@@ -37,6 +37,7 @@ load(Filename0, Ctx0) ->
     pipeline(Filename, Ctx,
              [ fun read/1
              , fun scan/1
+             , fun preparse/1
              , fun parse/1
              , fun expand/1
              , fun transform/2
@@ -73,6 +74,15 @@ scan(Input) when is_list(Input) ->
         {ok, Tokens, _EndLine} -> {ok, Tokens};
         {error, {Line, _Mod, ErrorInfo}, _} ->
             scan_error(Line, hocon_scanner:format_error(ErrorInfo))
+    end.
+
+
+-spec preparse(list()) -> {ok, list()} | {error, any()}.
+preparse(Tokens) ->
+    try
+        {ok, trans_key(Tokens)}
+    catch
+        error:Reason:St -> {error, {Reason,St}}
     end.
 
 -spec(parse(list()) -> {ok, config()} | {error, Reason}
@@ -229,3 +239,53 @@ real_file_name(F) ->
         {ok, Real} -> Real;
         {error, _} -> F
     end.
+
+%% Due to the lack of a splicable value terminal token,
+%% the parser would have to look-ahead the second token
+%% to tell if the next token is another splicable (string)
+%% or a key (which is also string).
+%%
+%% This help function is to 'look-back' from the key-value separator
+%% tokens, namingly ':', '=' and '{', then tranform the proceeding
+%% string token to a 'key' token.
+%%
+%% In the second step, it 'look-ahead' for a the last string/variable
+%% token preceeding to a non-string/variable token and transform
+%% it to a 'endstr' or 'endvar' token.
+trans_key(Tokens) ->
+    trans_splice_end(trans_key(Tokens, [])).
+
+trans_key([], Acc) -> lists:reverse(Acc);
+trans_key([{T, _Line} | Tokens], Acc) when T =:= ':' orelse
+                                           T =:= '=' ->
+    %% ':' and '=' are not pushed back
+    trans_key(Tokens, trans_key_lb(Acc));
+trans_key([{'{', Line} | Tokens], Acc) ->
+    %% '{' is pushed back
+    trans_key(Tokens, [{'{', Line} | trans_key_lb(Acc)]);
+trans_key([T | Tokens], Acc) ->
+    trans_key(Tokens, [T | Acc]).
+
+trans_key_lb([{string, Line, Value} | TokensRev]) ->
+    [{key, Line, binary_to_atom(Value, utf8)} | TokensRev];
+trans_key_lb(Otherwise) -> Otherwise.
+
+trans_splice_end(Tokens) ->
+    trans_splice_end(Tokens, [], []).
+
+trans_splice_end([{string, _Line, _Value} = S | Tokens], Seq, Acc) ->
+    trans_splice_end(Tokens, [S | Seq], Acc);
+trans_splice_end([{variable, _Line, _Value} = V | Tokens], Seq, Acc) ->
+    trans_splice_end(Tokens, [V | Seq], Acc);
+trans_splice_end([Other | Tokens], Seq, Acc) ->
+    NewAcc = [Other | do_trans_splice_end(Seq) ++ Acc],
+    trans_splice_end(Tokens, [], NewAcc);
+trans_splice_end([], Seq, Acc) ->
+    NewAcc = do_trans_splice_end(Seq) ++ Acc,
+    lists:reverse(NewAcc).
+
+do_trans_splice_end([]) -> [];
+do_trans_splice_end([{string, Line, Value} | T]) ->
+    [{endstr, Line, Value} | T];
+do_trans_splice_end([{variable, Line, Value} | T]) ->
+    [{endvar, Line, Value} | T].

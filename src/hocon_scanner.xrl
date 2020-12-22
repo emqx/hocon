@@ -39,10 +39,7 @@ Comment             = (#|//)[^{LineFeed}]*
 Ignored             = {WhiteSpace}|{NewLine}|{Comment}
 
 %% Punctuator
-Punctuator          = [{}\[\],]
-
-%% KeyValue
-KvSeparator         = [:=]
+Punctuator          = [{}\[\],:=]
 
 %% Bool
 Bool                = true|false|on|off
@@ -83,10 +80,6 @@ Duration            = {Digit}+(d|D|h|H|m|M|s|S|ms|MS)
 Literal             = {Bool}|{Integer}|{Float}|{String}|{Unquoted}|{Percent}{Bytesize}|{Duration}
 Variable            = \$\{{Unquoted}\}
 
-%% Key
-Key                 = ({Unquoted}|{String})({WhiteSpace}*){KvSeparator}
-ObjectKey           = ({Unquoted}|{String})({WhiteSpace}*){
-
 Rules.
 
 {Ignored}         : skip_token.
@@ -101,9 +94,6 @@ Rules.
 {Percent}         : {token, {percent, TokenLine, percent(TokenChars)}}.
 {Duration}        : {token, {duration, TokenLine, duration(TokenChars)}}.
 {Variable}        : {token, {variable, TokenLine, {var, var_ref_name(TokenChars)}}}.
-{Key}             : {token, {key, TokenLine, iolist_to_binary(string:trim(TokenChars, both, "=:\" "))}}.
-{ObjectKey}       : {token, {key, TokenLine, iolist_to_binary(string:trim(TokenChars, both, "\"{ "))}, "{" }.
-
 
 Erlang code.
 

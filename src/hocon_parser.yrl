@@ -12,12 +12,13 @@ Nonterminals
 
 Terminals
   '{' '}' '[' ']' ','
-  bool integer float string
-  percent bytesize duration variable
+  bool integer float
+  percent bytesize duration
+  string variable
+  endstr endvar
   include key.
 
 Rootsymbol hocon.
-Right 100 string variable.
 hocon -> object : '$1'.
 hocon -> fields : '$1'.
 
@@ -28,7 +29,7 @@ fields -> field ',' fields : ['$1'|'$3'].
 fields -> field fields : ['$1'|'$2'].
 fields -> field : ['$1'].
 
-field -> key value : {iolist_to_binary(value_of('$1')), '$2'}.
+field -> key value : {value_of('$1'), '$2'}.
 field -> directive : '$1'.
 
 array -> '[' elements ']' : '$2'.
@@ -39,9 +40,11 @@ elements -> value elements : ['$1'|'$2'].
 elements -> value : ['$1'].
 
 directive -> include string : {'$include', value_of('$2')}.
+directive -> include endstr : {'$include', value_of('$2')}.
 
 substrings -> substring substrings : ['$1' | '$2'].
-substrings -> substring : ['$1'].
+substrings -> endstr : [iolist_to_binary(value_of('$1'))].
+substrings -> endvar : [value_of('$1')].
 
 substring -> string : iolist_to_binary(value_of('$1')).
 substring -> variable : value_of('$1').
