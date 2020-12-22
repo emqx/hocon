@@ -11,6 +11,7 @@ See: https://lightbend.github.io/config/
 - No unicode support (at least not verified).
 - The forbidden character `@` is allowed in unquoted strings.
 - Unquoted strings are parsed as atoms while quoted are parsed as binaries.
+- No whitespaces in `key`. Expressions like `a b c : 42` are not allowed.
 
 ## Test Data
 
