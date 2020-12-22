@@ -1,8 +1,9 @@
 REBAR := rebar3
 
 .PHONY: all
-all: compile
+all: es
 
+.PHONY: compile
 compile:
 	$(REBAR) compile
 
