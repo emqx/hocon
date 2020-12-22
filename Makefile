@@ -1,8 +1,9 @@
 REBAR := rebar3
 
 .PHONY: all
-all: compile
+all: es
 
+.PHONY: compile
 compile:
 	$(REBAR) compile
 
@@ -11,7 +12,7 @@ clean: distclean
 
 .PHONY: distclean
 distclean:
-	@rm -rf _build erl_crash.dump rebar3.crashdump rebar.lock
+	@rm -rf _build erl_crash.dump rebar3.crashdump src/hocon_parser.erl src/hocon_scanner.erl
 
 .PHONY: xref
 xref:
