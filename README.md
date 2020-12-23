@@ -1,17 +1,25 @@
 # Hocon
 
-LALR grammar based HOCON configuration Parser for Erlang/OTP
+LALR grammar based HOCON-like configuration Parser for Erlang/OTP.
 
 ## Spec
 
-See: https://lightbend.github.io/config/
+HOCON spec for reference: https://lightbend.github.io/config/
 
-## Divergence from Spec and Caveats
+NOTE: Our goal is not to make this library fully compliant to HOCON spec.
+
+### Divergence from Spec and Caveats
 
 - No unicode support (at least not verified).
 - The forbidden character `@` is allowed in unquoted strings.
-- Whitespaces in unquoted strings are discarded.
-- whitespaces in Keys are not allowed. e.g. `a b c : 42` is invalid.
+- Value concatenation is not allowed in keys e.g. `a b c : 42` is invalid.
+- Value concatenation is only allowed for string values,
+  and the concatenation may span multiple lines. e.g. all below Erlang strings
+  are parsed to the same result (`${key => <<"value1value2">>}`):
+  * `"key=value1 value2"`
+  * `"key=value1value2"`
+  * `"key=\"value1\" \"value2\""`
+  * `"key=value1\nvalue2"`
 
 ## Test Data
 
