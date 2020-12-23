@@ -38,3 +38,15 @@ test_file_load("test08", F) ->
 test_file_load(_Name, F) ->
     ?assertMatch({ok, _}, hocon:load(F)).
 
+
+array_element_splice_test_() ->
+    [ ?_assertEqual(#{}, binary(<<>>))
+    , ?_assertEqual(#{a=>[]}, binary("a=[]"))
+    , ?_assertEqual(#{a=>[<<"xyz">>]}, binary("a=[x y z]"))
+    , ?_assertEqual(#{a=>[<<"xyz">>,<<"a">>]}, binary("a=[x y z, a]"))
+    ].
+
+binary(B) when is_binary(B) ->
+    {ok, R} = hocon:binary(B),
+    R;
+binary(IO) -> binary(iolist_to_binary(IO)).
