@@ -59,7 +59,7 @@ Integer             = {Sign}?({Digit}+)
 %% Float
 Fraction            = \.{Digit}+
 Exponent            = [eE]{Sign}?{Digit}+
-Float               = {Integer}{Fraction}|{Integer}{Fraction}{Exponent}
+Float               = {Integer}?{Fraction}|{Integer}{Fraction}{Exponent}
 
 %% String
 Hex                 = [0-9A-Fa-f]
@@ -87,7 +87,7 @@ Rules.
 {Bool}            : {token, {bool, TokenLine, bool(TokenChars)}}.
 {Unquoted}        : {token, maybe_include(TokenChars, TokenLine)}.
 {Integer}         : {token, {integer, TokenLine, list_to_integer(TokenChars)}}.
-{Float}           : {token, {float, TokenLine, list_to_float(TokenChars)}}.
+{Float}           : {token, {float, TokenLine, to_float(TokenChars)}}.
 {String}          : {token, {string, TokenLine, iolist_to_binary(unquote(TokenChars))}}.
 {MultilineString} : {token, {string, TokenLine, iolist_to_binary(unquote(TokenChars))}}.
 {Bytesize}        : {token, {bytesize, TokenLine, bytesize(TokenChars)}}.
@@ -145,3 +145,6 @@ duration(Val, "ms") -> Val.
 var_ref_name("${" ++ Name_CR) ->
     [$} | NameRev] = lists:reverse(Name_CR),
     list_to_atom(string:trim(lists:reverse(NameRev))).
+
+to_float("." ++ Fraction) -> to_float("0." ++ Fraction);
+to_float(Str) -> list_to_float(Str).

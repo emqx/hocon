@@ -40,13 +40,19 @@ test_file_load(_Name, F) ->
 
 
 array_element_splice_test_() ->
-    [ ?_assertEqual(#{}, binary(<<>>))
-    , ?_assertEqual(#{a=>[]}, binary("a=[]"))
-    , ?_assertEqual(#{a=>[<<"xyz">>]}, binary("a=[x y z]"))
-    , ?_assertEqual(#{a=>[<<"xyz">>,<<"a">>]}, binary("a=[x y z, a]"))
+    [ ?_assertEqual(#{}, parse(<<>>))
+    , ?_assertEqual(#{a=>[]}, parse("a=[]"))
+    , ?_assertEqual(#{a=>[<<"xyz">>]}, parse("a=[x y z]"))
+    , ?_assertEqual(#{a=>[<<"xyz">>,<<"a">>]}, parse("a=[x y z, a]"))
     ].
 
-binary(B) when is_binary(B) ->
+float_point_test() ->
+    ?assertEqual(#{a => 0.5}, parse("a=0.5")),
+    ?assertEqual(#{a => 0.5}, parse("a=.5")),
+    ?assertEqual(#{a => 1.5}, parse("a=1.5")),
+    ok.
+
+parse(B) when is_binary(B) ->
     {ok, R} = hocon:binary(B),
     R;
-binary(IO) -> binary(iolist_to_binary(IO)).
+parse(IO) -> parse(iolist_to_binary(IO)).
