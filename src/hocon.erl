@@ -40,7 +40,7 @@ load(Filename0, Ctx0) ->
              , fun scan/1
              , fun preparse/1
              , fun parse/1
-             , fun expand/1
+             , fun resolve/1
              , fun transform/2
              ]).
 
@@ -107,7 +107,7 @@ parse(Tokens) ->
 
 -spec(transform(config(), ctx()) -> {ok, config()}).
 transform(Config, Ctx) ->
-    try include(substitute(Config), Ctx) of
+    try include(Config, Ctx) of
         RootMap -> {ok, RootMap}
     catch
         error:Reason:St -> {error, {Reason,St}}
@@ -143,24 +143,29 @@ do_include(File, Ctx, Map) ->
             error({include_error, File, Reason})
     end.
 
-substitute(RootMap) ->
-    substitute(RootMap, RootMap).
+resolve(KVList) ->
+    resolve(KVList, #{}).
+resolve([], ResolvedMap) ->
+    {ok, ResolvedMap};
+resolve([KV|More], ResolvedMap) ->
+    resolve(More, resolve(KV, ResolvedMap));
+resolve({Key, Value}, ResolvedMap) ->
+    add_resolved({Key, do_resolve(Value, ResolvedMap)}, ResolvedMap).
 
-substitute(MapVal, RootMap) when is_map(MapVal) ->
-    maps:map(fun(_Key, Substrings) -> substitute(Substrings, RootMap) end, MapVal);
-substitute(Array, RootMap) when is_list(Array) ->
-    lists:map(fun(I) -> substitute(I, RootMap) end, Array);
-substitute({concat, Substrings}, RootMap) ->
-    iolist_to_binary(lists:map(fun(S) -> substitute(S, RootMap) end, Substrings));
-substitute({var, Name}, RootMap) ->
-    do_substitute(Name, RootMap);
-substitute(Value, _RootMap) -> Value.
+do_resolve({var, Var}, ResolvedMap) ->
+    case nested_get(paths(Var), ResolvedMap) of
+        undefined -> error({variable_not_found, Var});
+        Val -> Val
+    end;
+do_resolve(Array, ResolvedMap) when is_list(Array) ->
+    lists:map(fun(V) -> do_resolve(V, ResolvedMap) end, Array);
+do_resolve({concat, Array}, ResolvedMap) ->
+    iolist_to_binary(do_resolve(Array, ResolvedMap));
+do_resolve(Val, _ResolvedMap) ->
+    Val.
 
-do_substitute(Varname, RootMap) ->
-    case nested_get(paths(Varname), RootMap) of
-        undefined -> error({variable_not_found, Varname});
-        Val -> substitute(Val, RootMap)
-    end.
+add_resolved({Key, Value}, ResolvedMap) when is_map(ResolvedMap) ->
+    nested_put(paths(Key), expand_value(Value), ResolvedMap).
 
 expand({Members}) ->
     expand(Members);
@@ -192,10 +197,22 @@ nested_put([Key|Paths], Val, Map) ->
 merge(Key, Val, Map) when is_map(Val) ->
     case maps:find(Key, Map) of
         {ok, MVal} when is_map(MVal) ->
-            maps:put(Key, maps:merge(MVal, Val), Map);
+            maps:put(Key, do_deep_merge(MVal, Val), Map);
         _Other -> maps:put(Key, Val, Map)
     end;
 merge(Key, Val, Map) -> maps:put(Key, Val, Map).
+
+do_deep_merge(M1, M2) when is_map(M1), is_map(M2) ->
+    maps:fold(fun(K, V2, Acc) ->
+        case Acc of
+            #{K := V1} ->
+                Acc#{K => do_deep_merge(V1, V2)};
+            _ ->
+                Acc#{K => V2}
+        end
+              end, M1, M2);
+do_deep_merge(_, Override) ->
+    Override.
 
 nested_get(Key, Map) ->
     nested_get(Key, Map, undefined).
