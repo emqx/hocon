@@ -40,6 +40,8 @@ load(Filename0, Ctx0) ->
              , fun scan/1
              , fun preparse/1
              , fun parse/1
+             , fun resolve/1
+             , fun concat/1
              , fun expand/1
              , fun transform/2
              ]).
@@ -49,6 +51,8 @@ binary(Binary) ->
              [ fun scan/1
              , fun preparse/1
              , fun parse/1
+             , fun resolve/1
+             , fun concat/1
              , fun expand/1
              , fun transform/2
              ]).
@@ -107,7 +111,7 @@ parse(Tokens) ->
 
 -spec(transform(config(), ctx()) -> {ok, config()}).
 transform(Config, Ctx) ->
-    try include(substitute(Config), Ctx) of
+    try include(Config, Ctx) of
         RootMap -> {ok, RootMap}
     catch
         error:Reason:St -> {error, {Reason,St}}
@@ -143,24 +147,147 @@ do_include(File, Ctx, Map) ->
             error({include_error, File, Reason})
     end.
 
-substitute(RootMap) ->
-    substitute(RootMap, RootMap).
-
-substitute(MapVal, RootMap) when is_map(MapVal) ->
-    maps:map(fun(_Key, Substrings) -> substitute(Substrings, RootMap) end, MapVal);
-substitute(Array, RootMap) when is_list(Array) ->
-    lists:map(fun(I) -> substitute(I, RootMap) end, Array);
-substitute({concat, Substrings}, RootMap) ->
-    iolist_to_binary(lists:map(fun(S) -> substitute(S, RootMap) end, Substrings));
-substitute({var, Name}, RootMap) ->
-    do_substitute(Name, RootMap);
-substitute(Value, _RootMap) -> Value.
-
-do_substitute(Varname, RootMap) ->
-    case nested_get(paths(Varname), RootMap) of
-        undefined -> error({variable_not_found, Varname});
-        Val -> substitute(Val, RootMap)
+-spec resolve(list()) -> {ok, list()} | {error, any()}.
+resolve(KVList) ->
+    try
+        {ok, do_resolve(KVList)}
+    catch
+        error:Reason:St -> {error, {Reason,St}}
     end.
+
+do_resolve(KVList) ->
+    case do_resolve(KVList, [], [], KVList) of
+        skip ->
+            KVList;
+        {resolved, Resolved} ->
+            do_resolve(Resolved);
+        {unresolved, Unresolved} ->
+            error({unresolved, lists:flatten(Unresolved)})
+    end.
+do_resolve([], _Acc, [], _RootKVList) ->
+    skip;
+do_resolve([], _Acc, Unresolved, _RootKVList) ->
+    {unresolved, Unresolved};
+do_resolve([V|More], Acc, Unresolved, RootKVList) ->
+    case do_resolve(V, [], [], RootKVList) of
+        {resolved, Resolved} ->
+            {resolved, lists:reverse(Acc, [Resolved|More])};
+        {unresolved, Var} ->
+            do_resolve(More, [V| Acc], [Var| Unresolved], RootKVList);
+        skip ->
+            do_resolve(More, [V| Acc], Unresolved, RootKVList)
+    end;
+do_resolve({concat, List}, _Acc, _Unresolved, RootKVList) when is_list(List) ->
+    case do_resolve(List, [], [], RootKVList) of
+        {resolved, Resolved} ->
+            {resolved, {concat, Resolved}};
+        {unresolved, Var} ->
+            {unresolved, Var};
+        skip ->
+            skip
+    end;
+do_resolve({var, Var}, _Acc, _Unresolved, RootKVList) ->
+    case lookup(paths(Var), RootKVList) of
+        notfound ->
+            {unresolved, Var};
+        ResolvedValue ->
+            {resolved, ResolvedValue}
+    end;
+do_resolve({Object}, _Acc, _Unresolved, RootKVList) when is_list(Object) ->
+    case do_resolve(Object, [], [], RootKVList) of
+        {resolved, Resolved} ->
+            {resolved, {Resolved}};
+        {unresolved, Var} ->
+            {unresolved, Var};
+        skip ->
+            skip
+    end;
+do_resolve({Key, Value}, _Acc, _Unresolved, RootKVList) ->
+    case do_resolve(Value, [], [], RootKVList) of
+        {resolved, Resolved} ->
+            {resolved, {Key, Resolved}};
+        {unresolved, Var} ->
+            {unresolved, Var};
+        skip ->
+            skip
+    end;
+do_resolve(_Constant, _Acc, _Unresolved, _RootKVList) ->
+    skip.
+
+is_resolved(KV) ->
+    case do_resolve(KV, [], [], []) of
+        skip ->
+            true;
+        _ ->
+            false
+    end.
+
+lookup(Var, KVList) ->
+    lookup(Var, KVList, notfound).
+
+lookup(Var, {concat, List}, ResolvedValue) ->
+    lookup(Var, List, ResolvedValue);
+lookup([Var], [{Var, Value} = KV|More], ResolvedValue) ->
+    case is_resolved(KV) of
+        true ->
+            lookup([Var], More, Value);
+        false ->
+            lookup([Var], More, ResolvedValue)
+    end;
+lookup([Path|MorePath] = Var, [{Path, Value}|More], ResolvedValue) ->
+    lookup(Var, More, lookup(MorePath, Value, ResolvedValue));
+lookup(Var, [{List}|More], ResolvedValue) ->
+    lookup(Var, More, lookup(Var, List, ResolvedValue));
+lookup(Var, [_Other|More], ResolvedValue) ->
+    lookup(Var, More, ResolvedValue);
+lookup(_Var, [], ResolvedValue) ->
+    ResolvedValue.
+
+-spec concat(list()) -> {ok, list()} | {error, any()}.
+concat(List) ->
+    try
+        {ok, iter_over_list_for_concat(List)}
+    catch
+        error:Reason:St -> {error, {Reason,St}}
+    end.
+
+iter_over_list_for_concat(List) when is_list(List) ->
+    lists:map(fun (E) -> verify_concat(E) end, List).
+
+verify_concat({concat, Concat}) ->
+    do_concat(Concat);
+verify_concat({Key, Value}) ->
+    {Key, verify_concat(Value)};
+verify_concat(Other) ->
+    Other.
+
+do_concat(Concat) ->
+    do_concat(Concat, []).
+
+% empty object ( a={} )
+do_concat([], [{}]) ->
+    {[]};
+do_concat([], [Object| _Objects] = Acc) when is_tuple(Object) ->
+    {lists:reverse(Acc)};
+do_concat([], [String| _Strings] = Acc) when is_binary(String) ->
+    iolist_to_binary(lists:reverse(Acc));
+do_concat([], [Array| _Arrays] = Acc) when is_list(Array) ->
+    lists:append(lists:reverse(Acc));
+do_concat([], [Acc]) ->
+    Acc;
+do_concat([], Acc) ->
+    lists:reverse(Acc);
+
+do_concat([Array| More], Acc) when is_list(Array) ->
+    do_concat(More, [iter_over_list_for_concat(Array)| Acc]);
+do_concat([{Object}| More], Acc)  when is_list(Object) ->
+    do_concat(More, lists:foldl(fun(KV, A) -> [verify_concat(KV)| A] end, Acc, Object));
+do_concat([String| More], Acc)  when is_binary(String) ->
+    do_concat(More, [String| Acc]);
+do_concat([{concat, Concat}|More], Acc) ->
+    do_concat([do_concat(Concat)|More], Acc);
+do_concat([Other|More], Acc) ->
+    do_concat(More, [Other|Acc]).
 
 expand({Members}) ->
     expand(Members);
@@ -192,23 +319,22 @@ nested_put([Key|Paths], Val, Map) ->
 merge(Key, Val, Map) when is_map(Val) ->
     case maps:find(Key, Map) of
         {ok, MVal} when is_map(MVal) ->
-            maps:put(Key, maps:merge(MVal, Val), Map);
+            maps:put(Key, do_deep_merge(MVal, Val), Map);
         _Other -> maps:put(Key, Val, Map)
     end;
 merge(Key, Val, Map) -> maps:put(Key, Val, Map).
 
-nested_get(Key, Map) ->
-    nested_get(Key, Map, undefined).
-
-nested_get([Key], Map, Default) ->
-    maps:get(Key, Map, Default);
-nested_get([Key|More], Map, Default) ->
-    case maps:find(Key, Map) of
-        {ok, MVal} when is_map(MVal) ->
-            nested_get(More, MVal, Default);
-        {ok, _Val} -> Default;
-        error -> Default
-    end.
+do_deep_merge(M1, M2) when is_map(M1), is_map(M2) ->
+    maps:fold(fun(K, V2, Acc) ->
+        case Acc of
+            #{K := V1} ->
+                Acc#{K => do_deep_merge(V1, V2)};
+            _ ->
+                Acc#{K => V2}
+        end
+              end, M1, M2);
+do_deep_merge(_, Override) ->
+    Override.
 
 pipeline(Input, Ctx, [Fun | Steps]) ->
     Result = case is_function(Fun, 1) of
@@ -285,13 +411,19 @@ trans_key_lb(Otherwise) -> Otherwise.
 trans_splice_end(Tokens) ->
     trans_splice_end(Tokens, [], []).
 
-trans_splice_end([{string, _Line, _Value} = S | Tokens], Seq, Acc) ->
-    trans_splice_end(Tokens, [S | Seq], Acc);
-trans_splice_end([{variable, _Line, _Value} = V | Tokens], Seq, Acc) ->
-    trans_splice_end(Tokens, [V | Seq], Acc);
-trans_splice_end([Other | Tokens], Seq, Acc) ->
-    NewAcc = [Other | do_trans_splice_end(Seq) ++ Acc],
+trans_splice_end([{key, _Line, _Value} = V | Tokens], Seq, Acc) ->
+    NewAcc = [V | do_trans_splice_end(Seq) ++ Acc],
     trans_splice_end(Tokens, [], NewAcc);
+trans_splice_end([{T, _Line} = V | Tokens], Seq, Acc)  when T =:= ',' ->
+    NewAcc = [V | do_trans_splice_end(Seq) ++ Acc],
+    trans_splice_end(Tokens, [], NewAcc);
+trans_splice_end([{T, _Line} = V | Tokens], Seq, Acc)  when T =:= '}' orelse
+                                                            T =:= ']' ->
+    NewAcc = do_trans_splice_end(Seq) ++ Acc,
+    trans_splice_end(Tokens, [V], NewAcc);
+%% todo include
+trans_splice_end([V | Tokens], Seq, Acc) ->
+    trans_splice_end(Tokens, [V | Seq], Acc);
 trans_splice_end([], Seq, Acc) ->
     NewAcc = do_trans_splice_end(Seq) ++ Acc,
     lists:reverse(NewAcc).
@@ -300,4 +432,10 @@ do_trans_splice_end([]) -> [];
 do_trans_splice_end([{string, Line, Value} | T]) ->
     [{endstr, Line, Value} | T];
 do_trans_splice_end([{variable, Line, Value} | T]) ->
-    [{endvar, Line, Value} | T].
+    [{endvar, Line, Value} | T];
+do_trans_splice_end([{'}', Line} | T]) ->
+    [{endobj, Line} | T];
+do_trans_splice_end([{']', Line} | T]) ->
+    [{endarr, Line} | T];
+do_trans_splice_end(Other) ->
+    Other.
