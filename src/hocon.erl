@@ -285,13 +285,19 @@ trans_key_lb(Otherwise) -> Otherwise.
 trans_splice_end(Tokens) ->
     trans_splice_end(Tokens, [], []).
 
-trans_splice_end([{string, _Line, _Value} = S | Tokens], Seq, Acc) ->
-    trans_splice_end(Tokens, [S | Seq], Acc);
-trans_splice_end([{variable, _Line, _Value} = V | Tokens], Seq, Acc) ->
-    trans_splice_end(Tokens, [V | Seq], Acc);
-trans_splice_end([Other | Tokens], Seq, Acc) ->
-    NewAcc = [Other | do_trans_splice_end(Seq) ++ Acc],
+trans_splice_end([{key, _Line, _Value} = V | Tokens], Seq, Acc) ->
+    NewAcc = [V | do_trans_splice_end(Seq) ++ Acc],
     trans_splice_end(Tokens, [], NewAcc);
+trans_splice_end([{T, _Line} = V | Tokens], Seq, Acc)  when T =:= ',' ->
+    NewAcc = [V | do_trans_splice_end(Seq) ++ Acc],
+    trans_splice_end(Tokens, [], NewAcc);
+trans_splice_end([{T, _Line} = V | Tokens], Seq, Acc)  when T =:= '}' orelse
+                                                            T =:= ']' ->
+    NewAcc = do_trans_splice_end(Seq) ++ Acc,
+    trans_splice_end(Tokens, [V], NewAcc);
+%% todo include
+trans_splice_end([V | Tokens], Seq, Acc) ->
+    trans_splice_end(Tokens, [V | Seq], Acc);
 trans_splice_end([], Seq, Acc) ->
     NewAcc = do_trans_splice_end(Seq) ++ Acc,
     lists:reverse(NewAcc).
@@ -300,4 +306,10 @@ do_trans_splice_end([]) -> [];
 do_trans_splice_end([{string, Line, Value} | T]) ->
     [{endstr, Line, Value} | T];
 do_trans_splice_end([{variable, Line, Value} | T]) ->
-    [{endvar, Line, Value} | T].
+    [{endvar, Line, Value} | T];
+do_trans_splice_end([{'}', Line} | T]) ->
+    [{endobj, Line} | T];
+do_trans_splice_end([{']', Line} | T]) ->
+    [{endarr, Line} | T];
+do_trans_splice_end(Other) ->
+    Other.
