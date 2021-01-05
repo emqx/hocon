@@ -34,27 +34,48 @@ load(Filename) ->
 
 load(Filename0, Ctx0) ->
     Filename = filename:absname(Filename0),
-    Ctx = inc_stack_push(Ctx0, Filename),
+    Ctx = stack_multiple_push([{path, '$root'}, {filename, Filename}], Ctx0),
     pipeline(Filename, Ctx,
              [ fun read/1
              , fun scan/1
              , fun preparse/1
              , fun parse/1
+             , fun include/2
              , fun resolve/1
              , fun concat/1
              , fun expand/1
-             , fun transform/2
              ]).
+
+%% @doc Load a file and return a parsed key-value list.
+%% Because this function is intended to be called by include/2,
+%% variable substitution is not performed here.
+%% @end
+load_include(Filename0, Ctx0) ->
+    Cwd = filename:dirname(hd(get_stack(filename, Ctx0))),
+    Filename = filename:join([Cwd, Filename0]),
+    case is_included(Filename, Ctx0) of
+        true ->
+            {error, {cycle, get_stack(filename, Ctx0)}};
+        false ->
+            Ctx = stack_push({filename, Filename}, Ctx0),
+            pipeline(Filename, Ctx,
+                     [ fun read/1
+                     , fun scan/1
+                     , fun preparse/1
+                     , fun parse/1
+                     , fun include/2
+                     ])
+    end.
 
 binary(Binary) ->
     pipeline(Binary, #{},
              [ fun scan/1
              , fun preparse/1
              , fun parse/1
+             , fun include/2
              , fun resolve/1
              , fun concat/1
              , fun expand/1
-             , fun transform/2
              ]).
 
 dump(Config, App) ->
@@ -76,7 +97,7 @@ read(Filename) ->
         {ok, Bytes} ->
             {ok, Bytes};
         {error, Reason} ->
-            {error, Reason}
+            error({Reason, Filename})
     end.
 
 -spec(scan(binary()|string()) -> {ok, config()} | {error, Reason}
@@ -96,7 +117,7 @@ preparse(Tokens) ->
     try
         {ok, trans_key(Tokens)}
     catch
-        error:Reason:St -> {error, {Reason,St}}
+        error:Reason:St -> {error, {Reason, St}}
     end.
 
 -spec(parse(list()) -> {ok, config()} | {error, Reason}
@@ -109,50 +130,59 @@ parse(Tokens) ->
             parse_error(Line, ErrorInfo)
     end.
 
--spec(transform(config(), ctx()) -> {ok, config()}).
-transform(Config, Ctx) ->
-    try include(Config, Ctx) of
-        RootMap -> {ok, RootMap}
+-spec include(list(), ctx()) -> {ok, list()} | {error, any()}.
+include(KVList, Ctx) ->
+    try
+        {ok, do_include(KVList, Ctx)}
     catch
-        error:Reason:St -> {error, {Reason,St}}
+        error:Reason -> {error, Reason}
     end.
 
-include(RootMap, Ctx) ->
-    maps:fold(fun('$include', File, Acc) ->
-                      include(binary_to_list(File), Ctx, Acc);
-                 (Key, MVal, Acc) when is_map(MVal) ->
-                      Acc#{Key => include(MVal, Ctx)};
-                 (Key, Val, Acc) ->
-                      Acc#{Key => Val}
-              end, #{}, RootMap).
-
-include(File0, Ctx, Map) ->
-    %% File0 is the name given in the 'include' literal
-    Stack = inc_stack(Ctx),
-    Cwd = filename:dirname(hd(Stack)),
-    %% Cwd is abs path, if File0 is also abs, filename:join returns File0
-    File = filename:join([Cwd, File0]),
-    case is_included(Ctx, File) of
-        true ->
-            error({include_error, File0, {cycle, Stack}});
-        false ->
-            do_include(File, Ctx, Map)
+do_include(KVList, Ctx) ->
+    try
+        do_include(KVList, [], Ctx, get_stack(path, Ctx))
+    catch
+        error:Reason -> error(Reason)
     end.
 
-do_include(File, Ctx, Map) ->
-    case load(File, Ctx) of
-        {ok, MConf} ->
-            maps:merge(MConf, Map);
-        {error, Reason} ->
-            error({include_error, File, Reason})
-    end.
+do_include([], Acc, _Ctx, _CurrentPath) ->
+    lists:reverse(Acc);
+do_include([{'$include', Filename}|More], Acc, Ctx, CurrentPath) ->
+    case load_include(Filename, Ctx#{path := CurrentPath}) of
+        {ok, Parsed} -> do_include(More, lists:reverse(Parsed, Acc), Ctx, CurrentPath);
+        {error, Reason} -> error(Reason)
+    end;
+do_include([{var, Var}|More], Acc, Ctx, CurrentPath) ->
+    VarWithAbsPath = abspath(Var, get_stack(path, Ctx)),
+    do_include(More, [{var, VarWithAbsPath}|Acc], Ctx, CurrentPath);
+do_include([{Key, {concat, MaybeObject}}|More], Acc, Ctx, CurrentPath) ->
+    NewPath = [Key|CurrentPath],
+    do_include(More,
+               [{Key, {concat, do_include(MaybeObject, [], Ctx, NewPath)}}|Acc],
+               Ctx,
+               CurrentPath);
+do_include([{Object}|More], Acc, Ctx, CurrentPath) when is_list(Object) ->
+    do_include(More, [{do_include(Object, [], Ctx, CurrentPath)}|Acc], Ctx, CurrentPath);
+do_include([Other|More], Acc, Ctx, CurrentPath) ->
+    do_include(More, [Other|Acc], Ctx, CurrentPath).
+
+abspath(Var, PathStack) ->
+    do_abspath(atom_to_binary(Var, utf8), PathStack).
+
+do_abspath(Var, []) ->
+    binary_to_atom(Var, utf8);
+do_abspath(Var, ['$root']) ->
+    binary_to_atom(Var, utf8);
+do_abspath(Var, [Path|More]) ->
+    do_abspath(iolist_to_binary([atom_to_binary(Path, utf8), <<".">>, Var]), More).
+
 
 -spec resolve(list()) -> {ok, list()} | {error, any()}.
 resolve(KVList) ->
     try
         {ok, do_resolve(KVList)}
     catch
-        error:Reason:St -> {error, {Reason,St}}
+        error:Reason:St -> {error, {Reason, St}}
     end.
 
 do_resolve(KVList) ->
@@ -248,7 +278,7 @@ concat(List) ->
     try
         {ok, iter_over_list_for_concat(List)}
     catch
-        error:Reason:St -> {error, {Reason,St}}
+        error:Reason:St -> {error, {Reason, St}}
     end.
 
 iter_over_list_for_concat(List) when is_list(List) ->
@@ -359,15 +389,18 @@ format_error(Line, ErrorInfo) ->
       iolist_to_binary(
         [ErrorInfo, io_lib:format(" in line ~w", [Line])])).
 
-inc_stack_push(Ctx, File) ->
-    Includes = inc_stack(Ctx),
-    Ctx#{stack => [File | Includes]}.
+stack_multiple_push(List, Ctx) ->
+    lists:foldl(fun stack_push/2, Ctx, List).
 
-is_included(Ctx, File) ->
-    Includes = inc_stack(Ctx),
-    lists:any(fun(F) -> is_same_file(F, File) end, Includes).
+stack_push({Key, Value}, Ctx) ->
+    Stack = get_stack(Key, Ctx),
+    Ctx#{Key => [Value | Stack]}.
 
-inc_stack(Ctx) -> maps:get(stack, Ctx, []).
+is_included(Filename, Ctx) ->
+    Includes = get_stack(filename, Ctx),
+    lists:any(fun(F) -> is_same_file(F, Filename) end, Includes).
+
+get_stack(Key, Ctx) -> maps:get(Key, Ctx, []).
 
 is_same_file(A, B) ->
     real_file_name(A) =:= real_file_name(B).
@@ -414,6 +447,9 @@ trans_splice_end(Tokens) ->
 trans_splice_end([{key, _Line, _Value} = V | Tokens], Seq, Acc) ->
     NewAcc = [V | do_trans_splice_end(Seq) ++ Acc],
     trans_splice_end(Tokens, [], NewAcc);
+trans_splice_end([{include, _File} = V | Tokens], Seq, Acc) ->
+    NewAcc = [V | do_trans_splice_end(Seq) ++ Acc],
+    trans_splice_end(Tokens, [], NewAcc);
 trans_splice_end([{T, _Line} = V | Tokens], Seq, Acc)  when T =:= ',' ->
     NewAcc = [V | do_trans_splice_end(Seq) ++ Acc],
     trans_splice_end(Tokens, [], NewAcc);
@@ -421,7 +457,6 @@ trans_splice_end([{T, _Line} = V | Tokens], Seq, Acc)  when T =:= '}' orelse
                                                             T =:= ']' ->
     NewAcc = do_trans_splice_end(Seq) ++ Acc,
     trans_splice_end(Tokens, [V], NewAcc);
-%% todo include
 trans_splice_end([V | Tokens], Seq, Acc) ->
     trans_splice_end(Tokens, [V | Seq], Acc);
 trans_splice_end([], Seq, Acc) ->
