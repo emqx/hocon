@@ -148,11 +148,6 @@ do_include([{'$include', Filename}|More], Acc, Ctx, CurrentPath) ->
         {ok, Parsed} -> do_include(More, lists:reverse(Parsed, Acc), Ctx, CurrentPath);
         {error, Reason} -> error(Reason)
     end;
-do_include([{[{'$include', Filename}]}|More], Acc, Ctx, CurrentPath) ->
-    case load_include(Filename, Ctx#{path := CurrentPath}) of
-        {ok, Parsed} -> do_include(More, [{Parsed}|Acc], Ctx, CurrentPath);
-        {error, Reason} -> error(Reason)
-    end;
 do_include([{var, Var}|More], Acc, Ctx, _CurrentPath) ->
     VarWithAbsPath = abspath(Var, get_stack(path, Ctx)),
     do_include(More, [{var, VarWithAbsPath}|Acc], Ctx, _CurrentPath);
