@@ -46,6 +46,10 @@ load(Filename0, Ctx0) ->
              , fun expand/1
              ]).
 
+%% @doc Load a file and return a parsed key-value list.
+%% Because this function is intended to be called by include/2,
+%% variable substitution is not performed here.
+%% @end
 load_include(Filename0, Ctx0) ->
     Cwd = filename:dirname(hd(get_stack(filename, Ctx0))),
     Filename = filename:join([Cwd, Filename0]),
