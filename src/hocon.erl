@@ -145,7 +145,7 @@ do_include([], Acc, _Ctx, _CurrentPath) ->
     lists:reverse(Acc);
 do_include([{'$include', Filename}|More], Acc, Ctx, CurrentPath) ->
     case load_include(Filename, Ctx#{path := CurrentPath}) of
-        {ok, Parsed} -> do_include(More, unpack_kvlist(Parsed, Acc), Ctx, CurrentPath);
+        {ok, Parsed} -> do_include(More, lists:reverse(Parsed, Acc), Ctx, CurrentPath);
         {error, Reason} -> error(Reason)
     end;
 do_include([{[{'$include', Filename}]}|More], Acc, Ctx, CurrentPath) ->
@@ -174,8 +174,6 @@ do_abspath(Var, ['$root']) ->
 do_abspath(Var, [Path|More]) ->
     do_abspath(iolist_to_binary([atom_to_binary(Path, utf8), <<".">>, Var]), More).
 
-unpack_kvlist(KVList, AccIn) ->
-    lists:foldl(fun (Elem, A) -> [Elem|A] end, AccIn, KVList).
 
 -spec resolve(list()) -> {ok, list()} | {error, any()}.
 resolve(KVList) ->
