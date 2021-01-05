@@ -447,6 +447,9 @@ trans_splice_end(Tokens) ->
 trans_splice_end([{key, _Line, _Value} = V | Tokens], Seq, Acc) ->
     NewAcc = [V | do_trans_splice_end(Seq) ++ Acc],
     trans_splice_end(Tokens, [], NewAcc);
+trans_splice_end([{include, _File} = V | Tokens], Seq, Acc) ->
+    NewAcc = [V | do_trans_splice_end(Seq) ++ Acc],
+    trans_splice_end(Tokens, [], NewAcc);
 trans_splice_end([{T, _Line} = V | Tokens], Seq, Acc)  when T =:= ',' ->
     NewAcc = [V | do_trans_splice_end(Seq) ++ Acc],
     trans_splice_end(Tokens, [], NewAcc);
@@ -454,7 +457,6 @@ trans_splice_end([{T, _Line} = V | Tokens], Seq, Acc)  when T =:= '}' orelse
                                                             T =:= ']' ->
     NewAcc = do_trans_splice_end(Seq) ++ Acc,
     trans_splice_end(Tokens, [V], NewAcc);
-%% todo include
 trans_splice_end([V | Tokens], Seq, Acc) ->
     trans_splice_end(Tokens, [V | Seq], Acc);
 trans_splice_end([], Seq, Acc) ->
