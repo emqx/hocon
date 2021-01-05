@@ -96,8 +96,8 @@ read(Filename) ->
             {ok, Rest};
         {ok, Bytes} ->
             {ok, Bytes};
-        {error, enoent} ->
-            error({enoent, Filename})
+        {error, Reason} ->
+            error({Reason, Filename})
     end.
 
 -spec(scan(binary()|string()) -> {ok, config()} | {error, Reason}
