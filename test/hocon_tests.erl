@@ -28,13 +28,38 @@ sample_files_test_() ->
      end || F <- filelib:wildcard(Wildcard)].
 
 test_file_load("cycle"++_, F) ->
-    ?assertMatch({error, {{include_error, _, _}, _}}, hocon:load(F));
+    ?assertMatch({error, {cycle, _}}, hocon:load(F));
 test_file_load("test13-reference-bad-substitutions", F) ->
     ?assertMatch({error, {{unresolved,[b]}, _}}, hocon:load(F));
+% include "test01" is not allowed.
+test_file_load("test03", F) ->
+    ?assertMatch({error,{enoent,_Filename}}, hocon:load(F));
+test_file_load("test03-included", F) ->
+    ?assertMatch({error, {{unresolved,[bar]}, _}}, hocon:load(F));
+test_file_load("test05", F) ->
+    ?assertMatch({error,{scan_error,"illegal characters \"%\" in line 15"}}, hocon:load(F));
 test_file_load("test07", F) ->
-    ?assertMatch({error, {{include_error,_, enoent}, _}}, hocon:load(F));
+    ?assertMatch({error, {enoent, _Filename}}, hocon:load(F));
 test_file_load("test08", F) ->
-    ?assertMatch({error, {{include_error,_, enoent}, _}}, hocon:load(F));
+    ?assertMatch({error, {enoent, _Filename}}, hocon:load(F));
+test_file_load("test10", F) ->
+    ?assertEqual({ok,#{bar =>
+                       #{nested =>
+                         #{a => #{c => 3,q => 10},
+                           b => 5,
+                           c =>
+                           #{d => 600,
+                             e => #{c => 3},
+                             f => 5,q => 10},
+                           x => #{q => 10},
+                           y => 5}},
+                       foo =>
+                       #{a => #{c => 3,q => 10},
+                         b => 5,
+                         c => #{d => 600,e => #{c => 3},f => 5,q => 10},
+                         x => #{q => 10},
+                         y => 5}}},
+                 hocon:load(F));
 test_file_load(_Name, F) ->
     ?assertMatch({ok, _}, hocon:load(F)).
 
