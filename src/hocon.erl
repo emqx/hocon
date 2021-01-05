@@ -34,7 +34,7 @@ load(Filename) ->
 
 load(Filename0, Ctx0) ->
     Filename = filename:absname(Filename0),
-    Ctx = inc_stack_multiple_push([{path, '$root'}, {filename, Filename}], Ctx0),
+    Ctx = stack_multiple_push([{path, '$root'}, {filename, Filename}], Ctx0),
     pipeline(Filename, Ctx,
              [ fun read/1
              , fun scan/1
@@ -47,13 +47,13 @@ load(Filename0, Ctx0) ->
              ]).
 
 load_include(Filename0, Ctx0) ->
-    Cwd = filename:dirname(hd(inc_stack(filename, Ctx0))),
+    Cwd = filename:dirname(hd(get_stack(filename, Ctx0))),
     Filename = filename:join([Cwd, Filename0]),
     case is_included(Filename, Ctx0) of
         true ->
-            {error, {cycle, inc_stack(filename, Ctx0)}};
+            {error, {cycle, get_stack(filename, Ctx0)}};
         false ->
-            Ctx = inc_stack_push({filename, Filename}, Ctx0),
+            Ctx = stack_push({filename, Filename}, Ctx0),
             pipeline(Filename, Ctx,
                      [ fun read/1
                      , fun scan/1
@@ -136,7 +136,7 @@ include(KVList, Ctx) ->
 
 do_include(KVList, Ctx) ->
     try
-        do_include(KVList, [], Ctx, inc_stack(path, Ctx))
+        do_include(KVList, [], Ctx, get_stack(path, Ctx))
     catch
         error:Reason -> error(Reason)
     end.
@@ -154,7 +154,7 @@ do_include([{[{'$include', Filename}]}|More], Acc, Ctx, CurrentPath) ->
         {error, Reason} -> error(Reason)
     end;
 do_include([{var, Var}|More], Acc, Ctx, _CurrentPath) ->
-    VarWithAbsPath = abspath(Var, inc_stack(path, Ctx)),
+    VarWithAbsPath = abspath(Var, get_stack(path, Ctx)),
     do_include(More, [{var, VarWithAbsPath}|Acc], Ctx, _CurrentPath);
 do_include([{Key, {concat, MaybeObject}}|More], Acc, Ctx, CurrentPath) ->
     NewPath = [Key|CurrentPath],
@@ -387,18 +387,18 @@ format_error(Line, ErrorInfo) ->
       iolist_to_binary(
         [ErrorInfo, io_lib:format(" in line ~w", [Line])])).
 
-inc_stack_multiple_push(List, Ctx) ->
-    lists:foldl(fun inc_stack_push/2, Ctx, List).
+stack_multiple_push(List, Ctx) ->
+    lists:foldl(fun stack_push/2, Ctx, List).
 
-inc_stack_push({Key, Value}, Ctx) ->
-    Stack = inc_stack(Key, Ctx),
+stack_push({Key, Value}, Ctx) ->
+    Stack = get_stack(Key, Ctx),
     Ctx#{Key => [Value | Stack]}.
 
 is_included(Filename, Ctx) ->
-    Includes = inc_stack(filename, Ctx),
+    Includes = get_stack(filename, Ctx),
     lists:any(fun(F) -> is_same_file(F, Filename) end, Includes).
 
-inc_stack(Key, Ctx) -> maps:get(Key, Ctx, []).
+get_stack(Key, Ctx) -> maps:get(Key, Ctx, []).
 
 is_same_file(A, B) ->
     real_file_name(A) =:= real_file_name(B).
