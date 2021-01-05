@@ -113,7 +113,7 @@ preparse(Tokens) ->
     try
         {ok, trans_key(Tokens)}
     catch
-        error:Reason:St -> {error, {Reason,St}}
+        error:Reason:St -> {error, {Reason, St}}
     end.
 
 -spec(parse(list()) -> {ok, config()} | {error, Reason}
@@ -148,12 +148,15 @@ do_include([{'$include', Filename}|More], Acc, Ctx, CurrentPath) ->
         {ok, Parsed} -> do_include(More, lists:reverse(Parsed, Acc), Ctx, CurrentPath);
         {error, Reason} -> error(Reason)
     end;
-do_include([{var, Var}|More], Acc, Ctx, _CurrentPath) ->
+do_include([{var, Var}|More], Acc, Ctx, CurrentPath) ->
     VarWithAbsPath = abspath(Var, get_stack(path, Ctx)),
-    do_include(More, [{var, VarWithAbsPath}|Acc], Ctx, _CurrentPath);
+    do_include(More, [{var, VarWithAbsPath}|Acc], Ctx, CurrentPath);
 do_include([{Key, {concat, MaybeObject}}|More], Acc, Ctx, CurrentPath) ->
     NewPath = [Key|CurrentPath],
-    do_include(More, [{Key, {concat, do_include(MaybeObject, [], Ctx, NewPath)}}|Acc], Ctx, CurrentPath);
+    do_include(More,
+               [{Key, {concat, do_include(MaybeObject, [], Ctx, NewPath)}}|Acc],
+               Ctx,
+               CurrentPath);
 do_include([{Object}|More], Acc, Ctx, CurrentPath) when is_list(Object) ->
     do_include(More, [{do_include(Object, [], Ctx, CurrentPath)}|Acc], Ctx, CurrentPath);
 do_include([Other|More], Acc, Ctx, CurrentPath) ->
@@ -175,7 +178,7 @@ resolve(KVList) ->
     try
         {ok, do_resolve(KVList)}
     catch
-        error:Reason:St -> {error, {Reason,St}}
+        error:Reason:St -> {error, {Reason, St}}
     end.
 
 do_resolve(KVList) ->
@@ -271,7 +274,7 @@ concat(List) ->
     try
         {ok, iter_over_list_for_concat(List)}
     catch
-        error:Reason:St -> {error, {Reason,St}}
+        error:Reason:St -> {error, {Reason, St}}
     end.
 
 iter_over_list_for_concat(List) when is_list(List) ->
