@@ -13,8 +13,7 @@ NOTE: Our goal is not to make this library fully compliant to HOCON spec.
 - No unicode support (at least not verified).
 - The forbidden character `@` is allowed in unquoted strings.
 - Value concatenation is not allowed in keys e.g. `a b c : 42` is invalid.
-- Value concatenation is only allowed for string values,
-  and the concatenation may span multiple lines. e.g. all below Erlang strings
+- String value concatenation may span multiple lines. e.g. all below Erlang strings
   are parsed to the same result (`${key => <<"value1value2">>}`):
   * `"key=value1 value2"`
   * `"key=value1value2"`
