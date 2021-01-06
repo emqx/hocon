@@ -35,16 +35,10 @@ load(Filename) ->
 load(Filename0, Ctx0) ->
     Filename = filename:absname(Filename0),
     Ctx = stack_multiple_push([{path, '$root'}, {filename, Filename}], Ctx0),
-    pipeline(Filename, Ctx,
-             [ fun read/1
-             , fun scan/1
-             , fun preparse/1
-             , fun parse/1
-             , fun include/2
-             , fun resolve/1
-             , fun concat/1
-             , fun expand/1
-             ]).
+    case read(Filename) of
+        {ok, File} -> binary(File, Ctx);
+        {error, Reason} -> {error, Reason}
+    end.
 
 %% @doc Load a file and return a parsed key-value list.
 %% Because this function is intended to be called by include/2,
@@ -67,8 +61,9 @@ load_include(Filename0, Ctx0) ->
                      ])
     end.
 
-binary(Binary) ->
-    pipeline(Binary, #{},
+binary(Binary) -> binary(Binary, #{}).
+binary(Binary, Ctx) ->
+    pipeline(Binary, Ctx,
              [ fun scan/1
              , fun preparse/1
              , fun parse/1

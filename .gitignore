@@ -4,6 +4,7 @@
 *.plt
 erl_crash.dump
 .concrete/DEV_MODE
+/elvis
 
 # rebar 2.x
 .rebar
