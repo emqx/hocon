@@ -30,12 +30,12 @@ sample_files_test_() ->
 test_file_load("cycle"++_, F) ->
     ?assertMatch({error, {cycle, _}}, hocon:load(F));
 test_file_load("test13-reference-bad-substitutions", F) ->
-    ?assertMatch({error, {{unresolved, [b]}, _}}, hocon:load(F));
+    ?assertMatch({error, {unresolved, [b]}}, hocon:load(F));
 % include "test01" is not allowed.
 test_file_load("test03", F) ->
     ?assertMatch({error, {enoent, _}}, hocon:load(F));
 test_file_load("test03-included", F) ->
-    ?assertMatch({error, {{unresolved, [bar]}, _}}, hocon:load(F));
+    ?assertMatch({error, {unresolved, [bar]}}, hocon:load(F));
 test_file_load("test05", F) ->
     ?assertMatch({error, {scan_error, "illegal characters \"%\" in line 15"}}, hocon:load(F));
 test_file_load("test07", F) ->
