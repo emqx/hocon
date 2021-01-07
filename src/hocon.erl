@@ -188,12 +188,13 @@ do_expand([Other|More], Acc) ->
     do_expand(More, [Other|Acc]).
 
 create_nested(Key, Value) when is_atom(Key) ->
-    {concat, [{[Res]}]} = create_nested(paths(Key), Value),
-    Res;
-create_nested([], Value) ->
+    {concat, [{[Res]}]} = do_create_nested(paths(Key), Value),
+    Res.
+
+do_create_nested([], Value) ->
     Value;
-create_nested([Path|More], Value) ->
-    {concat, [{[{Path, create_nested(More, Value)}]}]}.
+do_create_nested([Path|More], Value) ->
+    {concat, [{[{Path, do_create_nested(More, Value)}]}]}.
 
 -spec resolve(list()) -> {ok, list()} | {error, any()}.
 resolve(KVList) ->
