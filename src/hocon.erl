@@ -68,9 +68,10 @@ binary(Binary, Ctx) ->
              , fun preparse/1
              , fun parse/1
              , fun include/2
+             , fun expand/1
              , fun resolve/1
              , fun concat/1
-             , fun expand/1
+             , fun transform/1
              ]).
 
 dump(Config, App) ->
@@ -171,6 +172,28 @@ do_abspath(Var, ['$root']) ->
 do_abspath(Var, [Path|More]) ->
     do_abspath(iolist_to_binary([atom_to_binary(Path, utf8), <<".">>, Var]), More).
 
+-spec expand(list()) -> {ok, list()}.
+expand(KVList) ->
+    {ok, do_expand(KVList, [])}.
+
+do_expand([], Acc) ->
+    lists:reverse(Acc);
+do_expand([{Key, {concat, C}}|More], Acc) ->
+    do_expand(More, [create_nested(Key, {concat, do_expand(C, [])})|Acc]);
+do_expand([{Key, Value}|More], Acc) ->
+    do_expand(More, [create_nested(Key, Value)|Acc]);
+do_expand([{Object}|More], Acc) when is_list(Object) ->
+    do_expand(More, [{do_expand(Object, [])}|Acc]);
+do_expand([Other|More], Acc) ->
+    do_expand(More, [Other|Acc]).
+
+create_nested(Key, Value) when is_atom(Key) ->
+    {concat, [{[Res]}]} = create_nested(paths(Key), Value),
+    Res;
+create_nested([], Value) ->
+    Value;
+create_nested([Path|More], Value) ->
+    {concat, [{[{Path, create_nested(More, Value)}]}]}.
 
 -spec resolve(list()) -> {ok, list()} | {error, any()}.
 resolve(KVList) ->
@@ -314,20 +337,20 @@ do_concat([{concat, Concat}|More], Acc) ->
 do_concat([Other|More], Acc) ->
     do_concat(More, [Other|Acc]).
 
-expand({Members}) ->
-    expand(Members);
-expand(Members) when is_list(Members) ->
-    expand(Members, #{}).
+transform({Members}) ->
+    transform(Members);
+transform(Members) when is_list(Members) ->
+    transform(Members, #{}).
 
-expand([], Map) -> Map;
-expand([{Key, Value}|More], Map) ->
-    expand(More, nested_put(paths(Key), expand_value(Value), Map)).
+transform([], Map) -> Map;
+transform([{Key, Value}| More], Map) ->
+    transform(More, nested_put(paths(Key), unpack(Value), Map)).
 
-expand_value({Members}) ->
-    expand(Members);
-expand_value(Array) when is_list(Array) ->
-    [expand_value(Val) || Val <- Array];
-expand_value(Literal) -> Literal.
+unpack({Members}) ->
+    transform(Members);
+unpack(Array) when is_list(Array) ->
+    [unpack(Val) || Val <- Array];
+unpack(Literal) -> Literal.
 
 paths(Key) when is_atom(Key) ->
     paths(atom_to_list(Key));
