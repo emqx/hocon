@@ -33,8 +33,8 @@ load(Filename0) ->
     Filename = filename:absname(Filename0),
     Ctx = stack_multiple_push([{path, '$root'}, {filename, Filename}], #{}),
     try
-        {ok, File} = read(Filename),
-        do_binary(File, Ctx)
+        Bytes = read(Filename),
+        {ok, do_binary(Bytes, Ctx)}
     catch
         throw:Reason -> {error, Reason}
     end.
@@ -54,7 +54,7 @@ load_include(Filename0, Ctx0) ->
             pipeline(Filename, Ctx,
                      [ fun read/1
                      , fun scan/1
-                     , fun preparse/1
+                     , fun trans_key/1
                      , fun parse/1
                      , fun include/2
                      ])
@@ -62,14 +62,15 @@ load_include(Filename0, Ctx0) ->
 
 binary(Binary) ->
     try
-        do_binary(Binary, #{})
+        {ok, do_binary(Binary, #{})}
     catch
         throw:Reason -> {error, Reason}
     end.
+
 do_binary(Binary, Ctx) ->
     pipeline(Binary, Ctx,
              [ fun scan/1
-             , fun preparse/1
+             , fun trans_key/1
              , fun parse/1
              , fun include/2
              , fun expand/1
@@ -88,56 +89,46 @@ to_list(Config) when is_map(Config) ->
     maps:to_list(maps:map(fun(_Key, MVal) -> to_list(MVal) end, Config));
 to_list(Value) -> Value.
 
--spec read(file:filename()) -> {ok, binary()}.
+-spec read(file:filename()) -> binary().
 read(Filename) ->
     case file:read_file(Filename) of
         {ok, <<239, 187, 191, Rest/binary>>} ->
             %% Ignore BOM header
-            {ok, Rest};
+            Rest;
         {ok, Bytes} ->
-            {ok, Bytes};
+            Bytes;
         {error, Reason} ->
             throw({Reason, Filename})
     end.
 
--spec scan(binary()|string()) -> {ok, config()}.
+-spec scan(binary()|string()) -> config().
 scan(Input) when is_binary(Input) ->
     scan(binary_to_list(Input));
 scan(Input) when is_list(Input) ->
     case hocon_scanner:string(Input) of
-        {ok, Tokens, _EndLine} -> {ok, Tokens};
+        {ok, Tokens, _EndLine} ->
+            Tokens;
         {error, {Line, _Mod, ErrorInfo}, _} ->
             scan_error(Line, hocon_scanner:format_error(ErrorInfo))
     end.
 
-
--spec preparse(list()) -> {ok, list()}.
-preparse(Tokens) ->
-    {ok, trans_key(Tokens)}.
-
--spec parse(list()) -> {ok, config()}.
-parse([]) -> {ok, []};
+parse([]) -> [];
 parse(Tokens) ->
     case hocon_parser:parse(Tokens) of
-        {ok, Ret} -> {ok, Ret};
+        {ok, Ret} -> Ret;
         {error, {Line, _Module, ErrorInfo}} ->
             parse_error(Line, ErrorInfo)
     end.
 
--spec include(list(), ctx()) -> {ok, list()}.
+-spec include(list(), ctx()) -> list().
 include(KVList, Ctx) ->
-    {ok, do_include(KVList, Ctx)}.
-
-do_include(KVList, Ctx) ->
     do_include(KVList, [], Ctx, get_stack(path, Ctx)).
 
 do_include([], Acc, _Ctx, _CurrentPath) ->
     lists:reverse(Acc);
 do_include([{'$include', Filename}|More], Acc, Ctx, CurrentPath) ->
-    case load_include(Filename, Ctx#{path := CurrentPath}) of
-        {ok, Parsed} -> do_include(More, lists:reverse(Parsed, Acc), Ctx, CurrentPath);
-        {error, Reason} -> throw(Reason)
-    end;
+    Parsed = load_include(Filename, Ctx#{path := CurrentPath}),
+    do_include(More, lists:reverse(Parsed, Acc), Ctx, CurrentPath);
 do_include([{var, Var}|More], Acc, Ctx, CurrentPath) ->
     VarWithAbsPath = abspath(Var, get_stack(path, Ctx)),
     do_include(More, [{var, VarWithAbsPath}|Acc], Ctx, CurrentPath);
@@ -162,9 +153,8 @@ do_abspath(Var, ['$root']) ->
 do_abspath(Var, [Path|More]) ->
     do_abspath(iolist_to_binary([atom_to_binary(Path, utf8), <<".">>, Var]), More).
 
--spec expand(list()) -> {ok, list()}.
 expand(KVList) ->
-    {ok, do_expand(KVList, [])}.
+    do_expand(KVList, []).
 
 do_expand([], Acc) ->
     lists:reverse(Acc);
@@ -186,16 +176,12 @@ do_create_nested([], Value) ->
 do_create_nested([Path|More], Value) ->
     {concat, [{[{Path, do_create_nested(More, Value)}]}]}.
 
--spec resolve(list()) -> {ok, list()}.
 resolve(KVList) ->
-    {ok, do_resolve(KVList)}.
-
-do_resolve(KVList) ->
     case do_resolve(KVList, [], [], KVList) of
         skip ->
             KVList;
         {resolved, Resolved} ->
-            do_resolve(Resolved);
+            resolve(Resolved);
         {unresolved, Unresolved} ->
             throw({unresolved, lists:flatten(Unresolved)})
     end.
@@ -278,11 +264,8 @@ lookup(Var, [_Other|More], ResolvedValue) ->
 lookup(_Var, [], ResolvedValue) ->
     ResolvedValue.
 
--spec concat(list()) -> {ok, list()}.
+-spec concat(list()) -> list().
 concat(List) ->
-    {ok, iter_over_list_for_concat(List)}.
-
-iter_over_list_for_concat(List) when is_list(List) ->
     lists:map(fun (E) -> verify_concat(E) end, List).
 
 verify_concat({concat, Concat}) ->
@@ -310,7 +293,7 @@ do_concat([], Acc) ->
     lists:reverse(Acc);
 
 do_concat([Array| More], Acc) when is_list(Array) ->
-    do_concat(More, [iter_over_list_for_concat(Array)| Acc]);
+    do_concat(More, [concat(Array)| Acc]);
 do_concat([{Object}| More], Acc)  when is_list(Object) ->
     do_concat(More, lists:foldl(fun(KV, A) -> [verify_concat(KV)| A] end, Acc, Object));
 do_concat([String| More], Acc)  when is_binary(String) ->
@@ -320,12 +303,9 @@ do_concat([{concat, Concat}|More], Acc) ->
 do_concat([Other|More], Acc) ->
     do_concat(More, [Other|Acc]).
 
-transform(KVList) ->
-    {ok, do_transform(KVList)}.
-
-do_transform({Members}) ->
-    do_transform(Members);
-do_transform(Members) when is_list(Members) ->
+transform({Members}) ->
+    transform(Members);
+transform(Members) when is_list(Members) ->
     do_transform(Members, #{}).
 
 do_transform([], Map) -> Map;
@@ -333,7 +313,7 @@ do_transform([{Key, Value}| More], Map) ->
     do_transform(More, nested_put(paths(Key), unpack(Value), Map)).
 
 unpack({Members}) ->
-    do_transform(Members);
+    transform(Members);
 unpack(Array) when is_list(Array) ->
     [unpack(Val) || Val <- Array];
 unpack(Literal) -> Literal.
@@ -371,12 +351,12 @@ do_deep_merge(_, Override) ->
     Override.
 
 pipeline(Input, Ctx, [Fun | Steps]) ->
-    {ok, Output} = case is_function(Fun, 1) of
-                   true -> Fun(Input);
-                   false -> Fun(Input, Ctx)
+    Output = case is_function(Fun, 1) of
+                 true -> Fun(Input);
+                 false -> Fun(Input, Ctx)
              end,
     pipeline(Output, Ctx, Steps);
-pipeline(Output, _Ctx, []) -> {ok, Output}.
+pipeline(Result, _Ctx, []) -> Result.
 
 scan_error(Line, ErrorInfo) ->
     throw({scan_error, format_error(Line, ErrorInfo)}).
