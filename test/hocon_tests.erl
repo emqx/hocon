@@ -151,6 +151,19 @@ array_element_splice_test_() ->
     , ?_assertEqual(#{a=>[<<"xyz">>, <<"a">>]}, binary("a=[x y z, a]"))
     ].
 
+expand_paths_test_() ->
+    [ ?_assertEqual(#{foo => #{x => 1}, y => 1},
+                    binary(<<"foo.x=1, y=${foo.x}">>))
+    , ?_assertEqual(#{foo => #{x => #{p => 1}}, y => #{p => 1}},
+                    binary(<<"foo.x={p:1}, y=${foo.x}">>))
+    , ?_assertEqual(#{foo => #{x => [1, 2]}, y => [1, 2]},
+                    binary(<<"foo.x=[1,2], y=${foo.x}">>))
+    , ?_assertEqual(#{foo => #{x => [1, 2], y => [1, 2]}},
+                    binary(<<"foo.x=[1,2], foo.y=${foo.x}">>))
+    , ?_assertEqual(#{a => #{b => #{c => 1}}},
+                    binary(<<"a.b.c={d=1}, a.b.c=${a.b.c.d}">>))
+    ].
+
 binary(B) when is_binary(B) ->
     {ok, R} = hocon:binary(B),
     R;
