@@ -80,6 +80,7 @@ Duration            = {Digit}+(d|D|h|H|m|M|s|S|ms|MS)
 %% Variable
 Literal             = {Bool}|{Integer}|{Float}|{String}|{Unquoted}|{Percent}{Bytesize}|{Duration}
 Variable            = \$\{{Unquoted}\}
+MaybeVar            = \$\{\?{Unquoted}\}
 
 Rules.
 
@@ -97,6 +98,8 @@ Rules.
 {Percent}         : {token, {percent, TokenLine, percent(TokenChars)}}.
 {Duration}        : {token, {duration, TokenLine, duration(TokenChars)}}.
 {Variable}        : {token, {variable, TokenLine, {var, var_ref_name(TokenChars)}}}.
+{MaybeVar}        : {token, {variable, TokenLine, {var, {maybe, maybe_var_ref_name(TokenChars)}}}}.
+
 
 Erlang code.
 
@@ -144,6 +147,10 @@ duration(Val, "h")  -> Val * ?HOUR;
 duration(Val, "m")  -> Val * ?MINUTE;
 duration(Val, "s")  -> Val * ?SECOND;
 duration(Val, "ms") -> Val.
+
+maybe_var_ref_name("${?" ++ Name_CR) ->
+    [$} | NameRev] = lists:reverse(Name_CR),
+    list_to_atom(string:trim(lists:reverse(NameRev))).
 
 var_ref_name("${" ++ Name_CR) ->
     [$} | NameRev] = lists:reverse(Name_CR),

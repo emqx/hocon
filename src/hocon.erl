@@ -75,6 +75,7 @@ do_binary(Binary, Ctx) ->
              , fun include/2
              , fun expand/1
              , fun resolve/1
+             , fun remove_nothing/1
              , fun concat/1
              , fun transform/1
              ]).
@@ -143,6 +144,8 @@ do_include([{Object}|More], Acc, Ctx, CurrentPath) when is_list(Object) ->
 do_include([Other|More], Acc, Ctx, CurrentPath) ->
     do_include(More, [Other|Acc], Ctx, CurrentPath).
 
+abspath({maybe, Var}, PathStack) ->
+    {maybe, do_abspath(atom_to_binary(Var, utf8), PathStack)};
 abspath(Var, PathStack) ->
     do_abspath(atom_to_binary(Var, utf8), PathStack).
 
@@ -196,7 +199,9 @@ do_resolve([V|More], Acc, Unresolved, RootKVList) ->
         {unresolved, Var} ->
             do_resolve(More, [V| Acc], [Var| Unresolved], RootKVList);
         skip ->
-            do_resolve(More, [V| Acc], Unresolved, RootKVList)
+            do_resolve(More, [V| Acc], Unresolved, RootKVList);
+        delete ->
+            {resolved, lists:reverse(Acc, [nothing|More])}
     end;
 do_resolve({concat, List}, _Acc, _Unresolved, RootKVList) when is_list(List) ->
     case do_resolve(List, [], [], RootKVList) of
@@ -206,6 +211,13 @@ do_resolve({concat, List}, _Acc, _Unresolved, RootKVList) when is_list(List) ->
             {unresolved, Var};
         skip ->
             skip
+    end;
+do_resolve({var, {maybe, Var}}, _Acc, _Unresolved, RootKVList) ->
+    case lookup(paths(Var), RootKVList) of
+        notfound ->
+            delete;
+        ResolvedValue ->
+            {resolved, ResolvedValue}
     end;
 do_resolve({var, Var}, _Acc, _Unresolved, RootKVList) ->
     case lookup(paths(Var), RootKVList) of
@@ -230,7 +242,9 @@ do_resolve({Key, Value}, _Acc, _Unresolved, RootKVList) ->
         {unresolved, Var} ->
             {unresolved, Var};
         skip ->
-            skip
+            skip;
+        delete ->
+            delete
     end;
 do_resolve(_Constant, _Acc, _Unresolved, _RootKVList) ->
     skip.
@@ -263,6 +277,64 @@ lookup(Var, [_Other|More], ResolvedValue) ->
     lookup(Var, More, ResolvedValue);
 lookup(_Var, [], ResolvedValue) ->
     ResolvedValue.
+
+remove_nothing(List) ->
+    remove_nothing(List, []).
+
+remove_nothing([], Acc) ->
+    lists:reverse(Acc);
+remove_nothing([{Key, {concat, Concat}}|More], Acc) ->
+    % if the value of an object field is an unresolved maybevar
+    % then the field should not be created.
+    case do_remove_nothing(Concat) of
+        [] ->
+            remove_nothing(More, Acc);
+        Removed ->
+            remove_nothing(More, [{Key, {concat, Removed}}|Acc])
+    end;
+remove_nothing([{concat, Concat}|More], Acc) ->
+    case do_remove_nothing(Concat) of
+        [] ->
+            remove_nothing(More, Acc);
+        Removed ->
+            remove_nothing(More, [{concat, Removed}|Acc])
+    end;
+remove_nothing([Other|More], Acc) ->
+    remove_nothing(More, [Other|Acc]).
+
+do_remove_nothing(Concat) ->
+    do_remove_nothing(Concat, []).
+do_remove_nothing([], Acc) ->
+    lists:reverse(Acc);
+do_remove_nothing([{concat, Concat}| More], Acc) ->
+    case do_remove_nothing(Concat) of
+        [] ->
+            do_remove_nothing(More, Acc);
+        Removed ->
+            do_remove_nothing(More, [{concat, Removed}|Acc])
+    end;
+do_remove_nothing([nothing| More], Acc) ->
+    % unresolved maybevar disappears silently.
+    % if it is part of a value concatenation with another string,
+    % then it should become an empty string
+    do_remove_nothing(More, Acc);
+do_remove_nothing([Array| More], Acc) when is_list(Array) ->
+    % if one of the elements is unresolved maybevar,
+    % then the element should not be added.
+    do_remove_nothing(More, [remove_nothing(Array)| Acc]);
+do_remove_nothing([{Object}| More], Acc) when is_list(Object) ->
+    % if all fields are found to be nothing,
+    % create empty object
+    case remove_nothing(Object) of
+        [] ->
+            do_remove_nothing(More, [{}| Acc]);
+        Removed ->
+            do_remove_nothing(More, [{Removed}| Acc])
+    end;
+do_remove_nothing([Other| More], Acc) ->
+    do_remove_nothing(More, [Other| Acc]).
+
+
 
 -spec concat(list()) -> list().
 concat(List) ->
