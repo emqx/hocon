@@ -26,7 +26,22 @@ sample_files_test_() ->
         BaseName = filename:basename(F, ".conf"),
         {BaseName, fun() -> test_file_load(BaseName, F) end}
      end || F <- filelib:wildcard(Wildcard)].
-
+%% include file() is not supported.
+test_file_load("file-include", F) ->
+    ?assertMatch({error, {scan_error, _}}, hocon:load(F));
+%% unquoted string starting by null is not allowed.
+%% Failure/Error: {error,function_clause,
+%%                        [{io_lib,write_string1,
+%%                             [unicode_as_unicode,<<"bar">>,34],
+%%                             [{file,"io_lib.erl"},{line,581}]},
+%%                         {io_lib,write_string,2,
+%%                             [{file,"io_lib.erl"},{line,553}]},
+%%                         {hocon_parser,yeccerror,1, ...
+test_file_load("test01", F) ->
+    ?assertError(_, hocon:load(F));
+%% do not allow quoted variable name.
+test_file_load("test02"++_, F) ->
+    ?assertMatch({error, {scan_error, _}}, hocon:load(F));
 test_file_load("cycle"++_, F) ->
     ?assertMatch({error, {cycle, _}}, hocon:load(F));
 test_file_load("test13-reference-bad-substitutions", F) ->
