@@ -1,5 +1,9 @@
 {"1.2.0",
-[{<<"getopt">>,{pkg,<<"getopt">>,<<"1.0.1">>},0}]}.
+[{<<"cuttlefish">>,
+  {git,"https://github.com/emqx/cuttlefish",
+       {ref,"913f0bdf47f52c9d6339196c5b083539e9ddc93f"}},
+  0},
+ {<<"getopt">>,{pkg,<<"getopt">>,<<"1.0.1">>},0}]}.
 [
 {pkg_hash,[
  {<<"getopt">>, <<"C73A9FA687B217F2FF79F68A3B637711BB1936E712B521D8CE466B29CBF7808A">>}]},

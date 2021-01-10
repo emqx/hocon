@@ -193,6 +193,27 @@ maybe_var_test_() ->
     , ?_assertEqual(#{}, binary(<<"x=${?y}${?z}">>))
     ].
 
+cuttlefish_proplist_test() ->
+    Schema = filename:absname("priv/emqx_auth_redis.schema"),
+    {ok, Proplist} = hocon:load("etc/emqx_auth_redis.conf", [{format, proplist}]),
+    ?assertEqual([{emqx_auth_redis,
+                   [{acl_cmd, "HGETALL mqtt_acl:%u"},
+                    {super_cmd, "HGET mqtt_user:%u is_superuser"},
+                    {auth_cmd, "HMGET mqtt_user:%u password"},
+                    {options, [{options, []}]},
+                    {server,
+                     [{type, single},
+                      {pool_size, 8},
+                      {auto_reconnect, 1},
+                      {database, 0},
+                      {password, []},
+                      {sentinel, []},
+                      {host, "127.0.0.1"},
+                      {port, 6379}]},
+                    {query_timeout, infinity},
+                    {password_hash, plain}]}],
+                 cuttlefish_generator:map(cuttlefish_schema:files([Schema]), Proplist)).
+
 binary(B) when is_binary(B) ->
     {ok, R} = hocon:binary(B),
     R;
