@@ -50,7 +50,7 @@ Letter              = [A-Za-z]
 Unquoted            = {Letter}[A-Za-z0-9_\.@%\-\|]*
 
 %% Bool
-Bool                = true|false|on|off
+Bool                = true|false
 
 %% Integer
 Digit               = [0-9]
@@ -116,9 +116,7 @@ maybe_include("include", TokenLine)  -> {include, TokenLine};
 maybe_include(TokenChars, TokenLine) -> {string, TokenLine, iolist_to_binary(TokenChars)}.
 
 bool("true")  -> true;
-bool("false") -> false;
-bool("on")    -> true;
-bool("off")   -> false.
+bool("false") -> false.
 
 unquote(Str) -> string:strip(Str, both, $").
 

@@ -178,6 +178,17 @@ maybe_var_test_() ->
     , ?_assertEqual(#{}, binary(<<"x=${?y}${?z}">>))
     ].
 
+cuttlefish_proplists_test() ->
+    ?assertEqual({ok, [{["node", "name"], "emqx@127.0.0.1"},
+                       {["node", "data_dir"], "platform_data_dir"},
+                       {["node", "cookie"], "emqxsecretcookie"},
+                       {["cluster", "proto_dist"], "inet_tcp"},
+                       {["cluster", "name"], "emqxcl"},
+                       {["cluster", "discovery"], "manual"},
+                       {["cluster", "autoheal"], "on"},
+                       {["cluster", "autoclean"], 300000}]},
+                 hocon:load("etc/node.conf", #{format => proplists})).
+
 binary(B) when is_binary(B) ->
     {ok, R} = hocon:binary(B),
     R;
