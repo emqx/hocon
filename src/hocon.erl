@@ -22,6 +22,7 @@
 
 -type config() :: map().
 -type ctx() :: map().
+-type opts() :: map().
 
 -export_type([config/0]).
 
@@ -51,17 +52,17 @@ proplists(Iter, Path, Acc) ->
 
 -spec(load(file:filename()) -> {ok, config()} | {error, term()}).
 load(Filename0) ->
-    load(Filename0, [{format, map}]).
+    load(Filename0, #{format => map}).
 
--spec(load(file:filename(), list()) -> {ok, config()} | {error, term()}).
+-spec(load(file:filename(), opts()) -> {ok, config()} | {error, term()}).
 load(Filename0, Opts) ->
     Filename = filename:absname(Filename0),
     Ctx = stack_multiple_push([{path, '$root'}, {filename, Filename}], #{}),
     try
         Bytes = read(Filename),
         Map = do_binary(Bytes, Ctx),
-        case lists:keyfind(format, 1, Opts) of
-            {format, proplists} ->
+        case maps:find(format, Opts) of
+            {ok, proplists} ->
                 {ok, proplists(Map)};
             _ ->
                 {ok, Map}

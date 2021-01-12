@@ -185,9 +185,9 @@ cuttlefish_proplists_test() ->
                        {["cluster", "proto_dist"], "inet_tcp"},
                        {["cluster", "name"], "emqxcl"},
                        {["cluster", "discovery"], "manual"},
-                       {["cluster", "autoheal"], true},
+                       {["cluster", "autoheal"], "on"},
                        {["cluster", "autoclean"], 300000}]},
-                 hocon:load("etc/node.conf", [{format, proplists}])).
+                 hocon:load("etc/node.conf", #{format => proplists})).
 
 binary(B) when is_binary(B) ->
     {ok, R} = hocon:binary(B),
