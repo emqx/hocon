@@ -16,7 +16,7 @@
 
 -module(hocon).
 
--export([load/1, binary/1]).
+-export([load/1, load/2, binary/1]).
 -export([scan/1, parse/1, dump/2, dump/3]).
 -export([main/1]).
 
@@ -28,13 +28,44 @@
 main(Args) ->
     hocon_cli:main(Args).
 
+proplists(Map) when is_map(Map) ->
+    proplists(maps:iterator(Map), [], []).
+proplists(Iter, Path, Acc) ->
+    case maps:next(Iter) of
+        {K, M, I} when is_map(M) ->
+            Child = proplists(maps:iterator(M), [atom_to_list(K)| Path], []),
+            proplists(I, Path, lists:append(Child, Acc));
+        {K, [Bin|_More]=L, I} when is_binary(Bin) ->
+            NewList = [binary_to_list(B) || B <- L],
+            ReversedPath = lists:reverse([atom_to_list(K)| Path]),
+            proplists(I, Path, [{ReversedPath, NewList}| Acc]);
+        {K, Bin, I} when is_binary(Bin) ->
+            ReversedPath = lists:reverse([atom_to_list(K)| Path]),
+            proplists(I, Path, [{ReversedPath, binary_to_list(Bin)}| Acc]);
+        {K, V, I} ->
+            ReversedPath = lists:reverse([atom_to_list(K)| Path]),
+            proplists(I, Path, [{ReversedPath, V}| Acc]);
+        none ->
+            Acc
+    end.
+
 -spec(load(file:filename()) -> {ok, config()} | {error, term()}).
 load(Filename0) ->
+    load(Filename0, [{format, map}]).
+
+-spec(load(file:filename(), list()) -> {ok, config()} | {error, term()}).
+load(Filename0, Opts) ->
     Filename = filename:absname(Filename0),
     Ctx = stack_multiple_push([{path, '$root'}, {filename, Filename}], #{}),
     try
         Bytes = read(Filename),
-        {ok, do_binary(Bytes, Ctx)}
+        Map = do_binary(Bytes, Ctx),
+        case lists:keyfind(format, 1, Opts) of
+            {format, proplists} ->
+                {ok, proplists(Map)};
+            _ ->
+                {ok, Map}
+        end
     catch
         throw:Reason -> {error, Reason}
     end.
