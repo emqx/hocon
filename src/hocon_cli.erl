@@ -51,8 +51,6 @@ print(IoData) -> io:put_chars(IoData).
 pp_eterm(Term) ->
     print(pp_fmt_eterm(Term)).
 
-pp_fmt_eterm(List) when is_list(List) ->
-    [io_lib:format("~p.~n", [I]) || I <- List];
 pp_fmt_eterm(Term) ->
     io_lib:format("~p.~n", [Term]).
 

@@ -22,7 +22,10 @@
 
 -type config() :: map().
 -type ctx() :: map().
--type opts() :: map().
+-type convert() :: duration | bytesize | percent | onoff | convert_func().
+-type convert_func() :: fun((term()) -> term()).
+-type opts() :: #{format => map | proplists,
+                  convert => [convert()]}.
 
 -export_type([config/0]).
 
@@ -181,7 +184,7 @@ read(Filename) ->
             throw({Reason, Filename})
     end.
 
--spec scan(binary()|string()) -> config().
+-spec scan(binary()|string()) -> list().
 scan(Input) when is_binary(Input) ->
     scan(binary_to_list(Input));
 scan(Input) when is_list(Input) ->
@@ -480,21 +483,6 @@ nested_put([Key], Val, Map) ->
     merge(Key, Val, Map);
 nested_put([Key|Paths], Val, Map) ->
     merge(Key, nested_put(Paths, Val, #{}), Map).
-
-nested_update_with(Fun, Map) ->
-    nested_update_with(Fun, Map, maps:iterator(Map)).
-
-nested_update_with(Fun, Map, I) ->
-    case maps:next(I) of
-        {Key, ChildMap, Next} when is_map(ChildMap) ->
-            Updated = #{Key => nested_update_with(Fun, ChildMap)},
-            nested_update_with(Fun, do_deep_merge(Map, Updated), Next);
-        {Key, Value, Next} ->
-            Updated = #{Key => Fun(Value)},
-            nested_update_with(Fun, maps:merge(Map, Updated), Next);
-        none ->
-            Map
-    end.
 
 merge(Key, Val, Map) when is_map(Val) ->
     case maps:find(Key, Map) of
