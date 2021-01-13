@@ -94,23 +94,14 @@ Rules.
 {Float}           : {token, {float, TokenLine, to_float(TokenChars)}}.
 {String}          : {token, {string, TokenLine, iolist_to_binary(unquote(TokenChars))}}.
 {MultilineString} : {token, {string, TokenLine, iolist_to_binary(unquote(TokenChars))}}.
-{Bytesize}        : {token, {bytesize, TokenLine, bytesize(TokenChars)}}.
-{Percent}         : {token, {percent, TokenLine, percent(TokenChars)}}.
-{Duration}        : {token, {duration, TokenLine, duration(TokenChars)}}.
+{Bytesize}        : {token, {bytesize, TokenLine, iolist_to_binary(TokenChars)}}.
+{Percent}         : {token, {percent, TokenLine, iolist_to_binary(TokenChars)}}.
+{Duration}        : {token, {duration, TokenLine, iolist_to_binary(TokenChars)}}.
 {Variable}        : {token, {variable, TokenLine, {var, var_ref_name(TokenChars)}}}.
 {MaybeVar}        : {token, {variable, TokenLine, {var, {maybe, maybe_var_ref_name(TokenChars)}}}}.
 
 
 Erlang code.
-
--define(SECOND, 1000).
--define(MINUTE, (?SECOND*60)).
--define(HOUR,   (?MINUTE*60)).
--define(DAY,    (?HOUR*24)).
-
--define(KILOBYTE, 1024).
--define(MEGABYTE, (?KILOBYTE*1024)). %1048576
--define(GIGABYTE, (?MEGABYTE*1024)). %1073741824
 
 maybe_include("include", TokenLine)  -> {include, TokenLine};
 maybe_include(TokenChars, TokenLine) -> {string, TokenLine, iolist_to_binary(TokenChars)}.
@@ -119,32 +110,6 @@ bool("true")  -> true;
 bool("false") -> false.
 
 unquote(Str) -> string:strip(Str, both, $").
-
-percent(Str) ->
-    list_to_integer(string:strip(Str, right, $%)) / 100.
-
-bytesize(Str) ->
-    {ok, MP} = re:compile("([0-9]+)(kb|KB|mb|MB|gb|GB)"),
-    {match, [Val,Unit]} = re:run(Str, MP, [{capture, all_but_first, list}]),
-    bytesize(list_to_integer(Val), Unit).
-
-bytesize(Val, "kb") -> Val * ?KILOBYTE;
-bytesize(Val, "KB") -> Val * ?KILOBYTE;
-bytesize(Val, "mb") -> Val * ?MEGABYTE;
-bytesize(Val, "MB") -> Val * ?MEGABYTE;
-bytesize(Val, "gb") -> Val * ?GIGABYTE;
-bytesize(Val, "GB") -> Val * ?GIGABYTE.
-
-duration(Str) ->
-    {ok, MP} = re:compile("([0-9]+)(d|D|h|H|m|M|s|S|ms|MS)"),
-    {match, [Val,Unit]} = re:run(string:to_lower(Str), MP, [{capture, all_but_first, list}]),
-    duration(list_to_integer(Val), Unit).
-
-duration(Val, "d")  -> Val * ?DAY;
-duration(Val, "h")  -> Val * ?HOUR;
-duration(Val, "m")  -> Val * ?MINUTE;
-duration(Val, "s")  -> Val * ?SECOND;
-duration(Val, "ms") -> Val.
 
 maybe_var_ref_name("${?" ++ Name_CR) ->
     [$} | NameRev] = lists:reverse(Name_CR),

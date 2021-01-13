@@ -26,6 +26,15 @@
 
 -export_type([config/0]).
 
+-define(SECOND, 1000).
+-define(MINUTE, (?SECOND*60)).
+-define(HOUR,   (?MINUTE*60)).
+-define(DAY,    (?HOUR*24)).
+
+-define(KILOBYTE, 1024).
+-define(MEGABYTE, (?KILOBYTE*1024)). %1048576
+-define(GIGABYTE, (?MEGABYTE*1024)). %1073741824
+
 main(Args) ->
     hocon_cli:main(Args).
 
@@ -50,6 +59,35 @@ proplists(Iter, Path, Acc) ->
             Acc
     end.
 
+convert_value(ConvertFunctions, Map) when is_list(ConvertFunctions) ->
+    Resolved = resolve_convert_fun(ConvertFunctions),
+    do_convert_value(pipeline_fun(Resolved), Map).
+
+do_convert_value(Fun, Map) ->
+    do_convert_value(Fun, maps:iterator(Map), #{}).
+do_convert_value(Fun, I, NewMap) ->
+    case maps:next(I) of
+        {K, M, Next} when is_map(M) ->
+            do_convert_value(Fun, Next, NewMap#{K => do_convert_value(Fun, M)});
+        {K, V, Next} ->
+            do_convert_value(Fun, Next, NewMap#{K => Fun(V)});
+        none ->
+            NewMap
+    end.
+
+resolve_convert_fun(L) when is_list(L) ->
+    lists:map(fun do_resolve_convert_fun/1, L).
+do_resolve_convert_fun(duration) ->
+    fun duration/1;
+do_resolve_convert_fun(onoff) ->
+    fun onoff/1;
+do_resolve_convert_fun(bytesize) ->
+    fun bytesize/1;
+do_resolve_convert_fun(percent) ->
+    fun percent/1;
+do_resolve_convert_fun(F) when is_function(F, 1) ->
+    F.
+
 -spec(load(file:filename()) -> {ok, config()} | {error, term()}).
 load(Filename0) ->
     load(Filename0, #{format => map}).
@@ -61,14 +99,23 @@ load(Filename0, Opts) ->
     try
         Bytes = read(Filename),
         Map = do_binary(Bytes, Ctx),
-        case maps:find(format, Opts) of
-            {ok, proplists} ->
-                {ok, proplists(Map)};
-            _ ->
-                {ok, Map}
-        end
+        {ok, apply_opts(Map, Opts)}
     catch
         throw:Reason -> {error, Reason}
+    end.
+
+apply_opts(Map, Opts) ->
+    ConvertedMap = case maps:find(convert, Opts) of
+        {ok, Converter} ->
+            convert_value(Converter, Map);
+        _ ->
+            Map
+    end,
+    case maps:find(format, Opts) of
+        {ok, proplists} ->
+            proplists(ConvertedMap);
+        _ ->
+            ConvertedMap
     end.
 
 %% @doc Load a file and return a parsed key-value list.
@@ -434,6 +481,21 @@ nested_put([Key], Val, Map) ->
 nested_put([Key|Paths], Val, Map) ->
     merge(Key, nested_put(Paths, Val, #{}), Map).
 
+nested_update_with(Fun, Map) ->
+    nested_update_with(Fun, Map, maps:iterator(Map)).
+
+nested_update_with(Fun, Map, I) ->
+    case maps:next(I) of
+        {Key, ChildMap, Next} when is_map(ChildMap) ->
+            Updated = #{Key => nested_update_with(Fun, ChildMap)},
+            nested_update_with(Fun, do_deep_merge(Map, Updated), Next);
+        {Key, Value, Next} ->
+            Updated = #{Key => Fun(Value)},
+            nested_update_with(Fun, maps:merge(Map, Updated), Next);
+        none ->
+            Map
+    end.
+
 merge(Key, Val, Map) when is_map(Val) ->
     case maps:find(Key, Map) of
         {ok, MVal} when is_map(MVal) ->
@@ -453,6 +515,9 @@ do_deep_merge(M1, M2) when is_map(M1), is_map(M2) ->
               end, M1, M2);
 do_deep_merge(_, Override) ->
     Override.
+
+pipeline_fun(Steps) ->
+    fun (Input) -> pipeline(Input, #{}, Steps) end.
 
 pipeline(Input, Ctx, [Fun | Steps]) ->
     Output = case is_function(Fun, 1) of
@@ -558,3 +623,82 @@ do_trans_splice_end([{']', Line} | T]) ->
     [{endarr, Line} | T];
 do_trans_splice_end(Other) ->
     Other.
+
+onoff(Bin) when is_binary(Bin) ->
+    case do_onoff(binary_to_list(Bin)) of
+        Bool when Bool =:= true orelse Bool =:= false ->
+            Bool;
+        Str when is_list(Str) ->
+            list_to_binary(Str)
+    end;
+onoff(Other) ->
+    Other.
+do_onoff("on")  -> true;
+do_onoff("off") -> false;
+do_onoff(X) -> X.
+
+re_run_first(Str, MP) ->
+    re:run(Str, MP, [{capture, all_but_first, list}]).
+
+percent(Bin) when is_binary(Bin) ->
+    case do_percent(binary_to_list(Bin)) of
+        Percent when is_float(Percent) ->
+            Percent;
+        Str when is_list(Str) ->
+            list_to_binary(Str)
+    end;
+percent(Other) ->
+    Other.
+do_percent(Str) ->
+    {ok, MP} = re:compile("([0-9]+)(%)$"),
+    case re_run_first(Str, MP) of
+        {match, [Val, _Unit]} ->
+            list_to_integer(Val) / 100;
+        _ ->
+            Str
+    end.
+
+bytesize(Bin) when is_binary(Bin) ->
+    case do_bytesize(binary_to_list(Bin)) of
+        Byte when is_integer(Byte) ->
+            Byte;
+        Str when is_list(Str) ->
+            list_to_binary(Str)
+    end;
+bytesize(Other) ->
+    Other.
+do_bytesize(Str) ->
+    {ok, MP} = re:compile("([0-9]+)(kb|KB|mb|MB|gb|GB)$"),
+    case re_run_first(Str, MP) of
+        {match, [Val, Unit]} ->
+            do_bytesize(list_to_integer(Val), Unit);
+        _ -> Str
+    end.
+do_bytesize(Val, "kb") -> Val * ?KILOBYTE;
+do_bytesize(Val, "KB") -> Val * ?KILOBYTE;
+do_bytesize(Val, "mb") -> Val * ?MEGABYTE;
+do_bytesize(Val, "MB") -> Val * ?MEGABYTE;
+do_bytesize(Val, "gb") -> Val * ?GIGABYTE;
+do_bytesize(Val, "GB") -> Val * ?GIGABYTE.
+
+duration(Bin) when is_binary(Bin) ->
+    case do_duration(binary_to_list(Bin)) of
+        Duration when is_integer(Duration) ->
+            Duration;
+        Str when is_list(Str) ->
+            list_to_binary(Str)
+    end;
+duration(Other) ->
+    Other.
+do_duration(Str) ->
+    {ok, MP} = re:compile("([0-9]+)(d|D|h|H|m|M|s|S|ms|MS)$"),
+    case re:run(string:to_lower(Str), MP, [{capture, all_but_first, list}]) of
+        {match, [Val, Unit]} ->
+            do_duration(list_to_integer(Val), Unit);
+        _ -> Str
+    end.
+do_duration(Val, "d")  -> Val * ?DAY;
+do_duration(Val, "h")  -> Val * ?HOUR;
+do_duration(Val, "m")  -> Val * ?MINUTE;
+do_duration(Val, "s")  -> Val * ?SECOND;
+do_duration(Val, "ms") -> Val.

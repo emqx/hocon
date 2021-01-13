@@ -186,8 +186,26 @@ cuttlefish_proplists_test() ->
                        {["cluster", "name"], "emqxcl"},
                        {["cluster", "discovery"], "manual"},
                        {["cluster", "autoheal"], "on"},
-                       {["cluster", "autoclean"], 300000}]},
+                       {["cluster", "autoclean"], "5m"}]},
                  hocon:load("etc/node.conf", #{format => proplists})).
+
+apply_opts_test() ->
+    ?assertEqual({ok, #{day => 86400000, full => 1.0, gb => 1073741824,
+                        hour => 3600000, kb => 1024, mb => 1048576, min => 60000,
+                        off => false, on => true, percent => 0.01, sec => 1000,
+                        x => #{kb => 1024, sec => 1000}}},
+                 hocon:load("etc/convert-sample.conf",
+                            #{convert => [duration,
+                                          bytesize,
+                                          percent,
+                                          onoff]})),
+    MyFun = fun (_) -> ok end,
+    ?assertEqual({ok, #{day => ok, full => ok, gb => ok, hour => ok, kb => ok,
+                        mb => ok, min => ok, off => ok, on => ok, percent => ok,
+                        sec => ok,
+                        x => #{kb => ok, sec => ok}}},
+                 hocon:load("etc/convert-sample.conf",
+                            #{convert => [MyFun]})).
 
 binary(B) when is_binary(B) ->
     {ok, R} = hocon:binary(B),
