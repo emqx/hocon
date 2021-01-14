@@ -6,8 +6,6 @@ LALR grammar based HOCON-like configuration Parser for Erlang/OTP.
 
 HOCON spec for reference: https://lightbend.github.io/config/
 
-NOTE: Our goal is not to make this library fully compliant to HOCON spec.
-
 ### Divergence from Spec and Caveats
 
 - No unicode support (at least not verified).
@@ -19,6 +17,7 @@ NOTE: Our goal is not to make this library fully compliant to HOCON spec.
   * `"key=value1value2"`
   * `"key=\"value1\" \"value2\""`
   * `"key=value1\nvalue2"`
+- `url()/file()/classpath()` includes are not supported
 
 ## Test Data
 
@@ -26,7 +25,6 @@ Files in sample-configs are collected from https://github.com/lightbend/config/t
 
 ## TODO
 
-- Substitutions
 - Get values from environment variables
 - Introduction doc
 - Upload to hex.pm
