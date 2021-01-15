@@ -17,11 +17,12 @@
 -module(hocon).
 
 -export([load/1, load/2, binary/1]).
--export([scan/1, parse/1, dump/2, dump/3]).
+-export([scan/2, parse/2, dump/2, dump/3]).
 -export([main/1]).
 
 -type config() :: map().
--type ctx() :: map().
+-type ctx() :: #{path => list(),
+                 filename => list()}.
 -type convert() :: duration | bytesize | percent | onoff | convert_func().
 -type convert_func() :: fun((term()) -> term()).
 -type opts() :: #{format => map | proplists,
@@ -135,9 +136,9 @@ load_include(Filename0, Ctx0) ->
             Ctx = stack_push({filename, Filename}, Ctx0),
             pipeline(Filename, Ctx,
                      [ fun read/1
-                     , fun scan/1
+                     , fun scan/2
                      , fun trans_key/1
-                     , fun parse/1
+                     , fun parse/2
                      , fun include/2
                      ])
     end.
@@ -151,9 +152,9 @@ binary(Binary) ->
 
 do_binary(Binary, Ctx) ->
     pipeline(Binary, Ctx,
-             [ fun scan/1
+             [ fun scan/2
              , fun trans_key/1
-             , fun parse/1
+             , fun parse/2
              , fun include/2
              , fun expand/1
              , fun resolve/1
@@ -184,23 +185,23 @@ read(Filename) ->
             throw({Reason, Filename})
     end.
 
--spec scan(binary()|string()) -> list().
-scan(Input) when is_binary(Input) ->
-    scan(binary_to_list(Input));
-scan(Input) when is_list(Input) ->
+-spec scan(binary()|string(), ctx()) -> list().
+scan(Input, Ctx) when is_binary(Input) ->
+    scan(binary_to_list(Input), Ctx);
+scan(Input, Ctx) when is_list(Input) ->
     case hocon_scanner:string(Input) of
         {ok, Tokens, _EndLine} ->
             Tokens;
         {error, {Line, _Mod, ErrorInfo}, _} ->
-            scan_error(Line, hocon_scanner:format_error(ErrorInfo))
+            scan_error(Line, hocon_scanner:format_error(ErrorInfo), Ctx)
     end.
 
-parse([]) -> [];
-parse(Tokens) ->
+parse([], _) -> [];
+parse(Tokens, Ctx) ->
     case hocon_parser:parse(Tokens) of
         {ok, Ret} -> Ret;
         {error, {Line, _Module, ErrorInfo}} ->
-            parse_error(Line, ErrorInfo)
+            parse_error(Line, ErrorInfo, Ctx)
     end.
 
 -spec include(list(), ctx()) -> list().
@@ -515,16 +516,17 @@ pipeline(Input, Ctx, [Fun | Steps]) ->
     pipeline(Output, Ctx, Steps);
 pipeline(Result, _Ctx, []) -> Result.
 
-scan_error(Line, ErrorInfo) ->
-    throw({scan_error, format_error(Line, ErrorInfo)}).
+scan_error(Line, ErrorInfo, Ctx) ->
+    throw({scan_error, format_error(Line, ErrorInfo, Ctx)}).
 
-parse_error(Line, ErrorInfo) ->
-    throw({parse_error, format_error(Line, ErrorInfo)}).
+parse_error(Line, ErrorInfo, Ctx) ->
+    throw({parse_error, format_error(Line, ErrorInfo, Ctx)}).
 
-format_error(Line, ErrorInfo) ->
+format_error(Line, ErrorInfo, Ctx) ->
     binary_to_list(
-      iolist_to_binary(
-        [ErrorInfo, io_lib:format(" in line ~w", [Line])])).
+        iolist_to_binary(
+            [ErrorInfo,
+             io_lib:format(" in line ~w. file: ~p", [Line, hd(get_stack(filename, Ctx))])])).
 
 stack_multiple_push(List, Ctx) ->
     lists:foldl(fun stack_push/2, Ctx, List).
