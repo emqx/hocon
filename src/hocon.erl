@@ -17,7 +17,7 @@
 -module(hocon).
 
 -export([load/1, load/2, binary/1]).
--export([scan/2, parse/2, dump/2, dump/3]).
+-export([dump/2, dump/3]).
 -export([main/1]).
 
 -type config() :: map().
@@ -28,7 +28,7 @@
 -type opts() :: #{format => map | proplists,
                   convert => [convert()]}.
 
--export_type([config/0]).
+-export_type([config/0, ctx/0]).
 
 -define(SECOND, 1000).
 -define(MINUTE, (?SECOND*60)).
@@ -65,7 +65,7 @@ proplists(Iter, Path, Acc) ->
 
 convert_value(ConvertFunctions, Map) when is_list(ConvertFunctions) ->
     Resolved = resolve_convert_fun(ConvertFunctions),
-    do_convert_value(pipeline_fun(Resolved), Map).
+    do_convert_value(hocon_util:pipeline_fun(Resolved), Map).
 
 do_convert_value(Fun, Map) ->
     do_convert_value(Fun, maps:iterator(Map), #{}).
@@ -99,9 +99,9 @@ load(Filename0) ->
 -spec(load(file:filename(), opts()) -> {ok, config()} | {error, term()}).
 load(Filename0, Opts) ->
     Filename = filename:absname(Filename0),
-    Ctx = stack_multiple_push([{path, '$root'}, {filename, Filename}], #{}),
+    Ctx = hocon_util:stack_multiple_push([{path, '$root'}, {filename, Filename}], #{}),
     try
-        Bytes = read(Filename),
+        Bytes = hocon_token:read(Filename),
         Map = do_binary(Bytes, Ctx),
         {ok, apply_opts(Map, Opts)}
     catch
@@ -122,27 +122,6 @@ apply_opts(Map, Opts) ->
             ConvertedMap
     end.
 
-%% @doc Load a file and return a parsed key-value list.
-%% Because this function is intended to be called by include/2,
-%% variable substitution is not performed here.
-%% @end
-load_include(Filename0, Ctx0) ->
-    Cwd = filename:dirname(hd(get_stack(filename, Ctx0))),
-    Filename = filename:join([Cwd, Filename0]),
-    case is_included(Filename, Ctx0) of
-        true ->
-            throw({cycle, get_stack(filename, Ctx0)});
-        false ->
-            Ctx = stack_push({filename, Filename}, Ctx0),
-            pipeline(Filename, Ctx,
-                     [ fun read/1
-                     , fun scan/2
-                     , fun trans_key/1
-                     , fun parse/2
-                     , fun include/2
-                     ])
-    end.
-
 binary(Binary) ->
     try
         {ok, do_binary(Binary, #{})}
@@ -151,17 +130,17 @@ binary(Binary) ->
     end.
 
 do_binary(Binary, Ctx) ->
-    pipeline(Binary, Ctx,
-             [ fun scan/2
-             , fun trans_key/1
-             , fun parse/2
-             , fun include/2
-             , fun expand/1
-             , fun resolve/1
-             , fun remove_nothing/1
-             , fun concat/1
-             , fun transform/1
-             ]).
+    hocon_util:pipeline(Binary, Ctx,
+                       [ fun hocon_token:scan/2
+                       , fun hocon_token:trans_key/1
+                       , fun hocon_token:parse/2
+                       , fun hocon_token:include/2
+                       , fun expand/1
+                       , fun resolve/1
+                       , fun remove_nothing/1
+                       , fun concat/1
+                       , fun transform/1
+                       ]).
 
 dump(Config, App) ->
     [{App, to_list(Config)}].
@@ -172,72 +151,6 @@ dump(Config, App, Filename) ->
 to_list(Config) when is_map(Config) ->
     maps:to_list(maps:map(fun(_Key, MVal) -> to_list(MVal) end, Config));
 to_list(Value) -> Value.
-
--spec read(file:filename()) -> binary().
-read(Filename) ->
-    case file:read_file(Filename) of
-        {ok, <<239, 187, 191, Rest/binary>>} ->
-            %% Ignore BOM header
-            Rest;
-        {ok, Bytes} ->
-            Bytes;
-        {error, Reason} ->
-            throw({Reason, Filename})
-    end.
-
--spec scan(binary()|string(), ctx()) -> list().
-scan(Input, Ctx) when is_binary(Input) ->
-    scan(binary_to_list(Input), Ctx);
-scan(Input, Ctx) when is_list(Input) ->
-    case hocon_scanner:string(Input) of
-        {ok, Tokens, _EndLine} ->
-            Tokens;
-        {error, {Line, _Mod, ErrorInfo}, _} ->
-            scan_error(Line, hocon_scanner:format_error(ErrorInfo), Ctx)
-    end.
-
-parse([], _) -> [];
-parse(Tokens, Ctx) ->
-    case hocon_parser:parse(Tokens) of
-        {ok, Ret} -> Ret;
-        {error, {Line, _Module, ErrorInfo}} ->
-            parse_error(Line, ErrorInfo, Ctx)
-    end.
-
--spec include(list(), ctx()) -> list().
-include(KVList, Ctx) ->
-    do_include(KVList, [], Ctx, get_stack(path, Ctx)).
-
-do_include([], Acc, _Ctx, _CurrentPath) ->
-    lists:reverse(Acc);
-do_include([{'$include', Filename}|More], Acc, Ctx, CurrentPath) ->
-    Parsed = load_include(Filename, Ctx#{path := CurrentPath}),
-    do_include(More, lists:reverse(Parsed, Acc), Ctx, CurrentPath);
-do_include([{var, Var}|More], Acc, Ctx, CurrentPath) ->
-    VarWithAbsPath = abspath(Var, get_stack(path, Ctx)),
-    do_include(More, [{var, VarWithAbsPath}|Acc], Ctx, CurrentPath);
-do_include([{Key, {concat, MaybeObject}}|More], Acc, Ctx, CurrentPath) ->
-    NewPath = [Key|CurrentPath],
-    do_include(More,
-               [{Key, {concat, do_include(MaybeObject, [], Ctx, NewPath)}}|Acc],
-               Ctx,
-               CurrentPath);
-do_include([{Object}|More], Acc, Ctx, CurrentPath) when is_list(Object) ->
-    do_include(More, [{do_include(Object, [], Ctx, CurrentPath)}|Acc], Ctx, CurrentPath);
-do_include([Other|More], Acc, Ctx, CurrentPath) ->
-    do_include(More, [Other|Acc], Ctx, CurrentPath).
-
-abspath({maybe, Var}, PathStack) ->
-    {maybe, do_abspath(atom_to_binary(Var, utf8), PathStack)};
-abspath(Var, PathStack) ->
-    do_abspath(atom_to_binary(Var, utf8), PathStack).
-
-do_abspath(Var, []) ->
-    binary_to_atom(Var, utf8);
-do_abspath(Var, ['$root']) ->
-    binary_to_atom(Var, utf8);
-do_abspath(Var, [Path|More]) ->
-    do_abspath(iolist_to_binary([atom_to_binary(Path, utf8), <<".">>, Var]), More).
 
 expand(KVList) ->
     do_expand(KVList, []).
@@ -488,131 +401,13 @@ nested_put([Key|Paths], Val, Map) ->
 merge(Key, Val, Map) when is_map(Val) ->
     case maps:find(Key, Map) of
         {ok, MVal} when is_map(MVal) ->
-            maps:put(Key, do_deep_merge(MVal, Val), Map);
+            maps:put(Key, hocon_util:do_deep_merge(MVal, Val), Map);
         _Other -> maps:put(Key, Val, Map)
     end;
 merge(Key, Val, Map) -> maps:put(Key, Val, Map).
 
-do_deep_merge(M1, M2) when is_map(M1), is_map(M2) ->
-    maps:fold(fun(K, V2, Acc) ->
-        case Acc of
-            #{K := V1} ->
-                Acc#{K => do_deep_merge(V1, V2)};
-            _ ->
-                Acc#{K => V2}
-        end
-              end, M1, M2);
-do_deep_merge(_, Override) ->
-    Override.
 
-pipeline_fun(Steps) ->
-    fun (Input) -> pipeline(Input, #{}, Steps) end.
 
-pipeline(Input, Ctx, [Fun | Steps]) ->
-    Output = case is_function(Fun, 1) of
-                 true -> Fun(Input);
-                 false -> Fun(Input, Ctx)
-             end,
-    pipeline(Output, Ctx, Steps);
-pipeline(Result, _Ctx, []) -> Result.
-
-scan_error(Line, ErrorInfo, Ctx) ->
-    throw({scan_error, format_error(Line, ErrorInfo, Ctx)}).
-
-parse_error(Line, ErrorInfo, Ctx) ->
-    throw({parse_error, format_error(Line, ErrorInfo, Ctx)}).
-
-format_error(Line, ErrorInfo, Ctx) ->
-    binary_to_list(
-        iolist_to_binary(
-            [ErrorInfo,
-             io_lib:format(" in line ~w. file: ~p", [Line, hd(get_stack(filename, Ctx))])])).
-
-stack_multiple_push(List, Ctx) ->
-    lists:foldl(fun stack_push/2, Ctx, List).
-
-stack_push({Key, Value}, Ctx) ->
-    Stack = get_stack(Key, Ctx),
-    Ctx#{Key => [Value | Stack]}.
-
-is_included(Filename, Ctx) ->
-    Includes = get_stack(filename, Ctx),
-    lists:any(fun(F) -> is_same_file(F, Filename) end, Includes).
-
-get_stack(Key, Ctx) -> maps:get(Key, Ctx, []).
-
-is_same_file(A, B) ->
-    real_file_name(A) =:= real_file_name(B).
-
-real_file_name(F) ->
-    case file:read_link_all(F) of
-        {ok, Real} -> Real;
-        {error, _} -> F
-    end.
-
-%% Due to the lack of a splicable value terminal token,
-%% the parser would have to look-ahead the second token
-%% to tell if the next token is another splicable (string)
-%% or a key (which is also string).
-%%
-%% This help function is to 'look-back' from the key-value separator
-%% tokens, namingly ':', '=' and '{', then tranform the proceeding
-%% string token to a 'key' token.
-%%
-%% In the second step, it 'look-ahead' for a the last string/variable
-%% token preceeding to a non-string/variable token and transform
-%% it to a 'endstr' or 'endvar' token.
-trans_key(Tokens) ->
-    trans_splice_end(trans_key(Tokens, [])).
-
-trans_key([], Acc) -> lists:reverse(Acc);
-trans_key([{T, _Line} | Tokens], Acc) when T =:= ':' orelse
-                                           T =:= '=' ->
-    %% ':' and '=' are not pushed back
-    trans_key(Tokens, trans_key_lb(Acc));
-trans_key([{'{', Line} | Tokens], Acc) ->
-    %% '{' is pushed back
-    trans_key(Tokens, [{'{', Line} | trans_key_lb(Acc)]);
-trans_key([T | Tokens], Acc) ->
-    trans_key(Tokens, [T | Acc]).
-
-trans_key_lb([{string, Line, Value} | TokensRev]) ->
-    [{key, Line, binary_to_atom(Value, utf8)} | TokensRev];
-trans_key_lb(Otherwise) -> Otherwise.
-
-trans_splice_end(Tokens) ->
-    trans_splice_end(Tokens, [], []).
-
-trans_splice_end([{key, _Line, _Value} = V | Tokens], Seq, Acc) ->
-    NewAcc = [V | do_trans_splice_end(Seq) ++ Acc],
-    trans_splice_end(Tokens, [], NewAcc);
-trans_splice_end([{include, _File} = V | Tokens], Seq, Acc) ->
-    NewAcc = [V | do_trans_splice_end(Seq) ++ Acc],
-    trans_splice_end(Tokens, [], NewAcc);
-trans_splice_end([{T, _Line} = V | Tokens], Seq, Acc)  when T =:= ',' ->
-    NewAcc = [V | do_trans_splice_end(Seq) ++ Acc],
-    trans_splice_end(Tokens, [], NewAcc);
-trans_splice_end([{T, _Line} = V | Tokens], Seq, Acc)  when T =:= '}' orelse
-                                                            T =:= ']' ->
-    NewAcc = do_trans_splice_end(Seq) ++ Acc,
-    trans_splice_end(Tokens, [V], NewAcc);
-trans_splice_end([V | Tokens], Seq, Acc) ->
-    trans_splice_end(Tokens, [V | Seq], Acc);
-trans_splice_end([], Seq, Acc) ->
-    NewAcc = do_trans_splice_end(Seq) ++ Acc,
-    lists:reverse(NewAcc).
-
-do_trans_splice_end([]) -> [];
-do_trans_splice_end([{string, Line, Value} | T]) ->
-    [{endstr, Line, Value} | T];
-do_trans_splice_end([{variable, Line, Value} | T]) ->
-    [{endvar, Line, Value} | T];
-do_trans_splice_end([{'}', Line} | T]) ->
-    [{endobj, Line} | T];
-do_trans_splice_end([{']', Line} | T]) ->
-    [{endarr, Line} | T];
-do_trans_splice_end(Other) ->
-    Other.
 
 onoff(Bin) when is_binary(Bin) ->
     case do_onoff(binary_to_list(Bin)) of
