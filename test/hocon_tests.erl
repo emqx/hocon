@@ -26,7 +26,12 @@ sample_files_test_() ->
         BaseName = filename:basename(F, ".conf"),
         {BaseName, fun() -> test_file_load(BaseName, F) end}
      end || F <- filelib:wildcard(Wildcard)].
-
+%% unquoted string starting by null is not allowed.
+test_file_load("test01", F) ->
+    ?assertError(_, hocon:load(F));
+%% do not allow quoted variable name.
+test_file_load("test02"++_, F) ->
+    ?assertMatch({error, {scan_error, _}}, hocon:load(F));
 test_file_load("cycle"++_, F) ->
     ?assertMatch({error, {cycle, _}}, hocon:load(F));
 test_file_load("test13-reference-bad-substitutions", F) ->
