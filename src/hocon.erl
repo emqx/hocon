@@ -19,6 +19,7 @@
 -export([load/1, load/2, binary/1]).
 -export([dump/2, dump/3]).
 -export([main/1]).
+-export([duration/1]).
 
 -type config() :: map().
 -type ctx() :: #{path => list(),
@@ -470,9 +471,11 @@ duration(Bin) when is_binary(Bin) ->
     case do_duration(binary_to_list(Bin)) of
         Duration when is_integer(Duration) ->
             Duration;
-        Str when is_list(Str) ->
-            list_to_binary(Str)
+        Unchanged when is_list(Unchanged) ->
+            Bin
     end;
+duration(Str) when is_list(Str) ->
+    do_duration(Str);
 duration(Other) ->
     Other.
 do_duration(Str) ->
