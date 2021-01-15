@@ -26,7 +26,15 @@ sample_files_test_() ->
         BaseName = filename:basename(F, ".conf"),
         {BaseName, fun() -> test_file_load(BaseName, F) end}
      end || F <- filelib:wildcard(Wildcard)].
-
+%% include file() is not supported.
+test_file_load("file-include", F) ->
+    ?assertMatch({error, {scan_error, _}}, hocon:load(F));
+%% unquoted string starting by null is not allowed.
+test_file_load("test01", F) ->
+    ?assertError(_, hocon:load(F));
+%% do not allow quoted variable name.
+test_file_load("test02"++_, F) ->
+    ?assertMatch({error, {scan_error, _}}, hocon:load(F));
 test_file_load("cycle"++_, F) ->
     ?assertMatch({error, {cycle, _}}, hocon:load(F));
 test_file_load("test13-reference-bad-substitutions", F) ->
@@ -37,7 +45,7 @@ test_file_load("test03", F) ->
 test_file_load("test03-included", F) ->
     ?assertMatch({error, {unresolved, [bar]}}, hocon:load(F));
 test_file_load("test05", F) ->
-    ?assertMatch({error, {scan_error, "illegal characters \"%\" in line 15"}}, hocon:load(F));
+    ?assertMatch({error, {scan_error, _}}, hocon:load(F));
 test_file_load("test07", F) ->
     ?assertMatch({error, {enoent, _}}, hocon:load(F));
 test_file_load("test08", F) ->
