@@ -41,15 +41,15 @@ test_file_load("test13-reference-bad-substitutions", F) ->
     ?assertMatch({error, {unresolved, [b]}}, hocon:load(F));
 % include "test01" is not allowed.
 test_file_load("test03", F) ->
-    ?assertMatch({error, {enoent, _}}, hocon:load(F));
+    ?assertMatch({error, {scan_error, _}}, hocon:load(F));
 test_file_load("test03-included", F) ->
     ?assertMatch({error, {unresolved, [bar]}}, hocon:load(F));
 test_file_load("test05", F) ->
     ?assertMatch({error, {scan_error, _}}, hocon:load(F));
 test_file_load("test07", F) ->
-    ?assertMatch({error, {enoent, _}}, hocon:load(F));
+    ?assertMatch({ok, #{}}, hocon:load(F));
 test_file_load("test08", F) ->
-    ?assertMatch({error, {enoent, _}}, hocon:load(F));
+    ?assertMatch({ok, #{}}, hocon:load(F));
 test_file_load("test10", F) ->
     ?assertEqual({ok, #{bar =>
                         #{nested =>
@@ -214,6 +214,16 @@ apply_opts_test() ->
                         x => #{kb => ok, sec => ok}}},
                  hocon:load("etc/convert-sample.conf",
                             #{convert => [MyFun]})).
+
+delete_null_test() ->
+    ?assertEqual({ok, #{b => <<"notnull">>, c => <<>>,
+                        d => #{x => <<"foo">>, y => <<"bar">>}}},
+                 hocon:load("etc/null-sample.conf",
+                                #{delete_null => true})).
+
+required_test() ->
+    ?assertEqual({ok, #{}}, hocon:load("etc/optional-include.conf")),
+    ?assertMatch({error, {enoent, _}}, hocon:load("etc/required-include.conf")).
 
 binary(B) when is_binary(B) ->
     {ok, R} = hocon:binary(B),

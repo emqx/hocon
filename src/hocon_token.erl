@@ -18,6 +18,8 @@
 
 -export([read/1, scan/2, trans_key/1, parse/2, include/2]).
 
+-type include() :: #{filename => binary(), required => boolean()}.
+
 -spec read(file:filename()) -> binary().
 read(Filename) ->
     case file:read_file(Filename) of
@@ -119,8 +121,8 @@ include(KVList, Ctx) ->
 
 do_include([], Acc, _Ctx, _CurrentPath) ->
     lists:reverse(Acc);
-do_include([{'$include', Filename}|More], Acc, Ctx, CurrentPath) ->
-    Parsed = load_include(Filename, Ctx#{path := CurrentPath}),
+do_include([{'$include', Include}|More], Acc, Ctx, CurrentPath) ->
+    Parsed = load_include(Include, Ctx#{path := CurrentPath}),
     do_include(More, lists:reverse(Parsed, Acc), Ctx, CurrentPath);
 do_include([{var, Var}|More], Acc, Ctx, CurrentPath) ->
     VarWithAbsPath = abspath(Var, hocon_util:get_stack(path, Ctx)),
@@ -148,13 +150,23 @@ do_abspath(Var, ['$root']) ->
 do_abspath(Var, [Path|More]) ->
     do_abspath(iolist_to_binary([atom_to_binary(Path, utf8), <<".">>, Var]), More).
 
+
+-spec load_include(include(), hocon:ctx()) -> list().
+
 %% @doc Load a file and return a parsed key-value list.
 %% Because this function is intended to be called by include/2,
 %% variable substitution is not performed here.
 %% @end
-load_include(Filename0, Ctx0) ->
+load_include(Include, Ctx0) ->
     Cwd = filename:dirname(hd(hocon_util:get_stack(filename, Ctx0))),
-    Filename = filename:join([Cwd, Filename0]),
+    Filename = filename:join([Cwd, maps:get(filename, Include)]),
+    case {file:read_file_info(Filename), maps:get(required, Include, false)} of
+        {{error, enoent}, true} ->
+            throw({enoent, Filename});
+        {{error, enoent}, false} ->
+            % empty kvlist
+            [];
+        _ ->
     case is_included(Filename, Ctx0) of
         true ->
             throw({cycle, hocon_util:get_stack(filename, Ctx0)});
@@ -167,6 +179,7 @@ load_include(Filename0, Ctx0) ->
                                 , fun parse/2
                                 , fun include/2
                                 ])
+    end
     end.
 
 is_included(Filename, Ctx) ->

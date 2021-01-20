@@ -82,6 +82,9 @@ Literal             = {Bool}|{Integer}|{Float}|{String}|{Unquoted}|{Percent}{Byt
 Variable            = \$\{{Unquoted}\}
 MaybeVar            = \$\{\?{Unquoted}\}
 
+%% Include
+Required            = (required)\({String}\)
+
 Rules.
 
 {Ignored}         : skip_token.
@@ -99,12 +102,17 @@ Rules.
 {Duration}        : {token, {duration, TokenLine, iolist_to_binary(TokenChars)}}.
 {Variable}        : {token, {variable, TokenLine, {var, var_ref_name(TokenChars)}}}.
 {MaybeVar}        : {token, {variable, TokenLine, {var, {maybe, maybe_var_ref_name(TokenChars)}}}}.
+{Required}        : {token, {required, TokenLine}, get_filename_from_required(TokenChars)}.
 
 
 Erlang code.
 
 maybe_include("include", TokenLine)  -> {include, TokenLine};
 maybe_include(TokenChars, TokenLine) -> {string, TokenLine, iolist_to_binary(TokenChars)}.
+
+get_filename_from_required("required(" ++ Filename) ->
+    [$) | FilenameRev] = lists:reverse(Filename),
+    string:trim(lists:reverse(FilenameRev)).
 
 bool("true")  -> true;
 bool("false") -> false.

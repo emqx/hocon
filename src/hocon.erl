@@ -93,6 +93,31 @@ do_resolve_convert_fun(percent) ->
 do_resolve_convert_fun(F) when is_function(F, 1) ->
     F.
 
+delete_null(Map) when is_map(Map) ->
+    delete_null(maps:iterator(Map), #{}).
+delete_null(Iter, NewMap) ->
+    case maps:next(Iter) of
+        {K, M, Next} when is_map(M) ->
+            case delete_null(M) of
+                EmptyM when map_size(EmptyM) =:= 0 ->
+                    delete_null(Next, NewMap);
+                NewM ->
+                    delete_null(Next, NewMap#{K => NewM})
+            end;
+        {K, V, Next} ->
+            case is_null(V) of
+                true ->
+                    delete_null(Next, NewMap);
+                false ->
+                    delete_null(Next, NewMap#{K => V})
+            end;
+        none ->
+            NewMap
+    end.
+
+is_null(null) -> true;
+is_null(_Other) -> false.
+
 -spec(load(file:filename()) -> {ok, config()} | {error, term()}).
 load(Filename0) ->
     load(Filename0, #{format => map}).
@@ -116,11 +141,17 @@ apply_opts(Map, Opts) ->
         _ ->
             Map
     end,
-    case maps:find(format, Opts) of
-        {ok, proplists} ->
-            proplists(ConvertedMap);
+    NullDeleted = case maps:find(delete_null, Opts) of
+        {ok, true} ->
+            delete_null(ConvertedMap);
         _ ->
             ConvertedMap
+    end,
+    case maps:find(format, Opts) of
+        {ok, proplists} ->
+            proplists(NullDeleted);
+        _ ->
+            NullDeleted
     end.
 
 binary(Binary) ->

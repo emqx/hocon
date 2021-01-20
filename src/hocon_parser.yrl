@@ -14,7 +14,7 @@ Terminals
   percent bytesize duration
   string variable
   endstr endvar endarr endobj
-  include key.
+  include key required.
 
 Rootsymbol hocon.
 hocon -> '{' fields endobj : '$2'.
@@ -46,8 +46,10 @@ elements -> value ',' elements : ['$1'|'$3'].
 elements -> value elements : ['$1'|'$2'].
 elements -> value : ['$1'].
 
-directive -> include string : {'$include', value_of('$2')}.
-directive -> include endstr : {'$include', value_of('$2')}.
+directive -> include string : {'$include', #{filename => value_of('$2'), required => false}}.
+directive -> include endstr : {'$include', #{filename => value_of('$2'), required => false}}.
+directive -> include required string : {'$include', #{filename => value_of('$3'), required => true}}.
+directive -> include required endstr : {'$include', #{filename => value_of('$3'), required => true}}.
 
 value -> null : null.
 value -> bool : value_of('$1').
