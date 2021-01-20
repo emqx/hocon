@@ -31,7 +31,7 @@ test_file_load("file-include", F) ->
     ?assertMatch({error, {scan_error, _}}, hocon:load(F));
 %% unquoted string starting by null is not allowed.
 test_file_load("test01", F) ->
-    ?assertError(_, hocon:load(F));
+    ?assertMatch({error, {whitespace_error, _}}, hocon:load(F));
 %% do not allow quoted variable name.
 test_file_load("test02"++_, F) ->
     ?assertMatch({error, {scan_error, _}}, hocon:load(F));
@@ -155,8 +155,8 @@ look_forward_test_() ->
 array_element_splice_test_() ->
     [ ?_assertEqual(#{}, binary(<<>>))
     , ?_assertEqual(#{a=>[]}, binary("a=[]"))
-    , ?_assertEqual(#{a=>[<<"xyz">>]}, binary("a=[x y z]"))
-    , ?_assertEqual(#{a=>[<<"xyz">>, <<"a">>]}, binary("a=[x y z, a]"))
+    , ?_assertEqual(#{a=>[<<"xyz">>]}, binary("a=[\"xyz\"]"))
+    , ?_assertEqual(#{a=>[<<"xyz">>, <<"a">>]}, binary("a=[\"xyz\", a]"))
     ].
 
 expand_paths_test_() ->
@@ -224,6 +224,17 @@ delete_null_test() ->
 required_test() ->
     ?assertEqual({ok, #{}}, hocon:load("etc/optional-include.conf")),
     ?assertMatch({error, {enoent, _}}, hocon:load("etc/required-include.conf")).
+
+forbidden_whitespace_test() ->
+    ?assertMatch({error, {whitespace_error, _}}, hocon:binary("a=foo bar")),
+    ?assertEqual({ok, #{a => <<"foo bar">>}}, hocon:binary("a= \"foo bar\"")),
+    ?assertMatch({error, {parse_error, _}}, hocon:binary("a=foo include")),
+    ?assertMatch({error, {parse_error, _}}, hocon:binary("a=foo null")),
+    ?assertMatch({error, {parse_error, _}}, hocon:binary("a=foo null bar")),
+    ?assertEqual({ok, #{a => <<"foobar">>}}, hocon:binary("a=\"foo\" \"bar\"")),
+    ?assertEqual({ok, #{a => <<"foobar">>}}, hocon:binary("a=\"foo\" bar")),
+    ?assertMatch({error, {whitespace_error, _}}, hocon:binary("a=x y z")),
+    ?assertMatch({error, {whitespace_error, _}}, hocon:binary("a b c=x")).
 
 binary(B) when is_binary(B) ->
     {ok, R} = hocon:binary(B),

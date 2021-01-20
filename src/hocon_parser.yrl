@@ -12,8 +12,8 @@ Terminals
   '{' '}' '[' ']' ','
   bool integer float null
   percent bytesize duration
-  string variable
-  endstr endvar endarr endobj
+  string variable unquoted
+  endstr endvar endarr endobj endunq
   include key required.
 
 Rootsymbol hocon.
@@ -22,6 +22,7 @@ hocon -> fields : '$1'.
 
 partials -> partial partials : ['$1' | '$2'].
 partials -> endstr : [iolist_to_binary(value_of('$1'))].
+partials -> endunq : [iolist_to_binary(value_of('$1'))].
 partials -> endvar : [value_of('$1')].
 partials -> '{' fields endobj : [{'$2'}].
 partials -> '[' elements endarr : ['$2'].
@@ -29,6 +30,7 @@ partials -> '{' endobj : [{}].
 partials -> '[' endarr : [].
 
 partial -> string : iolist_to_binary(value_of('$1')).
+partial -> unquoted : iolist_to_binary(value_of('$1')).
 partial -> variable : value_of('$1').
 partial -> '{' fields '}' : {'$2'}.
 partial -> '{' '}' : {[{}]}.

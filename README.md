@@ -11,12 +11,6 @@ HOCON spec for reference: https://lightbend.github.io/config/
 - No unicode support (at least not verified).
 - The forbidden character `@` is allowed in unquoted strings.
 - Value concatenation is not allowed in keys e.g. `a b c : 42` is invalid.
-- String value concatenation may span multiple lines. e.g. all below Erlang strings
-  are parsed to the same result (`${key => <<"value1value2">>}`):
-  * `"key=value1 value2"`
-  * `"key=value1value2"`
-  * `"key=\"value1\" \"value2\""`
-  * `"key=value1\nvalue2"`
 - `url()/file()/classpath()` includes are not supported
 
 ## Test Data

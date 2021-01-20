@@ -165,6 +165,7 @@ do_binary(Binary, Ctx) ->
     hocon_util:pipeline(Binary, Ctx,
                        [ fun hocon_token:scan/2
                        , fun hocon_token:trans_key/1
+                       , fun hocon_token:detect_forbidden_whitespace/2
                        , fun hocon_token:parse/2
                        , fun hocon_token:include/2
                        , fun expand/1

@@ -16,7 +16,7 @@
 
 -module(hocon_token).
 
--export([read/1, scan/2, trans_key/1, parse/2, include/2]).
+-export([read/1, scan/2, trans_key/1, detect_forbidden_whitespace/2, parse/2, include/2]).
 
 -type include() :: #{filename => binary(), required => boolean()}.
 
@@ -71,6 +71,8 @@ trans_key([T | Tokens], Acc) ->
 
 trans_key_lb([{string, Line, Value} | TokensRev]) ->
     [{key, Line, binary_to_atom(Value, utf8)} | TokensRev];
+trans_key_lb([{unquoted, Line, Value} | TokensRev]) ->
+    [{key, Line, binary_to_atom(Value, utf8)} | TokensRev];
 trans_key_lb(Otherwise) -> Otherwise.
 
 trans_splice_end(Tokens) ->
@@ -98,6 +100,8 @@ trans_splice_end([], Seq, Acc) ->
 do_trans_splice_end([]) -> [];
 do_trans_splice_end([{string, Line, Value} | T]) ->
     [{endstr, Line, Value} | T];
+do_trans_splice_end([{unquoted, Line, Value} | T]) ->
+    [{endunq, Line, Value} | T];
 do_trans_splice_end([{variable, Line, Value} | T]) ->
     [{endvar, Line, Value} | T];
 do_trans_splice_end([{'}', Line} | T]) ->
@@ -106,6 +110,19 @@ do_trans_splice_end([{']', Line} | T]) ->
     [{endarr, Line} | T];
 do_trans_splice_end(Other) ->
     Other.
+
+-spec detect_forbidden_whitespace(list(), hocon:ctx()) -> list().
+detect_forbidden_whitespace(Tokens, Ctx) ->
+    detect_forbidden_whitespace(Tokens, [], Ctx).
+detect_forbidden_whitespace([], Acc, _Ctx) ->
+    lists:reverse(Acc);
+detect_forbidden_whitespace([{unquoted, Line, V2} | _T], [{unquoted, _, V1} | _Acc], Ctx) ->
+    whitespace_error(Line, {V1, V2}, Ctx);
+detect_forbidden_whitespace([{endunq, Line, V2} | _T], [{unquoted, _, V1} | _Acc], Ctx) ->
+    whitespace_error(Line, {V1, V2}, Ctx);
+detect_forbidden_whitespace([Other|T], Acc, Ctx) ->
+    detect_forbidden_whitespace(T, [Other|Acc], Ctx).
+
 
 parse([], _) -> [];
 parse(Tokens, Ctx) ->
@@ -176,6 +193,7 @@ load_include(Include, Ctx0) ->
                                 [ fun read/1
                                 , fun scan/2
                                 , fun trans_key/1
+                                , fun detect_forbidden_whitespace/2
                                 , fun parse/2
                                 , fun include/2
                                 ])
@@ -198,12 +216,25 @@ real_file_name(F) ->
 scan_error(Line, ErrorInfo, Ctx) ->
     throw({scan_error, format_error(Line, ErrorInfo, Ctx)}).
 
+whitespace_error(Line, {V1, V2}, Ctx) ->
+    ErrorInfo = "unquoted string contains whitespace between "
+             ++ binary_to_list(V1) ++ " and " ++ binary_to_list(V2),
+    throw({whitespace_error, format_error(Line, ErrorInfo, Ctx)}).
+
 parse_error(Line, ErrorInfo, Ctx) ->
     throw({parse_error, format_error(Line, ErrorInfo, Ctx)}).
 
 format_error(Line, ErrorInfo, Ctx) ->
-    binary_to_list(
-        iolist_to_binary(
-            [ErrorInfo,
-             io_lib:format(" in line ~w. file: ~p",
-                           [Line, hd(hocon_util:get_stack(filename, Ctx))])])).
+    case hocon_util:get_stack(filename, Ctx) of
+        [] ->
+            binary_to_list(
+                iolist_to_binary(
+                    [ErrorInfo,
+                     io_lib:format(" in line ~w.", [Line])]));
+        File ->
+            binary_to_list(
+                iolist_to_binary(
+                    [ErrorInfo,
+                     io_lib:format(" in line ~w. file: ~p",
+                                   [Line, hd(File)])]))
+    end.
