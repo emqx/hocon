@@ -215,6 +215,12 @@ apply_opts_test() ->
                  hocon:load("etc/convert-sample.conf",
                             #{convert => [MyFun]})).
 
+delete_null_test() ->
+    ?assertEqual({ok, #{b => <<"notnull">>, c => <<>>,
+                        d => #{x => <<"foo">>, y => <<"bar">>}}},
+                 hocon:load("etc/null-sample.conf",
+                                #{delete_null => true})).
+
 binary(B) when is_binary(B) ->
     {ok, R} = hocon:binary(B),
     R;
