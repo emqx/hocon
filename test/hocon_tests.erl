@@ -225,6 +225,13 @@ required_test() ->
     ?assertEqual({ok, #{}}, hocon:load("etc/optional-include.conf")),
     ?assertMatch({error, {enoent, _}}, hocon:load("etc/required-include.conf")).
 
+merge_when_resolve_test() ->
+    ?assertEqual({ok, #{a => #{x => 1, y => 2}, b => #{x => 1, y => 2}}},
+                 hocon:binary("a={x:1},a={y:2},b=${a}")),
+    ?assertEqual({ok, #{a => [#{k3 => 1}, #{k2 => 2}],
+                        b => [#{k3 => 1}, #{k2 => 2}]}},
+                 hocon:binary("a=[{k1=1}] [{k2=2}],a=[{k3=1}] [{k2=2}],b=${a}")).
+
 binary(B) when is_binary(B) ->
     {ok, R} = hocon:binary(B),
     R;

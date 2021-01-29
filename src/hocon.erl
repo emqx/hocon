@@ -293,7 +293,7 @@ lookup(Var, {concat, List}, ResolvedValue) ->
 lookup([Var], [{Var, Value} = KV|More], ResolvedValue) ->
     case is_resolved(KV) of
         true ->
-            lookup([Var], More, Value);
+            lookup([Var], More, maybe_merge(ResolvedValue, Value));
         false ->
             lookup([Var], More, ResolvedValue)
     end;
@@ -305,6 +305,24 @@ lookup(Var, [_Other|More], ResolvedValue) ->
     lookup(Var, More, ResolvedValue);
 lookup(_Var, [], ResolvedValue) ->
     ResolvedValue.
+
+% reveal the type of "concat"
+is_object([{concat, X}| _More]) ->
+    is_object(X);
+is_object([{X}| _]) when is_list(X) ->
+    true;
+is_object(_Other) ->
+    false.
+
+maybe_merge({concat, Old}, {concat, New}) ->
+    case {is_object(Old), is_object(New)} of
+        {true, true} ->
+            {concat, lists:append([Old, New])};
+        _Other ->
+            {concat, New}
+    end;
+maybe_merge(_Old, New) ->
+    New.
 
 remove_nothing(List) ->
     remove_nothing(List, []).
