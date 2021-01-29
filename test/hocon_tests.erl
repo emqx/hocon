@@ -24,7 +24,10 @@ sample_files_test_() ->
     Wildcard = filename:join([code:lib_dir(hocon), "sample-configs", "*.conf"]),
     [begin
         BaseName = filename:basename(F, ".conf"),
-        {BaseName, fun() -> test_file_load(BaseName, F) end}
+        Json = filename:join([code:lib_dir(hocon),
+                              "sample-configs", "json", BaseName ++ ".conf.json"]),
+        {BaseName, fun() -> test_file_load(BaseName, F) end},
+        {BaseName, fun() -> test_interop(BaseName, F, Json) end}
      end || F <- filelib:wildcard(Wildcard)].
 %% include file() is not supported.
 test_file_load("file-include", F) ->
@@ -57,19 +60,51 @@ test_file_load("test10", F) ->
                             b => 5,
                             c =>
                             #{d => 600,
-                              e => #{c => 3},
+                              e => #{c => 3, q => 10},
                               f => 5, q => 10},
                             x => #{q => 10},
                             y => 5}},
                         foo =>
                         #{a => #{c => 3, q => 10},
                           b => 5,
-                          c => #{d => 600, e => #{c => 3}, f => 5, q => 10},
+                          c => #{d => 600, e => #{c => 3, q => 10}, f => 5, q => 10},
                           x => #{q => 10},
                           y => 5}}},
                  hocon:load(F));
 test_file_load(_Name, F) ->
     ?assertMatch({ok, _}, hocon:load(F)).
+
+% hoc2js converts 8.0 to 8
+test_interop("test04", Conf, Json) ->
+    case hocon:load(Conf) of
+        {error, _} ->
+            ok;
+        {ok, Res} ->
+            IntRes = hocon_util:do_deep_merge(Res, #{akka =>
+                                                     #{actor =>
+                                                       #{'default-dispatcher' =>
+                                                         #{'core-pool-size-factor' => 8,
+                                                           'max-pool-size-factor' => 8 }}}}),
+            ?assertEqual(hocon:load(Json), {ok, IntRes})
+    end;
+% hoc2js does not support include syntax
+test_interop("include-from-list", _, _) ->
+    ok;
+test_interop("test01", _, _) ->
+    ok;
+test_interop("test07", _, _) ->
+    ok;
+test_interop("test08", _, _) ->
+    ok;
+test_interop("test10", _, _) ->
+    ok;
+test_interop(_, Conf, Json) ->
+    case hocon:load(Conf) of
+        {error, _} ->
+            ok;
+        Res ->
+            ?assertEqual(hocon:load(Json), Res)
+    end.
 
 commas_test_() ->
     [ ?_assertEqual(binary("a=[1,2,3]"), binary("a=[1,2,3,]"))
