@@ -5,6 +5,7 @@
 erl_crash.dump
 .concrete/DEV_MODE
 /elvis
+/hoc2js*.jar
 
 # rebar 2.x
 .rebar
