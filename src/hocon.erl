@@ -156,7 +156,8 @@ apply_opts(Map, Opts) ->
 
 binary(Binary) ->
     try
-        {ok, do_binary(Binary, #{})}
+        Ctx = hocon_util:stack_push({filename, nofile}, #{}),
+        {ok, do_binary(Binary, Ctx)}
     catch
         throw:Reason -> {error, Reason}
     end.
