@@ -401,11 +401,29 @@ do_concat(Concat) ->
 do_concat([], [{}]) ->
     {[]};
 do_concat([], [Object| _Objects] = Acc) when is_tuple(Object) ->
-    {lists:reverse(Acc)};
+    case lists:all(fun is_tuple/1, Acc) of
+        true ->
+            {lists:reverse(Acc)};
+        false ->
+            % TODO: print line number
+            throw({concat_error, lists:reverse(Acc)})
+    end;
 do_concat([], [String| _Strings] = Acc) when is_binary(String) ->
-    iolist_to_binary(lists:reverse(Acc));
+    case lists:all(fun is_binary/1, Acc) of
+        true ->
+            iolist_to_binary(lists:reverse(Acc));
+        false ->
+            throw({concat_error, lists:reverse(Acc)})
+    end;
 do_concat([], [Array| _Arrays] = Acc) when is_list(Array) ->
-    lists:append(lists:reverse(Acc));
+    case lists:all(fun is_list/1, Acc) of
+        true ->
+            lists:append(lists:reverse(Acc));
+        false ->
+            throw({concat_error, lists:reverse(Acc)})
+    end;
+do_concat([], Acc) when length(Acc) > 1 ->
+    throw({concat_error, lists:reverse(Acc)});
 do_concat([], [Acc]) ->
     Acc;
 do_concat([], Acc) ->
