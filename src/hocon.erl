@@ -40,6 +40,11 @@
 -define(MEGABYTE, (?KILOBYTE*1024)). %1048576
 -define(GIGABYTE, (?MEGABYTE*1024)). %1073741824
 
+-define(IS_OBJECT(O), (is_tuple(O) andalso size(O) =:= 1 andalso is_list(element(1, O)))).
+-define(IS_FIELD(F), (is_tuple(F) andalso size(F) =:= 2)).
+-define(OBJECT(FIELDS), {FIELDS}).
+-define(FIELDS(OBJECT), element(1, OBJECT)).
+
 main(Args) ->
     hocon_cli:main(Args).
 
@@ -156,7 +161,8 @@ apply_opts(Map, Opts) ->
 
 binary(Binary) ->
     try
-        {ok, do_binary(Binary, #{})}
+        Ctx = hocon_util:stack_push({filename, nofile}, #{}),
+        {ok, do_binary(Binary, Ctx)}
     catch
         throw:Reason -> {error, Reason}
     end.
@@ -193,8 +199,8 @@ do_expand([{Key, {concat, C}}|More], Acc) ->
     do_expand(More, [create_nested(Key, {concat, do_expand(C, [])})|Acc]);
 do_expand([{Key, Value}|More], Acc) ->
     do_expand(More, [create_nested(Key, Value)|Acc]);
-do_expand([{Object}|More], Acc) when is_list(Object) ->
-    do_expand(More, [{do_expand(Object, [])}|Acc]);
+do_expand([Object|More], Acc) when ?IS_OBJECT(Object) ->
+    do_expand(More, [{do_expand(?FIELDS(Object), [])}|Acc]);
 do_expand([Other|More], Acc) ->
     do_expand(More, [Other|Acc]).
 
@@ -254,8 +260,8 @@ do_resolve({var, Var}, _Acc, _Unresolved, RootKVList) ->
         ResolvedValue ->
             {resolved, ResolvedValue}
     end;
-do_resolve({Object}, _Acc, _Unresolved, RootKVList) when is_list(Object) ->
-    case do_resolve(Object, [], [], RootKVList) of
+do_resolve(Object, _Acc, _Unresolved, RootKVList) when ?IS_OBJECT(Object) ->
+    case do_resolve(?FIELDS(Object), [], [], RootKVList) of
         {resolved, Resolved} ->
             {resolved, {Resolved}};
         {unresolved, Var} ->
@@ -309,7 +315,7 @@ lookup(_Var, [], ResolvedValue) ->
 % reveal the type of "concat"
 is_object([{concat, X}| _More]) ->
     is_object(X);
-is_object([{X}| _]) when is_list(X) ->
+is_object([X| _]) when ?IS_OBJECT(X) ->
     true;
 is_object(_Other) ->
     false.
@@ -368,14 +374,14 @@ do_remove_nothing([Array| More], Acc) when is_list(Array) ->
     % if one of the elements is unresolved maybevar,
     % then the element should not be added.
     do_remove_nothing(More, [remove_nothing(Array)| Acc]);
-do_remove_nothing([{Object}| More], Acc) when is_list(Object) ->
+do_remove_nothing([Object| More], Acc) when ?IS_OBJECT(Object) ->
     % if all fields are found to be nothing,
     % create empty object
-    case remove_nothing(Object) of
+    case remove_nothing(?FIELDS(Object)) of
         [] ->
             do_remove_nothing(More, [{}| Acc]);
         Removed ->
-            do_remove_nothing(More, [{Removed}| Acc])
+            do_remove_nothing(More, [?OBJECT(Removed)| Acc])
     end;
 do_remove_nothing([Other| More], Acc) ->
     do_remove_nothing(More, [Other| Acc]).
@@ -399,12 +405,30 @@ do_concat(Concat) ->
 % empty object ( a={} )
 do_concat([], [{}]) ->
     {[]};
-do_concat([], [Object| _Objects] = Acc) when is_tuple(Object) ->
-    {lists:reverse(Acc)};
+do_concat([], [Field| _Fields] = Acc) when ?IS_FIELD(Field) ->
+    case lists:all(fun (F) -> ?IS_FIELD(F) end, Acc) of
+        true ->
+            {lists:reverse(Acc)};
+        false ->
+            % TODO: print line number
+            throw({concat_error, lists:reverse(Acc)})
+    end;
 do_concat([], [String| _Strings] = Acc) when is_binary(String) ->
-    iolist_to_binary(lists:reverse(Acc));
+    case lists:all(fun is_binary/1, Acc) of
+        true ->
+            iolist_to_binary(lists:reverse(Acc));
+        false ->
+            throw({concat_error, lists:reverse(Acc)})
+    end;
 do_concat([], [Array| _Arrays] = Acc) when is_list(Array) ->
-    lists:append(lists:reverse(Acc));
+    case lists:all(fun is_list/1, Acc) of
+        true ->
+            lists:append(lists:reverse(Acc));
+        false ->
+            throw({concat_error, lists:reverse(Acc)})
+    end;
+do_concat([], Acc) when length(Acc) > 1 ->
+    throw({concat_error, lists:reverse(Acc)});
 do_concat([], [Acc]) ->
     Acc;
 do_concat([], Acc) ->
@@ -412,8 +436,8 @@ do_concat([], Acc) ->
 
 do_concat([Array| More], Acc) when is_list(Array) ->
     do_concat(More, [concat(Array)| Acc]);
-do_concat([{Object}| More], Acc)  when is_list(Object) ->
-    do_concat(More, lists:foldl(fun(KV, A) -> [verify_concat(KV)| A] end, Acc, Object));
+do_concat([Object| More], Acc)  when ?IS_OBJECT(Object) ->
+    do_concat(More, lists:foldl(fun(KV, A) -> [verify_concat(KV)| A] end, Acc, ?FIELDS(Object)));
 do_concat([String| More], Acc)  when is_binary(String) ->
     do_concat(More, [String| Acc]);
 do_concat([{concat, Concat}|More], Acc) ->
@@ -421,17 +445,17 @@ do_concat([{concat, Concat}|More], Acc) ->
 do_concat([Other|More], Acc) ->
     do_concat(More, [Other|Acc]).
 
-transform({Members}) ->
-    transform(Members);
-transform(Members) when is_list(Members) ->
-    do_transform(Members, #{}).
+transform(Object) when ?IS_OBJECT(Object) ->
+    transform(?FIELDS(Object));
+transform(Fields) ->
+    do_transform(Fields, #{}).
 
 do_transform([], Map) -> Map;
 do_transform([{Key, Value}| More], Map) ->
     do_transform(More, nested_put(paths(Key), unpack(Value), Map)).
 
-unpack({Members}) ->
-    transform(Members);
+unpack(Object) when ?IS_OBJECT(Object) ->
+    transform(?FIELDS(Object));
 unpack(Array) when is_list(Array) ->
     [unpack(Val) || Val <- Array];
 unpack(Literal) -> Literal.
