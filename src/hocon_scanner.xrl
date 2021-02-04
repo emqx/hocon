@@ -91,17 +91,17 @@ Rules.
 {Punctuator}      : {token, {list_to_atom(string:trim(TokenChars)), TokenLine}}.
 {TrailingComma}   : {skip_token, string:trim(TokenChars, leading, ",")}.
 {Bool}            : {token, {bool, TokenLine, bool(TokenChars)}}.
-{Null}            : {token, {null, TokenLine}}.
+{Null}            : {token, {null, TokenLine, null}}.
 {Unquoted}        : {token, maybe_include(TokenChars, TokenLine)}.
 {Integer}         : {token, {integer, TokenLine, list_to_integer(TokenChars)}}.
 {Float}           : {token, {float, TokenLine, to_float(TokenChars)}}.
 {String}          : {token, {string, TokenLine, iolist_to_binary(unquote(TokenChars))}}.
 {MultilineString} : {token, {string, TokenLine, iolist_to_binary(unquote(TokenChars))}}.
-{Bytesize}        : {token, {bytesize, TokenLine, iolist_to_binary(TokenChars)}}.
-{Percent}         : {token, {percent, TokenLine, iolist_to_binary(TokenChars)}}.
-{Duration}        : {token, {duration, TokenLine, iolist_to_binary(TokenChars)}}.
-{Variable}        : {token, {variable, TokenLine, {var, var_ref_name(TokenChars)}}}.
-{MaybeVar}        : {token, {variable, TokenLine, {var, {maybe, maybe_var_ref_name(TokenChars)}}}}.
+{Bytesize}        : {token, {string, TokenLine, iolist_to_binary(TokenChars)}}.
+{Percent}         : {token, {string, TokenLine, iolist_to_binary(TokenChars)}}.
+{Duration}        : {token, {string, TokenLine, iolist_to_binary(TokenChars)}}.
+{Variable}        : {token, {variable, TokenLine, var_ref_name(TokenChars)}}.
+{MaybeVar}        : {token, {variable, TokenLine, {maybe, maybe_var_ref_name(TokenChars)}}}.
 {Required}        : {token, {required, TokenLine}, get_filename_from_required(TokenChars)}.
 
 

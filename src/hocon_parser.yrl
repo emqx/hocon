@@ -21,15 +21,15 @@ hocon -> '{' fields endobj : '$2'.
 hocon -> fields : '$1'.
 
 partials -> partial partials : ['$1' | '$2'].
-partials -> endstr : [iolist_to_binary(value_of('$1'))].
-partials -> endvar : [value_of('$1')].
+partials -> endstr : [str_to_bin(map('$1'))].
+partials -> endvar : [map('$1')].
 partials -> '{' fields endobj : [{'$2'}].
 partials -> '[' elements endarr : ['$2'].
 partials -> '{' endobj : [{}].
 partials -> '[' endarr : [].
 
-partial -> string : iolist_to_binary(value_of('$1')).
-partial -> variable : value_of('$1').
+partial -> string : str_to_bin(map('$1')).
+partial -> variable : map('$1').
 partial -> '{' fields '}' : {'$2'}.
 partial -> '{' '}' : {[{}]}.
 partial -> '[' elements ']' : '$2'.
@@ -39,31 +39,38 @@ fields -> field ',' fields : ['$1'|'$3'].
 fields -> field fields : ['$1'|'$2'].
 fields -> field : ['$1'].
 
-field -> key value : {value_of('$1'), '$2'}.
+field -> key value : {map('$1'), '$2'}.
 field -> directive : '$1'.
 
 elements -> value ',' elements : ['$1'|'$3'].
 elements -> value elements : ['$1'|'$2'].
 elements -> value : ['$1'].
 
-directive -> include string : {'$include', #{filename => value_of('$2'), required => false}}.
-directive -> include endstr : {'$include', #{filename => value_of('$2'), required => false}}.
-directive -> include required string : {'$include', #{filename => value_of('$3'), required => true}}.
-directive -> include required endstr : {'$include', #{filename => value_of('$3'), required => true}}.
+directive -> include string : map_include('$2', false).
+directive -> include endstr : map_include('$2', false).
+directive -> include required string : map_include('$3', true).
+directive -> include required endstr : map_include('$3', true).
 
-value -> null : null.
-value -> bool : value_of('$1').
-value -> integer : value_of('$1').
-value -> float : value_of('$1').
-value -> percent : value_of('$1').
-value -> bytesize : value_of('$1').
-value -> duration : value_of('$1').
+value -> null : map('$1').
+value -> bool : map('$1').
+value -> integer : map('$1').
+value -> float : map('$1').
+value -> percent : map('$1').
+value -> bytesize : map('$1').
+value -> duration : map('$1').
 value -> partials : maybe_concat('$1').
 
 Erlang code.
 
-value_of(Token) -> element(3, Token).
+map({endstr, Line, Value}) -> map({string, Line, Value});
+map({endvar, Line, Value}) -> map({variable, Line, Value});
+map({variable, Line, {maybe, Value}}) -> #{type => variable, line => Line, value => Value, required => false};
+map({Type, Line, Value}) -> #{type => Type, line => Line, value => Value, required => true}.
+
+map_include({_, Line, Value}, true) ->  #{type => include, line => Line, value => Value, required => true};
+map_include({_, Line, Value}, false) ->  #{type => include, line => Line, value => Value, required => false}.
 
 maybe_concat([]) -> [];
-maybe_concat([S]) when is_binary(S) -> S;
 maybe_concat(S) -> {concat, S}.
+
+str_to_bin(#{type := T, value := V} = M) when T =:= string -> M#{value => iolist_to_binary(V)}.

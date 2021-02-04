@@ -17,8 +17,10 @@
 -module(hocon_token).
 
 -export([read/1, scan/2, trans_key/1, parse/2, include/2]).
+-export([value_of/1]).
 
--type include() :: #{filename => binary(), required => boolean()}.
+-type token(Type) :: #{type => Type, line => integer(), value => any(), required => boolean()}.
+-export_type([token/1]).
 
 -spec read(file:filename()) -> binary().
 read(Filename) ->
@@ -121,12 +123,12 @@ include(KVList, Ctx) ->
 
 do_include([], Acc, _Ctx, _CurrentPath) ->
     lists:reverse(Acc);
-do_include([{'$include', Include}|More], Acc, Ctx, CurrentPath) ->
+do_include([#{type := include}=Include|More], Acc, Ctx, CurrentPath) ->
     Parsed = load_include(Include, Ctx#{path := CurrentPath}),
     do_include(More, lists:reverse(Parsed, Acc), Ctx, CurrentPath);
-do_include([{var, Var}|More], Acc, Ctx, CurrentPath) ->
-    VarWithAbsPath = abspath(Var, hocon_util:get_stack(path, Ctx)),
-    do_include(More, [{var, VarWithAbsPath}|Acc], Ctx, CurrentPath);
+do_include([#{type := variable}=Var|More], Acc, Ctx, CurrentPath) ->
+    VarWithAbsPath = abspath(value_of(Var), hocon_util:get_stack(path, Ctx)),
+    do_include(More, [Var#{value => VarWithAbsPath}|Acc], Ctx, CurrentPath);
 do_include([{Key, {concat, MaybeObject}}|More], Acc, Ctx, CurrentPath) ->
     NewPath = [Key|CurrentPath],
     do_include(More,
@@ -138,8 +140,6 @@ do_include([{Object}|More], Acc, Ctx, CurrentPath) when is_list(Object) ->
 do_include([Other|More], Acc, Ctx, CurrentPath) ->
     do_include(More, [Other|Acc], Ctx, CurrentPath).
 
-abspath({maybe, Var}, PathStack) ->
-    {maybe, do_abspath(atom_to_binary(Var, utf8), PathStack)};
 abspath(Var, PathStack) ->
     do_abspath(atom_to_binary(Var, utf8), PathStack).
 
@@ -151,16 +151,16 @@ do_abspath(Var, [Path|More]) ->
     do_abspath(iolist_to_binary([atom_to_binary(Path, utf8), <<".">>, Var]), More).
 
 
--spec load_include(include(), hocon:ctx()) -> list().
+-spec load_include(token(include), hocon:ctx()) -> list().
 
 %% @doc Load a file and return a parsed key-value list.
 %% Because this function is intended to be called by include/2,
 %% variable substitution is not performed here.
 %% @end
-load_include(Include, Ctx0) ->
+load_include(#{value := Value, required := Required}, Ctx0) ->
     Cwd = filename:dirname(hd(hocon_util:get_stack(filename, Ctx0))),
-    Filename = filename:join([Cwd, maps:get(filename, Include)]),
-    case {file:read_file_info(Filename), maps:get(required, Include, false)} of
+    Filename = filename:join([Cwd, Value]),
+    case {file:read_file_info(Filename), Required} of
         {{error, enoent}, true} ->
             throw({enoent, Filename});
         {{error, enoent}, false} ->
@@ -194,6 +194,8 @@ real_file_name(F) ->
         {ok, Real} -> Real;
         {error, _} -> F
     end.
+
+value_of(#{value := V}) -> V.
 
 scan_error(Line, ErrorInfo, Ctx) ->
     throw({scan_error, format_error(Line, ErrorInfo, Ctx)}).
