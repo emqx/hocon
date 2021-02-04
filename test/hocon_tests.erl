@@ -268,16 +268,22 @@ merge_when_resolve_test() ->
                  hocon:binary("a=[{k1=1}] [{k2=2}],a=[{k3=1}] [{k2=2}],b=${a}")).
 
 concat_error_test_() ->
-    [ ?_assertEqual({error, {concat_error, [{x, 1}, [1, 2]]}},
+    [ ?_assertEqual({error, {concat_error, "failed to concat [{x,1},[1,2]] in line 1."}},
                     hocon:binary("a=[1,2], b={x=1}${a}"))
-    , ?_assertEqual({error, {concat_error, [<<"xyz">>, [1, 2]]}},
+    , ?_assertEqual({error, {concat_error, "failed to concat [<<\"xyz\">>,[1,2]] in line 1."}},
                     hocon:binary("a=[1,2], b=xyz${a}"))
-    , ?_assertEqual({error, {concat_error, [<<"xyz">>, 2]}},
+    , ?_assertEqual({error, {concat_error, "failed to concat [<<\"xyz\">>,2] in line 1."}},
                     hocon:binary("a=2, b=xyz${a}"))
-    , ?_assertEqual({error, {concat_error, [<<"xyz">>, 2.0]}},
+    , ?_assertEqual({error, {concat_error, "failed to concat [<<\"xyz\">>,2.0] in line 1."}},
                     hocon:binary("a=2.0, b=xyz${a}"))
-    , ?_assertEqual({error, {parse_error, "syntax error before: {var,a} in line 1. file: nofile"}},
+    , ?_assertEqual({error, {parse_error, "syntax error before: a in line 1. file: nofile"}},
                     hocon:binary("a=xyz, b=true${a}"))
+    , ?_assertEqual({error, {concat_error, "failed to concat [<<\"xyz\">>,2.0] in line 2."}},
+                    hocon:binary("a=2.0, \nb=xyz${a}"))
+    , ?_assertEqual({error, {concat_error, "failed to concat [<<\"xyz\">>,2.0] in line 3."}},
+                    hocon:binary("a=2.0, \nb=\nxyz${a}"))
+    , ?_assertEqual({error, {concat_error, "failed to concat [{x,1},[1,2]] in line 1."}},
+                    hocon:binary("a=[1,2], b={x\n=1}${a}"))
     ].
 
 binary(B) when is_binary(B) ->
