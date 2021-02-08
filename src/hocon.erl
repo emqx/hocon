@@ -19,7 +19,6 @@
 -export([load/1, load/2, binary/1]).
 -export([dump/2, dump/3]).
 -export([main/1]).
--export([duration/1]).
 
 -type config() :: map().
 -type ctx() :: #{path => list(),
@@ -31,19 +30,7 @@
 
 -export_type([config/0, ctx/0]).
 
--define(SECOND, 1000).
--define(MINUTE, (?SECOND*60)).
--define(HOUR,   (?MINUTE*60)).
--define(DAY,    (?HOUR*24)).
-
--define(KILOBYTE, 1024).
--define(MEGABYTE, (?KILOBYTE*1024)). %1048576
--define(GIGABYTE, (?MEGABYTE*1024)). %1073741824
-
--define(IS_OBJECT(O), (is_tuple(O) andalso size(O) =:= 1 andalso is_list(element(1, O)))).
--define(IS_FIELD(F), (is_tuple(F) andalso size(F) =:= 2)).
--define(OBJECT(FIELDS), {FIELDS}).
--define(FIELDS(OBJECT), element(1, OBJECT)).
+-include("hocon.hrl").
 
 main(Args) ->
     hocon_cli:main(Args).
