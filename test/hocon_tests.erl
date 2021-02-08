@@ -272,35 +272,35 @@ merge_when_resolve_test() ->
 concat_error_binary_test_() ->
     [ ?_assertEqual({error,
                      {concat_error,
-                      <<"failed to concat [{x,1},[1,2]] in file undefined at line 1">>}},
+                      <<"failed_to_concat [{x,1},[1,2]] at_line 1">>}},
                     hocon:binary("a=[1,2], b={x=1}${a}"))
     , ?_assertEqual({error,
                      {concat_error,
-                      <<"failed to concat [<<\"xyz\">>,[1,2]] in file undefined at line 1">>}},
+                      <<"failed_to_concat [<<\"xyz\">>,[1,2]] at_line 1">>}},
                     hocon:binary("a=[1,2], b=xyz${a}"))
     , ?_assertEqual({error,
                      {concat_error,
-                      <<"failed to concat [<<\"xyz\">>,2] in file undefined at line 1">>}},
+                      <<"failed_to_concat [<<\"xyz\">>,2] at_line 1">>}},
                     hocon:binary("a=2, b=xyz${a}"))
     , ?_assertEqual({error,
                      {concat_error,
-                      <<"failed to concat [<<\"xyz\">>,2.0] in file undefined at line 1">>}},
+                      <<"failed_to_concat [<<\"xyz\">>,2.0] at_line 1">>}},
                     hocon:binary("a=2.0, b=xyz${a}"))
     , ?_assertEqual({error,
                      {parse_error,
-                      <<"syntax error before: a in file undefined at line 1.">>}},
+                      <<"syntax error before: a at_line 1.">>}},
                     hocon:binary("a=xyz, b=true${a}"))
     , ?_assertEqual({error,
                      {concat_error,
-                      <<"failed to concat [<<\"xyz\">>,2.0] in file undefined at line 2">>}},
+                      <<"failed_to_concat [<<\"xyz\">>,2.0] at_line 2">>}},
                     hocon:binary("a=2.0, \nb=xyz${a}"))
     , ?_assertEqual({error,
                      {concat_error,
-                      <<"failed to concat [<<\"xyz\">>,2.0] in file undefined at line 2">>}},
+                      <<"failed_to_concat [<<\"xyz\">>,2.0] at_line 2">>}},
                     hocon:binary("a=2.0, \nb=\nxyz${a}"))
     , ?_assertEqual({error,
                      {concat_error,
-                      <<"failed to concat [{x,1},[1,2]] in file undefined at line 1">>}},
+                      <<"failed_to_concat [{x,1},[1,2]] at_line 1">>}},
                     hocon:binary("a=[1,2], b={x\n=1}${a}"))
     ].
 
@@ -328,7 +328,7 @@ resolve_error_file_test_() ->
 
 re_error(Filename0) ->
     {error, {_ErrorType, Msg}} = hocon:load(Filename0),
-    {ok, MP} = re:compile("([^ \(\t\n\r\f]+) in file \"([^ \t\n\r\f]+)\" at line ([0-9]+)"),
+    {ok, MP} = re:compile("([^ \(\t\n\r\f]+) in_file \"([^ \t\n\r\f]+)\" at_line ([0-9]+)"),
     {match, VFLs} = re:run(binary_to_list(Msg), MP,
                            [global, {capture, all_but_first, list}]),
     lists:map(fun ([V, F, L]) -> [V, filename:basename(F), L] end, VFLs).

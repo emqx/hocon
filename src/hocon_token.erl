@@ -231,8 +231,13 @@ scan_error(Line, ErrorInfo, Ctx) ->
 parse_error(Line, ErrorInfo, Ctx) ->
     throw({parse_error, format_error(Line, ErrorInfo, Ctx)}).
 
-format_error(Line, ErrorInfo, Ctx) ->
+format_error(Line, ErrorInfo, #{filename := [undefined]}) ->
     iolist_to_binary(
             [ErrorInfo,
-             io_lib:format(" in file ~p at line ~w.",
-                           [hd(hocon_util:get_stack(filename, Ctx)), Line])]).
+             io_lib:format(" at_line ~w.",
+                           [Line])]);
+format_error(Line, ErrorInfo, Ctx) ->
+    iolist_to_binary(
+        [ErrorInfo,
+         io_lib:format(" in_file ~p at_line ~w.",
+                       [hd(hocon_util:get_stack(filename, Ctx)), Line])]).

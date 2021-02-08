@@ -333,16 +333,26 @@ merge(Key, Val, Map) -> maps:put(Key, Val, Map).
 
 resolve_error(Unresolved) ->
     NFL = fun (V) ->
-        io_lib:format(", ~p in file ~p at line ~p", [name_of(V), filename_of(V), line_of(V)]) end,
+        case filename_of(V) of
+            undefined ->
+                io_lib:format(", ~p at_line ~p", [name_of(V), line_of(V)]) ;
+            F ->
+                io_lib:format(", ~p in_file ~p at_line ~p", [name_of(V), F, line_of(V)]) end
+        end,
     <<_LeadingComma, Enriched/binary>> = lists:foldl(fun (V, AccIn) ->
          iolist_to_binary([AccIn, NFL(V)]) end, "", Unresolved),
-    throw({resolve_error, iolist_to_binary(["failed to resolve", Enriched])}).
+    throw({resolve_error, iolist_to_binary(["failed_to_resolve", Enriched])}).
 
 concat_error(Acc, Location) ->
-    throw({concat_error,
-           iolist_to_binary(
-               io_lib:format("failed to concat ~p in file ~p at line ~p",
-                             [format_tokens(Acc), filename_of(Location), line_of(Location)]))}).
+    ErrorInfo = case filename_of(Location) of
+        undefined ->
+            io_lib:format("failed_to_concat ~p at_line ~p",
+                          [format_tokens(Acc), line_of(Location)]);
+        F ->
+            io_lib:format("failed_to_concat ~p in_file ~p at_line ~p",
+                          [format_tokens(Acc), F, line_of(Location)])
+        end,
+    throw({concat_error, iolist_to_binary(ErrorInfo)}).
 
 format_tokens(List) when is_list(List) ->
     lists:map(fun format_tokens/1, List);
