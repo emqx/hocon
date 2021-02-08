@@ -17,53 +17,70 @@ Terminals
   include key required.
 
 Rootsymbol hocon.
-hocon -> '{' fields endobj : '$2'.
-hocon -> fields : '$1'.
+hocon -> '{' fields endobj : make_object('$2').
+hocon -> fields : make_object('$1').
 
 partials -> partial partials : ['$1' | '$2'].
-partials -> endstr : [iolist_to_binary(value_of('$1'))].
-partials -> endvar : [value_of('$1')].
-partials -> '{' fields endobj : [{'$2'}].
-partials -> '[' elements endarr : ['$2'].
-partials -> '{' endobj : [{}].
-partials -> '[' endarr : [].
+partials -> endstr : [str_to_bin(make_primitive_value('$1'))].
+partials -> endvar : [make_variable('$1')].
+partials -> '{' fields endobj : [make_object('$1', '$2')].
+partials -> '[' elements endarr : [make_array('$1', '$2')].
+partials -> '{' endobj : [make_object('$1', [])].
+partials -> '[' endarr : [make_array('$1', [])].
 
-partial -> string : iolist_to_binary(value_of('$1')).
-partial -> variable : value_of('$1').
-partial -> '{' fields '}' : {'$2'}.
-partial -> '{' '}' : {[{}]}.
-partial -> '[' elements ']' : '$2'.
-partial -> '[' ']' : [].
+partial -> string : str_to_bin(make_primitive_value('$1')).
+partial -> variable : make_variable('$1').
+partial -> '{' fields '}' : make_object('$1', '$2').
+partial -> '{' '}' : make_object('$1', []).
+partial -> '[' elements ']' : make_array('$1', '$2').
+partial -> '[' ']' : make_array('$1', []).
 
 fields -> field ',' fields : ['$1'|'$3'].
 fields -> field fields : ['$1'|'$2'].
 fields -> field : ['$1'].
 
-field -> key value : {value_of('$1'), '$2'}.
+field -> key value : {make_primitive_value('$1'), '$2'}.
 field -> directive : '$1'.
 
 elements -> value ',' elements : ['$1'|'$3'].
 elements -> value elements : ['$1'|'$2'].
 elements -> value : ['$1'].
 
-directive -> include string : {'$include', #{filename => value_of('$2'), required => false}}.
-directive -> include endstr : {'$include', #{filename => value_of('$2'), required => false}}.
-directive -> include required string : {'$include', #{filename => value_of('$3'), required => true}}.
-directive -> include required endstr : {'$include', #{filename => value_of('$3'), required => true}}.
+directive -> include string : make_include('$2', false).
+directive -> include endstr : make_include('$2', false).
+directive -> include required string : make_include('$3', true).
+directive -> include required endstr : make_include('$3', true).
 
-value -> null : null.
-value -> bool : value_of('$1').
-value -> integer : value_of('$1').
-value -> float : value_of('$1').
-value -> percent : value_of('$1').
-value -> bytesize : value_of('$1').
-value -> duration : value_of('$1').
-value -> partials : maybe_concat('$1').
+value -> null : make_primitive_value('$1').
+value -> bool : make_primitive_value('$1').
+value -> integer : make_primitive_value('$1').
+value -> float : make_primitive_value('$1').
+value -> percent : make_primitive_value('$1').
+value -> bytesize : make_primitive_value('$1').
+value -> duration : make_primitive_value('$1').
+value -> partials : make_concat('$1').
 
 Erlang code.
 
-value_of(Token) -> element(3, Token).
+make_object(Object) -> make_object({'{', 1}, Object).
+make_object(LeftBrace, Object) -> #{type => object, value => Object, line => line_of(LeftBrace)}.
 
-maybe_concat([]) -> [];
-maybe_concat([S]) when is_binary(S) -> S;
-maybe_concat(S) -> {concat, S}.
+make_array(LeftBrace, Array) -> #{type => array, value => Array, line => line_of(LeftBrace)}.
+
+make_primitive_value({endstr, Line, Value}) -> #{type => string, value => Value, line => Line};
+make_primitive_value({T, Line, Value}) -> #{type => T, value => Value, line => Line}.
+
+make_variable({V, Line, {maybe, Value}}) when V =:= variable orelse V =:= endvar ->
+    #{type => variable, value => Value, name => Value, line => Line, required => false};
+make_variable({V, Line, Value}) when V =:= variable orelse V =:= endvar ->
+    #{type => variable, value => Value, name => Value, line => Line, required => true}.
+
+make_include(String, true) ->  #{type => include, value => value_of(String), line => line_of(String), required => true};
+make_include(String, false) ->  #{type => include, value => value_of(String), line => line_of(String), required => false}.
+
+make_concat(S) -> #{type => concat, value => S}.
+
+str_to_bin(#{type := T, value := V} = M) when T =:= string -> M#{value => iolist_to_binary(V)}.
+
+line_of(Token) -> element(2, Token).
+value_of(Token) -> element(3, Token).

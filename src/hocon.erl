@@ -35,81 +35,6 @@
 main(Args) ->
     hocon_cli:main(Args).
 
-proplists(Map) when is_map(Map) ->
-    proplists(maps:iterator(Map), [], []).
-proplists(Iter, Path, Acc) ->
-    case maps:next(Iter) of
-        {K, M, I} when is_map(M) ->
-            Child = proplists(maps:iterator(M), [atom_to_list(K)| Path], []),
-            proplists(I, Path, lists:append(Child, Acc));
-        {K, [Bin|_More]=L, I} when is_binary(Bin) ->
-            NewList = [binary_to_list(B) || B <- L],
-            ReversedPath = lists:reverse([atom_to_list(K)| Path]),
-            proplists(I, Path, [{ReversedPath, NewList}| Acc]);
-        {K, Bin, I} when is_binary(Bin) ->
-            ReversedPath = lists:reverse([atom_to_list(K)| Path]),
-            proplists(I, Path, [{ReversedPath, binary_to_list(Bin)}| Acc]);
-        {K, V, I} ->
-            ReversedPath = lists:reverse([atom_to_list(K)| Path]),
-            proplists(I, Path, [{ReversedPath, V}| Acc]);
-        none ->
-            Acc
-    end.
-
-convert_value(ConvertFunctions, Map) when is_list(ConvertFunctions) ->
-    Resolved = resolve_convert_fun(ConvertFunctions),
-    do_convert_value(hocon_util:pipeline_fun(Resolved), Map).
-
-do_convert_value(Fun, Map) ->
-    do_convert_value(Fun, maps:iterator(Map), #{}).
-do_convert_value(Fun, I, NewMap) ->
-    case maps:next(I) of
-        {K, M, Next} when is_map(M) ->
-            do_convert_value(Fun, Next, NewMap#{K => do_convert_value(Fun, M)});
-        {K, V, Next} ->
-            do_convert_value(Fun, Next, NewMap#{K => Fun(V)});
-        none ->
-            NewMap
-    end.
-
-resolve_convert_fun(L) when is_list(L) ->
-    lists:map(fun do_resolve_convert_fun/1, L).
-do_resolve_convert_fun(duration) ->
-    fun duration/1;
-do_resolve_convert_fun(onoff) ->
-    fun onoff/1;
-do_resolve_convert_fun(bytesize) ->
-    fun bytesize/1;
-do_resolve_convert_fun(percent) ->
-    fun percent/1;
-do_resolve_convert_fun(F) when is_function(F, 1) ->
-    F.
-
-delete_null(Map) when is_map(Map) ->
-    delete_null(maps:iterator(Map), #{}).
-delete_null(Iter, NewMap) ->
-    case maps:next(Iter) of
-        {K, M, Next} when is_map(M) ->
-            case delete_null(M) of
-                EmptyM when map_size(EmptyM) =:= 0 ->
-                    delete_null(Next, NewMap);
-                NewM ->
-                    delete_null(Next, NewMap#{K => NewM})
-            end;
-        {K, V, Next} ->
-            case is_null(V) of
-                true ->
-                    delete_null(Next, NewMap);
-                false ->
-                    delete_null(Next, NewMap#{K => V})
-            end;
-        none ->
-            NewMap
-    end.
-
-is_null(null) -> true;
-is_null(_Other) -> false.
-
 -spec(load(file:filename()) -> {ok, config()} | {error, term()}).
 load(Filename0) ->
     load(Filename0, #{format => map}).
@@ -129,26 +54,27 @@ load(Filename0, Opts) ->
 apply_opts(Map, Opts) ->
     ConvertedMap = case maps:find(convert, Opts) of
         {ok, Converter} ->
-            convert_value(Converter, Map);
+            hocon_postprocess:convert_value(Converter, Map);
         _ ->
             Map
     end,
     NullDeleted = case maps:find(delete_null, Opts) of
         {ok, true} ->
-            delete_null(ConvertedMap);
+            hocon_postprocess:delete_null(ConvertedMap);
         _ ->
             ConvertedMap
     end,
     case maps:find(format, Opts) of
         {ok, proplists} ->
-            proplists(NullDeleted);
+            hocon_postprocess:proplists(NullDeleted);
         _ ->
             NullDeleted
     end.
 
+-spec binary(binary()|string()) -> {ok, config()} | {error, term()}.
 binary(Binary) ->
     try
-        Ctx = hocon_util:stack_push({filename, nofile}, #{}),
+        Ctx = hocon_util:stack_multiple_push([{path, '$root'}, {filename, undefined}], #{}),
         {ok, do_binary(Binary, Ctx)}
     catch
         throw:Reason -> {error, Reason}
@@ -162,7 +88,6 @@ do_binary(Binary, Ctx) ->
                        , fun hocon_token:include/2
                        , fun expand/1
                        , fun resolve/1
-                       , fun remove_nothing/1
                        , fun concat/1
                        , fun transform/1
                        ]).
@@ -177,37 +102,39 @@ to_list(Config) when is_map(Config) ->
     maps:to_list(maps:map(fun(_Key, MVal) -> to_list(MVal) end, Config));
 to_list(Value) -> Value.
 
-expand(KVList) ->
-    do_expand(KVList, []).
+-spec(expand(hocon_token:boxed()) -> hocon_token:boxed()).
+expand(#{type := object}=O) ->
+    O#{value => do_expand(value_of(O), [])}.
 
 do_expand([], Acc) ->
     lists:reverse(Acc);
-do_expand([{Key, {concat, C}}|More], Acc) ->
-    do_expand(More, [create_nested(Key, {concat, do_expand(C, [])})|Acc]);
-do_expand([{Key, Value}|More], Acc) ->
+do_expand([{#{type := key}=Key, #{type := concat}=C}|More], Acc) ->
+    do_expand(More, [create_nested(Key, C#{value => do_expand(value_of(C), [])})|Acc]);
+do_expand([{#{type := key}=Key, Value}|More], Acc) ->
     do_expand(More, [create_nested(Key, Value)|Acc]);
-do_expand([Object|More], Acc) when ?IS_OBJECT(Object) ->
-    do_expand(More, [{do_expand(?FIELDS(Object), [])}|Acc]);
+do_expand([#{type := object}=O|More], Acc)  ->
+    do_expand(More, [O#{value => do_expand(value_of(O), [])}|Acc]);
 do_expand([Other|More], Acc) ->
     do_expand(More, [Other|Acc]).
 
-create_nested(Key, Value) when is_atom(Key) ->
-    {concat, [{[Res]}]} = do_create_nested(paths(Key), Value),
-    Res.
+create_nested(#{type := key}=Key, Value)  ->
+    do_create_nested(paths(value_of(Key)), Value, Key).
 
-do_create_nested([], Value) ->
+do_create_nested([], Value, _OriginalKey) ->
     Value;
-do_create_nested([Path|More], Value) ->
-    {concat, [{[{Path, do_create_nested(More, Value)}]}]}.
+do_create_nested([Path|More], Value, OriginalKey) ->
+    {maps:merge(OriginalKey, #{value => Path}),
+     #{type => concat, value => [do_create_nested(More, Value, OriginalKey)]}}.
 
-resolve(KVList) ->
-    case do_resolve(KVList, [], [], KVList) of
+-spec(resolve(hocon_token:boxed()) -> hocon_token:boxed()).
+resolve(#{type := object}=O) ->
+    case do_resolve(value_of(O), [], [], value_of(O)) of
         skip ->
-            KVList;
+            O;
         {resolved, Resolved} ->
-            resolve(Resolved);
+            resolve(O#{value => Resolved});
         {unresolved, Unresolved} ->
-            throw({unresolved, lists:flatten(Unresolved)})
+            resolve_error(lists:reverse(lists:flatten(Unresolved)))
     end.
 do_resolve([], _Acc, [], _RootKVList) ->
     skip;
@@ -222,44 +149,30 @@ do_resolve([V|More], Acc, Unresolved, RootKVList) ->
         skip ->
             do_resolve(More, [V| Acc], Unresolved, RootKVList);
         delete ->
-            {resolved, lists:reverse(Acc, [nothing|More])}
+            {resolved, lists:reverse(Acc, More)}
     end;
-do_resolve({concat, List}, _Acc, _Unresolved, RootKVList) when is_list(List) ->
-    case do_resolve(List, [], [], RootKVList) of
+do_resolve(#{type := T}=X, _Acc, _Unresolved, RootKVList) when ?IS_VALUE_LIST(T) ->
+    case do_resolve(value_of(X), [], [], RootKVList) of
         {resolved, Resolved} ->
-            {resolved, {concat, Resolved}};
+            {resolved, X#{value => Resolved}};
         {unresolved, Var} ->
             {unresolved, Var};
         skip ->
             skip
     end;
-do_resolve({var, {maybe, Var}}, _Acc, _Unresolved, RootKVList) ->
-    case lookup(paths(Var), RootKVList) of
-        notfound ->
+do_resolve(#{type := variable, required := Required}=V, _Acc, _Unresolved, RootKVList) ->
+    case {lookup(paths(hocon_token:value_of(V)), RootKVList), Required} of
+        {notfound, true} ->
+            {unresolved, V};
+        {notfound, false} ->
             delete;
-        ResolvedValue ->
+        {ResolvedValue, _} ->
             {resolved, ResolvedValue}
     end;
-do_resolve({var, Var}, _Acc, _Unresolved, RootKVList) ->
-    case lookup(paths(Var), RootKVList) of
-        notfound ->
-            {unresolved, Var};
-        ResolvedValue ->
-            {resolved, ResolvedValue}
-    end;
-do_resolve(Object, _Acc, _Unresolved, RootKVList) when ?IS_OBJECT(Object) ->
-    case do_resolve(?FIELDS(Object), [], [], RootKVList) of
-        {resolved, Resolved} ->
-            {resolved, {Resolved}};
-        {unresolved, Var} ->
-            {unresolved, Var};
-        skip ->
-            skip
-    end;
-do_resolve({Key, Value}, _Acc, _Unresolved, RootKVList) ->
+do_resolve({#{type := key}=K, Value}, _Acc, _Unresolved, RootKVList) ->
     case do_resolve(Value, [], [], RootKVList) of
         {resolved, Resolved} ->
-            {resolved, {Key, Resolved}};
+            {resolved, {K, Resolved}};
         {unresolved, Var} ->
             {unresolved, Var};
         skip ->
@@ -278,174 +191,125 @@ is_resolved(KV) ->
             false
     end.
 
+-spec(lookup(list(), hocon_token:inbox()) -> hocon_token:boxed() | notfound).
 lookup(Var, KVList) ->
     lookup(Var, KVList, notfound).
 
-lookup(Var, {concat, List}, ResolvedValue) ->
-    lookup(Var, List, ResolvedValue);
-lookup([Var], [{Var, Value} = KV|More], ResolvedValue) ->
+lookup(Var, #{type := concat}=C, ResolvedValue) ->
+    lookup(Var, value_of(C), ResolvedValue);
+lookup([Var], [{#{type := key, value := Var}, Value} = KV|More], ResolvedValue) ->
     case is_resolved(KV) of
         true ->
             lookup([Var], More, maybe_merge(ResolvedValue, Value));
         false ->
             lookup([Var], More, ResolvedValue)
     end;
-lookup([Path|MorePath] = Var, [{Path, Value}|More], ResolvedValue) ->
+lookup([Path|MorePath] = Var, [{#{type := key, value := Path}, Value}|More], ResolvedValue) ->
     lookup(Var, More, lookup(MorePath, Value, ResolvedValue));
-lookup(Var, [{List}|More], ResolvedValue) ->
-    lookup(Var, More, lookup(Var, List, ResolvedValue));
+lookup(Var, [#{type := T}=X|More], ResolvedValue) when T =:= concat orelse T =:= object ->
+    lookup(Var, More, lookup(Var, value_of(X), ResolvedValue));
 lookup(Var, [_Other|More], ResolvedValue) ->
     lookup(Var, More, ResolvedValue);
 lookup(_Var, [], ResolvedValue) ->
     ResolvedValue.
 
 % reveal the type of "concat"
-is_object([{concat, X}| _More]) ->
-    is_object(X);
-is_object([X| _]) when ?IS_OBJECT(X) ->
+is_object([#{type := concat}=C| _More]) ->
+    is_object(value_of(C));
+is_object([#{type := object}| _]) ->
     true;
 is_object(_Other) ->
     false.
 
-maybe_merge({concat, Old}, {concat, New}) ->
-    case {is_object(Old), is_object(New)} of
+maybe_merge(#{type := concat}=Old, #{type := concat}=New) ->
+    case {is_object(value_of(Old)), is_object(value_of(New))} of
         {true, true} ->
-            {concat, lists:append([Old, New])};
+            New#{value =>lists:append([value_of(Old), value_of(New)])};
         _Other ->
-            {concat, New}
+            New
     end;
 maybe_merge(_Old, New) ->
     New.
 
-remove_nothing(List) ->
-    remove_nothing(List, []).
+-spec concat(hocon_token:boxed()) -> hocon_token:boxed().
+concat(#{type := object}=O) ->
+    O#{value => lists:map(fun (E) -> verify_concat(E) end, value_of(O))}.
 
-remove_nothing([], Acc) ->
-    lists:reverse(Acc);
-remove_nothing([{Key, {concat, Concat}}|More], Acc) ->
-    % if the value of an object field is an unresolved maybevar
-    % then the field should not be created.
-    case do_remove_nothing(Concat) of
-        [] ->
-            remove_nothing(More, Acc);
-        Removed ->
-            remove_nothing(More, [{Key, {concat, Removed}}|Acc])
-    end;
-remove_nothing([{concat, Concat}|More], Acc) ->
-    case do_remove_nothing(Concat) of
-        [] ->
-            remove_nothing(More, Acc);
-        Removed ->
-            remove_nothing(More, [{concat, Removed}|Acc])
-    end;
-remove_nothing([Other|More], Acc) ->
-    remove_nothing(More, [Other|Acc]).
-
-do_remove_nothing(Concat) ->
-    do_remove_nothing(Concat, []).
-do_remove_nothing([], Acc) ->
-    lists:reverse(Acc);
-do_remove_nothing([{concat, Concat}| More], Acc) ->
-    case do_remove_nothing(Concat) of
-        [] ->
-            do_remove_nothing(More, Acc);
-        Removed ->
-            do_remove_nothing(More, [{concat, Removed}|Acc])
-    end;
-do_remove_nothing([nothing| More], Acc) ->
-    % unresolved maybevar disappears silently.
-    % if it is part of a value concatenation with another string,
-    % then it should become an empty string
-    do_remove_nothing(More, Acc);
-do_remove_nothing([Array| More], Acc) when is_list(Array) ->
-    % if one of the elements is unresolved maybevar,
-    % then the element should not be added.
-    do_remove_nothing(More, [remove_nothing(Array)| Acc]);
-do_remove_nothing([Object| More], Acc) when ?IS_OBJECT(Object) ->
-    % if all fields are found to be nothing,
-    % create empty object
-    case remove_nothing(?FIELDS(Object)) of
-        [] ->
-            do_remove_nothing(More, [{}| Acc]);
-        Removed ->
-            do_remove_nothing(More, [?OBJECT(Removed)| Acc])
-    end;
-do_remove_nothing([Other| More], Acc) ->
-    do_remove_nothing(More, [Other| Acc]).
-
-
-
--spec concat(list()) -> list().
-concat(List) ->
-    lists:map(fun (E) -> verify_concat(E) end, List).
-
-verify_concat({concat, Concat}) ->
-    do_concat(Concat);
-verify_concat({Key, Value}) ->
-    {Key, verify_concat(Value)};
+verify_concat(#{type := concat}=C) ->
+    do_concat(value_of(C), #{line => line_of(C), filename => filename_of(C)});
+verify_concat({#{type := key}=K, Value}) ->
+    {K, verify_concat(Value)};
 verify_concat(Other) ->
     Other.
 
-do_concat(Concat) ->
-    do_concat(Concat, []).
+do_concat(Concat, Location) ->
+    do_concat(Concat, Location, []).
 
-% empty object ( a={} )
-do_concat([], [{}]) ->
-    {[]};
-do_concat([], [Field| _Fields] = Acc) when ?IS_FIELD(Field) ->
+do_concat([], _, []) ->
+    nothing;
+do_concat([], Location, [Field| _Fields] = Acc) when ?IS_FIELD(Field) ->
     case lists:all(fun (F) -> ?IS_FIELD(F) end, Acc) of
         true ->
-            {lists:reverse(Acc)};
+            Location#{type => object, value => lists:reverse(Acc)};
         false ->
-            % TODO: print line number
-            throw({concat_error, lists:reverse(Acc)})
+            concat_error(lists:reverse(Acc), Location)
     end;
-do_concat([], [String| _Strings] = Acc) when is_binary(String) ->
-    case lists:all(fun is_binary/1, Acc) of
+do_concat([], Location, [#{type:= string}|_] = Acc) ->
+    case lists:all(fun (A) -> type_of(A) =:= string end, Acc) of
         true ->
-            iolist_to_binary(lists:reverse(Acc));
+            BinList = lists:map(fun(M) -> maps:get(value, M) end, lists:reverse(Acc)),
+            Location#{type => string, value => iolist_to_binary(BinList)};
         false ->
-            throw({concat_error, lists:reverse(Acc)})
+            concat_error(lists:reverse(Acc), Location)
     end;
-do_concat([], [Array| _Arrays] = Acc) when is_list(Array) ->
-    case lists:all(fun is_list/1, Acc) of
+do_concat([], Location, [#{type := array}|_] = Acc) ->
+    case lists:all(fun (A) -> type_of(A) =:= array end, Acc) of
         true ->
-            lists:append(lists:reverse(Acc));
+            NewValue = lists:append(lists:reverse(lists:map(fun value_of/1, Acc))),
+            Location#{type => array, value => NewValue};
         false ->
-            throw({concat_error, lists:reverse(Acc)})
+            concat_error(lists:reverse(Acc), Location)
     end;
-do_concat([], Acc) when length(Acc) > 1 ->
-    throw({concat_error, lists:reverse(Acc)});
-do_concat([], [Acc]) ->
+do_concat([], Location, Acc) when length(Acc) > 1 ->
+    concat_error(lists:reverse(Acc), Location);
+do_concat([], _, [Acc]) ->
     Acc;
-do_concat([], Acc) ->
+do_concat([], _, Acc) ->
     lists:reverse(Acc);
 
-do_concat([Array| More], Acc) when is_list(Array) ->
-    do_concat(More, [concat(Array)| Acc]);
-do_concat([Object| More], Acc)  when ?IS_OBJECT(Object) ->
-    do_concat(More, lists:foldl(fun(KV, A) -> [verify_concat(KV)| A] end, Acc, ?FIELDS(Object)));
-do_concat([String| More], Acc)  when is_binary(String) ->
-    do_concat(More, [String| Acc]);
-do_concat([{concat, Concat}|More], Acc) ->
-    do_concat([do_concat(Concat)|More], Acc);
-do_concat([Other|More], Acc) ->
-    do_concat(More, [Other|Acc]).
+do_concat([#{type := array}=A|More], Location, Acc) ->
+    do_concat(More, Location, [A#{value => lists:map(fun verify_concat/1, value_of(A))}|Acc]);
+do_concat([#{type := object}=O|More], Location, Acc) ->
+    ConcatO = lists:map(fun verify_concat/1, value_of(O)),
+    do_concat(More, Location, lists:reverse(ConcatO, Acc));
+do_concat([#{type:= string}=S| More], Location, Acc) ->
+    do_concat(More, Location, [S|Acc]);
+do_concat([#{type := concat}=C|More], Location, Acc) ->
+    ConcatC = do_concat(value_of(C), #{line => line_of(C), filename => filename_of(C)}),
+    do_concat([ConcatC|More], Location, Acc);
+do_concat([{#{type := key}=K, Value}|More], Location, Acc) ->
+    do_concat(More, Location, [{K, verify_concat(Value)}|Acc]);
+do_concat([Other|More], Location, Acc) ->
+    do_concat(More, Location, [Other|Acc]).
 
-transform(Object) when ?IS_OBJECT(Object) ->
-    transform(?FIELDS(Object));
-transform(Fields) ->
-    do_transform(Fields, #{}).
+-spec(transform(hocon_token:boxed()) -> config()).
+transform(#{type := object}=O) ->
+    do_transform(remove_nothing(value_of(O)), #{}).
 
 do_transform([], Map) -> Map;
 do_transform([{Key, Value}| More], Map) ->
-    do_transform(More, nested_put(paths(Key), unpack(Value), Map)).
+    do_transform(More, nested_put(paths(hocon_token:value_of(Key)), unpack(Value), Map)).
 
-unpack(Object) when ?IS_OBJECT(Object) ->
-    transform(?FIELDS(Object));
-unpack(Array) when is_list(Array) ->
-    [unpack(Val) || Val <- Array];
-unpack(Literal) -> Literal.
+unpack(#{type := object}=O) ->
+    do_transform(remove_nothing(value_of(O)), #{});
+unpack(#{type := array}=A) ->
+    [unpack(Val) || Val <- remove_nothing(value_of(A))];
+unpack(Literal) -> value_of(Literal).
+
+remove_nothing(List) ->
+    lists:filter(fun (nothing) -> false;
+                     ({_Key, nothing}) -> false;
+                     (_Other) -> true end, List).
 
 paths(Key) when is_atom(Key) ->
     paths(atom_to_list(Key));
@@ -467,86 +331,55 @@ merge(Key, Val, Map) when is_map(Val) ->
     end;
 merge(Key, Val, Map) -> maps:put(Key, Val, Map).
 
+resolve_error(Unresolved) ->
+    NFL = fun (V) ->
+        io_lib:format(", ~p in file ~p at line ~p", [name_of(V), filename_of(V), line_of(V)]) end,
+    <<_LeadingComma, Enriched/binary>> = lists:foldl(fun (V, AccIn) ->
+         iolist_to_binary([AccIn, NFL(V)]) end, "", Unresolved),
+    throw({resolve_error, iolist_to_binary(["failed to resolve", Enriched])}).
 
+concat_error(Acc, Location) ->
+    throw({concat_error,
+           iolist_to_binary(
+               io_lib:format("failed to concat ~p in file ~p at line ~p",
+                             [format_tokens(Acc), filename_of(Location), line_of(Location)]))}).
 
+format_tokens(List) when is_list(List) ->
+    lists:map(fun format_tokens/1, List);
+format_tokens(#{type := array}=A) ->
+    lists:map(fun format_tokens/1, value_of(A));
+format_tokens({K, V}) ->
+    {format_tokens(K), format_tokens(V)};
+format_tokens(Token) ->
+    hocon_token:value_of(Token).
 
-onoff(Bin) when is_binary(Bin) ->
-    case do_onoff(binary_to_list(Bin)) of
-        Bool when Bool =:= true orelse Bool =:= false ->
-            Bool;
-        Str when is_list(Str) ->
-            list_to_binary(Str)
-    end;
-onoff(Other) ->
-    Other.
-do_onoff("on")  -> true;
-do_onoff("off") -> false;
-do_onoff(X) -> X.
+% transforms tokens to values.
+value_of(nothing) -> nothing;
+value_of({}) -> #{};
+value_of(List) when is_list(List) ->
+    lists:map(fun value_of/1, List);
+value_of(Field) when ?IS_FIELD(Field) ->
+    {value_of(element(1, Field)), value_of(element(2, Field))};
+value_of(Token) ->
+    hocon_token:value_of(Token).
 
-re_run_first(Str, MP) ->
-    re:run(Str, MP, [{capture, all_but_first, list}]).
+% get one representative line number.
+line_of(#{line := Line}) ->
+    Line;
+line_of(_Other) ->
+    undefined.
 
-percent(Bin) when is_binary(Bin) ->
-    case do_percent(binary_to_list(Bin)) of
-        Percent when is_float(Percent) ->
-            Percent;
-        Str when is_list(Str) ->
-            list_to_binary(Str)
-    end;
-percent(Other) ->
-    Other.
-do_percent(Str) ->
-    {ok, MP} = re:compile("([0-9]+)(%)$"),
-    case re_run_first(Str, MP) of
-        {match, [Val, _Unit]} ->
-            list_to_integer(Val) / 100;
-        _ ->
-            Str
-    end.
+type_of(#{type := Type}) ->
+    Type;
+type_of(_Other) ->
+    undefined.
 
-bytesize(Bin) when is_binary(Bin) ->
-    case do_bytesize(binary_to_list(Bin)) of
-        Byte when is_integer(Byte) ->
-            Byte;
-        Str when is_list(Str) ->
-            list_to_binary(Str)
-    end;
-bytesize(Other) ->
-    Other.
-do_bytesize(Str) ->
-    {ok, MP} = re:compile("([0-9]+)(kb|KB|mb|MB|gb|GB)$"),
-    case re_run_first(Str, MP) of
-        {match, [Val, Unit]} ->
-            do_bytesize(list_to_integer(Val), Unit);
-        _ -> Str
-    end.
-do_bytesize(Val, "kb") -> Val * ?KILOBYTE;
-do_bytesize(Val, "KB") -> Val * ?KILOBYTE;
-do_bytesize(Val, "mb") -> Val * ?MEGABYTE;
-do_bytesize(Val, "MB") -> Val * ?MEGABYTE;
-do_bytesize(Val, "gb") -> Val * ?GIGABYTE;
-do_bytesize(Val, "GB") -> Val * ?GIGABYTE.
+filename_of(#{filename := Filename}) ->
+    Filename;
+filename_of(_Other) ->
+    undefined.
 
-duration(Bin) when is_binary(Bin) ->
-    case do_duration(binary_to_list(Bin)) of
-        Duration when is_integer(Duration) ->
-            Duration;
-        Unchanged when is_list(Unchanged) ->
-            Bin
-    end;
-duration(Str) when is_list(Str) ->
-    do_duration(Str);
-duration(Other) ->
-    Other.
-do_duration(Str) ->
-    {ok, MP} = re:compile("([0-9]+)(d|D|h|H|m|M|s|S|ms|MS)$"),
-    case re:run(string:to_lower(Str), MP, [{capture, all_but_first, list}]) of
-        {match, [Val, Unit]} ->
-            do_duration(list_to_integer(Val), Unit);
-        _ -> Str
-    end.
-do_duration(Val, "d")  -> Val * ?DAY;
-do_duration(Val, "h")  -> Val * ?HOUR;
-do_duration(Val, "m")  -> Val * ?MINUTE;
-do_duration(Val, "s")  -> Val * ?SECOND;
-do_duration(Val, "ms") -> Val.
+name_of(#{type := variable, name := N}) ->
+    N;
+name_of(_Other) ->
+    undefined.
