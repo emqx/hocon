@@ -1,5 +1,5 @@
 %%--------------------------------------------------------------------
-%% Copyright (c) 2020 EMQ Technologies Co., Ltd. All Rights Reserved.
+%% Copyright (c) 2021 EMQ Technologies Co., Ltd. All Rights Reserved.
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -17,8 +17,22 @@
 -module(hocon_token).
 
 -export([read/1, scan/2, trans_key/1, parse/2, include/2]).
+-export([value_of/1]).
 
--type include() :: #{filename => binary(), required => boolean()}.
+-export_type([boxed/0, inbox/0]).
+
+-type boxed() :: #{type := hocon_type(),
+                   value := inbox(),
+                   line => integer(),
+                   filename => string(),
+                   required => boolean()}.
+-type inbox() :: primitive() | [{Key :: boxed(), boxed()}] | [boxed()].
+-type primitive() :: null | boolean() | number() | binary().
+-type hocon_type() :: null | bool | integer | float
+                    | string | array | object | hocon_intermediate_type().
+-type hocon_intermediate_type() :: variable | include | concat. %% to be reduced
+
+-include("hocon.hrl").
 
 -spec read(file:filename()) -> binary().
 read(Filename) ->
@@ -107,7 +121,7 @@ do_trans_splice_end([{']', Line} | T]) ->
 do_trans_splice_end(Other) ->
     Other.
 
-parse([], _) -> [];
+parse([], _) -> #{type => object, value => []};
 parse(Tokens, Ctx) ->
     case hocon_parser:parse(Tokens) of
         {ok, Ret} -> Ret;
@@ -115,31 +129,45 @@ parse(Tokens, Ctx) ->
             parse_error(Line, ErrorInfo, Ctx)
     end.
 
--spec include(list(), hocon:ctx()) -> list().
-include(KVList, Ctx) ->
-    do_include(KVList, [], Ctx, hocon_util:get_stack(path, Ctx)).
+-spec include(boxed(), hocon:ctx()) -> boxed().
+include(#{type := object}=O, Ctx) ->
+    O#{value => do_include(value_of(O), [], Ctx, hocon_util:get_stack(path, Ctx))}.
 
 do_include([], Acc, _Ctx, _CurrentPath) ->
     lists:reverse(Acc);
-do_include([{'$include', Include}|More], Acc, Ctx, CurrentPath) ->
-    Parsed = load_include(Include, Ctx#{path := CurrentPath}),
-    do_include(More, lists:reverse(Parsed, Acc), Ctx, CurrentPath);
-do_include([{var, Var}|More], Acc, Ctx, CurrentPath) ->
-    VarWithAbsPath = abspath(Var, hocon_util:get_stack(path, Ctx)),
-    do_include(More, [{var, VarWithAbsPath}|Acc], Ctx, CurrentPath);
-do_include([{Key, {concat, MaybeObject}}|More], Acc, Ctx, CurrentPath) ->
-    NewPath = [Key|CurrentPath],
-    do_include(More,
-               [{Key, {concat, do_include(MaybeObject, [], Ctx, NewPath)}}|Acc],
-               Ctx,
-               CurrentPath);
-do_include([{Object}|More], Acc, Ctx, CurrentPath) when is_list(Object) ->
-    do_include(More, [{do_include(Object, [], Ctx, CurrentPath)}|Acc], Ctx, CurrentPath);
+
+do_include([#{type := include}=Include|More], Acc, Ctx, CurrentPath) ->
+    case load_include(Include, Ctx#{path := CurrentPath}) of
+        nothing ->
+            do_include(More, Acc, Ctx, CurrentPath);
+        #{type := object}=O ->
+            do_include(More, lists:reverse(value_of(O), Acc), Ctx, CurrentPath)
+    end;
+do_include([#{type := variable}=V|More], Acc, Ctx, CurrentPath) ->
+    VarWithAbsPath = abspath(value_of(V), hocon_util:get_stack(path, Ctx)),
+    NewV = V#{filename => filename(Ctx), value => VarWithAbsPath},
+    do_include(More, [NewV|Acc], Ctx, CurrentPath);
+do_include([{Key, #{type := T}=X}|More], Acc, Ctx, CurrentPath) when ?IS_VALUE_LIST(T) ->
+    NewKey = Key#{filename => filename(Ctx)},
+    NewValue = do_include(value_of(X), [], Ctx, [Key|CurrentPath]),
+    NewX = X#{filename => filename(Ctx), line => line_of(Key), value => NewValue},
+    do_include(More, [{NewKey, NewX}|Acc], Ctx, CurrentPath);
+do_include([#{type := T}=X|More], Acc, Ctx, CurrentPath) when ?IS_VALUE_LIST(T) ->
+    NewValue = do_include(value_of(X), [], Ctx, CurrentPath),
+    do_include(More, [X#{filename => filename(Ctx), value => NewValue}|Acc], Ctx, CurrentPath);
+do_include([{Key, #{type := _T}=X}|More], Acc, Ctx, CurrentPath) ->
+    NewKey = Key#{filename => filename(Ctx)},
+    NewX = X#{filename => filename(Ctx), line => line_of(Key)},
+    do_include(More, [{NewKey, NewX}|Acc], Ctx, CurrentPath);
+do_include([#{type := _T}=X|More], Acc, Ctx, CurrentPath) ->
+    NewX = X#{filename => filename(Ctx)},
+    do_include(More, [NewX|Acc], Ctx, CurrentPath);
 do_include([Other|More], Acc, Ctx, CurrentPath) ->
     do_include(More, [Other|Acc], Ctx, CurrentPath).
 
-abspath({maybe, Var}, PathStack) ->
-    {maybe, do_abspath(atom_to_binary(Var, utf8), PathStack)};
+filename(Ctx) ->
+    hocon_util:top_stack(filename, Ctx).
+
 abspath(Var, PathStack) ->
     do_abspath(atom_to_binary(Var, utf8), PathStack).
 
@@ -147,25 +175,24 @@ do_abspath(Var, []) ->
     binary_to_atom(Var, utf8);
 do_abspath(Var, ['$root']) ->
     binary_to_atom(Var, utf8);
-do_abspath(Var, [Path|More]) ->
-    do_abspath(iolist_to_binary([atom_to_binary(Path, utf8), <<".">>, Var]), More).
+do_abspath(Var, [#{type := key}=K|More]) ->
+    do_abspath(iolist_to_binary([atom_to_binary(value_of(K), utf8), <<".">>, Var]), More).
 
 
--spec load_include(include(), hocon:ctx()) -> list().
+-spec load_include(boxed(), hocon:ctx()) -> boxed() | nothing.
 
 %% @doc Load a file and return a parsed key-value list.
 %% Because this function is intended to be called by include/2,
 %% variable substitution is not performed here.
 %% @end
-load_include(Include, Ctx0) ->
+load_include(#{type := include, value := Value, required := Required}, Ctx0) ->
     Cwd = filename:dirname(hd(hocon_util:get_stack(filename, Ctx0))),
-    Filename = filename:join([Cwd, maps:get(filename, Include)]),
-    case {file:read_file_info(Filename), maps:get(required, Include, false)} of
+    Filename = binary_to_list(filename:join([Cwd, Value])),
+    case {file:read_file_info(Filename), Required} of
         {{error, enoent}, true} ->
             throw({enoent, Filename});
         {{error, enoent}, false} ->
-            % empty kvlist
-            [];
+            nothing;
         _ ->
     case is_included(Filename, Ctx0) of
         true ->
@@ -195,15 +222,22 @@ real_file_name(F) ->
         {error, _} -> F
     end.
 
+value_of(#{value := V}) -> V.
+line_of(#{line := L}) -> L.
+
 scan_error(Line, ErrorInfo, Ctx) ->
     throw({scan_error, format_error(Line, ErrorInfo, Ctx)}).
 
 parse_error(Line, ErrorInfo, Ctx) ->
     throw({parse_error, format_error(Line, ErrorInfo, Ctx)}).
 
-format_error(Line, ErrorInfo, Ctx) ->
-    binary_to_list(
-        iolist_to_binary(
+format_error(Line, ErrorInfo, #{filename := [undefined]}) ->
+    iolist_to_binary(
             [ErrorInfo,
-             io_lib:format(" in line ~w. file: ~p",
-                           [Line, hd(hocon_util:get_stack(filename, Ctx))])])).
+             io_lib:format(" at_line ~w.",
+                           [Line])]);
+format_error(Line, ErrorInfo, Ctx) ->
+    iolist_to_binary(
+        [ErrorInfo,
+         io_lib:format(" in_file ~p at_line ~w.",
+                       [hd(hocon_util:get_stack(filename, Ctx)), Line])]).

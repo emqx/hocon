@@ -1,5 +1,5 @@
 %%--------------------------------------------------------------------
-%% Copyright (c) 2020 EMQ Technologies Co., Ltd. All Rights Reserved.
+%% Copyright (c) 2021 EMQ Technologies Co., Ltd. All Rights Reserved.
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@
 
 -export([do_deep_merge/2]).
 -export([pipeline_fun/1, pipeline/3]).
--export([stack_multiple_push/2, stack_push/2, get_stack/2]).
+-export([stack_multiple_push/2, stack_push/2, get_stack/2, top_stack/2]).
 
 do_deep_merge(M1, M2) when is_map(M1), is_map(M2) ->
     maps:fold(fun(K, V2, Acc) ->
@@ -51,3 +51,4 @@ stack_push({Key, Value}, Ctx) ->
     Ctx#{Key => [Value | Stack]}.
 
 get_stack(Key, Ctx) -> maps:get(Key, Ctx, []).
+top_stack(Key, Ctx) -> hd(get_stack(Key, Ctx)).

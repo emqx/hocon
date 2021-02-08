@@ -1,5 +1,5 @@
 %%--------------------------------------------------------------------
-%% Copyright (c) 2020 EMQ Technologies Co., Ltd. All Rights Reserved.
+%% Copyright (c) 2021 EMQ Technologies Co., Ltd. All Rights Reserved.
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -26,8 +26,7 @@ sample_files_test_() ->
         BaseName = filename:basename(F, ".conf"),
         Json = filename:join([code:lib_dir(hocon),
                               "sample-configs", "json", BaseName ++ ".conf.json"]),
-        {BaseName, fun() -> test_file_load(BaseName, F) end},
-        {BaseName, fun() -> test_interop(BaseName, F, Json) end}
+        {BaseName, fun() -> test_interop(BaseName, F, Json), test_file_load(BaseName, F) end}
      end || F <- filelib:wildcard(Wildcard)].
 %% include file() is not supported.
 test_file_load("file-include", F) ->
@@ -35,18 +34,21 @@ test_file_load("file-include", F) ->
 %% unquoted string starting by null is not allowed.
 test_file_load("test01", F) ->
     ?assertError(_, hocon:load(F));
+%% includes test01
+test_file_load("include-from-list", F) ->
+    ?assertError(_, hocon:load(F));
 %% do not allow quoted variable name.
 test_file_load("test02"++_, F) ->
     ?assertMatch({error, {scan_error, _}}, hocon:load(F));
 test_file_load("cycle"++_, F) ->
     ?assertMatch({error, {cycle, _}}, hocon:load(F));
 test_file_load("test13-reference-bad-substitutions", F) ->
-    ?assertMatch({error, {unresolved, [b]}}, hocon:load(F));
+    ?assertMatch([["b", "test13-reference-bad-substitutions.conf", "1"]], re_error(F));
 % include "test01" is not allowed.
 test_file_load("test03", F) ->
     ?assertMatch({error, {scan_error, _}}, hocon:load(F));
 test_file_load("test03-included", F) ->
-    ?assertMatch({error, {unresolved, [bar]}}, hocon:load(F));
+    ?assertMatch([["bar", "test03-included.conf", "9"]], re_error(F));
 test_file_load("test05", F) ->
     ?assertMatch({error, {scan_error, _}}, hocon:load(F));
 test_file_load("test07", F) ->
@@ -267,18 +269,69 @@ merge_when_resolve_test() ->
                         b => [#{k3 => 1}, #{k2 => 2}]}},
                  hocon:binary("a=[{k1=1}] [{k2=2}],a=[{k3=1}] [{k2=2}],b=${a}")).
 
-concat_error_test_() ->
-    [ ?_assertEqual({error, {concat_error, [{x, 1}, [1, 2]]}},
+concat_error_binary_test_() ->
+    [ ?_assertEqual({error,
+                     {concat_error,
+                      <<"failed_to_concat [{x,1},[1,2]] at_line 1">>}},
                     hocon:binary("a=[1,2], b={x=1}${a}"))
-    , ?_assertEqual({error, {concat_error, [<<"xyz">>, [1, 2]]}},
+    , ?_assertEqual({error,
+                     {concat_error,
+                      <<"failed_to_concat [<<\"xyz\">>,[1,2]] at_line 1">>}},
                     hocon:binary("a=[1,2], b=xyz${a}"))
-    , ?_assertEqual({error, {concat_error, [<<"xyz">>, 2]}},
+    , ?_assertEqual({error,
+                     {concat_error,
+                      <<"failed_to_concat [<<\"xyz\">>,2] at_line 1">>}},
                     hocon:binary("a=2, b=xyz${a}"))
-    , ?_assertEqual({error, {concat_error, [<<"xyz">>, 2.0]}},
+    , ?_assertEqual({error,
+                     {concat_error,
+                      <<"failed_to_concat [<<\"xyz\">>,2.0] at_line 1">>}},
                     hocon:binary("a=2.0, b=xyz${a}"))
-    , ?_assertEqual({error, {parse_error, "syntax error before: {var,a} in line 1. file: nofile"}},
+    , ?_assertEqual({error,
+                     {parse_error,
+                      <<"syntax error before: a at_line 1.">>}},
                     hocon:binary("a=xyz, b=true${a}"))
+    , ?_assertEqual({error,
+                     {concat_error,
+                      <<"failed_to_concat [<<\"xyz\">>,2.0] at_line 2">>}},
+                    hocon:binary("a=2.0, \nb=xyz${a}"))
+    , ?_assertEqual({error,
+                     {concat_error,
+                      <<"failed_to_concat [<<\"xyz\">>,2.0] at_line 2">>}},
+                    hocon:binary("a=2.0, \nb=\nxyz${a}"))
+    , ?_assertEqual({error,
+                     {concat_error,
+                      <<"failed_to_concat [{x,1},[1,2]] at_line 1">>}},
+                    hocon:binary("a=[1,2], b={x\n=1}${a}"))
     ].
+
+concat_error_file_test_() ->
+    [ ?_assertEqual([["[[1,2],{x,1}]", "concat-error-1.conf", "1"]],
+                    re_error("etc/concat-error-1.conf"))
+    , ?_assertEqual([["[{x,1},[1,2]]", "concat-error-2.conf", "2"]],
+                    re_error("etc/concat-error-2.conf"))
+    , ?_assertEqual([["[<<\"b\">>,[1]]", "concat-error-3.conf", "4"]],
+                    re_error("etc/concat-error-3.conf"))
+    , ?_assertEqual(re_error("etc/concat-error-1.conf"),
+                    re_error("etc/concat-error-4.conf"))
+    , ?_assertEqual([["[1,<<\"xyz\">>]", "concat-error-5.conf", "1"]],
+                    re_error("etc/concat-error-5.conf"))
+    ].
+
+resolve_error_file_test_() ->
+    [ ?_assertEqual([["x", "resolve-error-1.conf", "2"],
+                     ["y", "resolve-error-1.conf", "2"],
+                     ["y", "resolve-error-1.conf", "4"]], re_error("etc/resolve-error-1.conf"))
+    , ?_assertEqual(lists:append(re_error("etc/resolve-error-1.conf"),
+                                 re_error("etc/resolve-error-1.conf")),
+                    re_error("etc/resolve-error-2.conf"))
+    ].
+
+re_error(Filename0) ->
+    {error, {_ErrorType, Msg}} = hocon:load(Filename0),
+    {ok, MP} = re:compile("([^ \(\t\n\r\f]+) in_file \"([^ \t\n\r\f]+)\" at_line ([0-9]+)"),
+    {match, VFLs} = re:run(binary_to_list(Msg), MP,
+                           [global, {capture, all_but_first, list}]),
+    lists:map(fun ([V, F, L]) -> [V, filename:basename(F), L] end, VFLs).
 
 binary(B) when is_binary(B) ->
     {ok, R} = hocon:binary(B),

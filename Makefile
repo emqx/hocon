@@ -20,7 +20,8 @@ xref:
 
 .PHONY: eunit
 eunit: compile
-	$(REBAR) eunit -v
+	$(REBAR) eunit -v -c
+	$(REBAR) cover
 
 .PHONY: ct
 ct: compile
