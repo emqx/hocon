@@ -17,23 +17,23 @@ Terminals
   include key required.
 
 Rootsymbol hocon.
-hocon -> '{' fields endobj : make_object('$2').
-hocon -> fields : make_object('$1').
+hocon -> '{' fields endobj : make_object(0, '$2').
+hocon -> fields : make_object(0, '$1').
 
 partials -> partial partials : ['$1' | '$2'].
 partials -> endstr : [str_to_bin(make_primitive_value('$1'))].
 partials -> endvar : [make_variable('$1')].
-partials -> '{' fields endobj : [make_object('$1', '$2')].
-partials -> '[' elements endarr : [make_array('$1', '$2')].
-partials -> '{' endobj : [make_object('$1', [])].
-partials -> '[' endarr : [make_array('$1', [])].
+partials -> '{' fields endobj : [make_object(line_of('$1'), '$2')].
+partials -> '[' elements endarr : [make_array(line_of('$1'), '$2')].
+partials -> '{' endobj : [make_object(line_of('$1'), [])].
+partials -> '[' endarr : [make_array(line_of('$1'), [])].
 
 partial -> string : str_to_bin(make_primitive_value('$1')).
 partial -> variable : make_variable('$1').
-partial -> '{' fields '}' : make_object('$1', '$2').
-partial -> '{' '}' : make_object('$1', []).
-partial -> '[' elements ']' : make_array('$1', '$2').
-partial -> '[' ']' : make_array('$1', []).
+partial -> '{' fields '}' : make_object(line_of('$1'), '$2').
+partial -> '{' '}' : make_object(line_of('$1'), []).
+partial -> '[' elements ']' : make_array(line_of('$1'), '$2').
+partial -> '[' ']' : make_array(line_of('$1'), []).
 
 fields -> field ',' fields : ['$1'|'$3'].
 fields -> field fields : ['$1'|'$2'].
@@ -62,10 +62,9 @@ value -> partials : make_concat('$1').
 
 Erlang code.
 
-make_object(Object) -> make_object({'{', 1}, Object).
-make_object(LeftBrace, Object) -> #{type => object, value => Object, line => line_of(LeftBrace)}.
+make_object(Line, Object) -> #{type => object, value => Object, line => Line}.
 
-make_array(LeftBrace, Array) -> #{type => array, value => Array, line => line_of(LeftBrace)}.
+make_array(Line, Array) -> #{type => array, value => Array, line => Line}.
 
 make_primitive_value({endstr, Line, Value}) -> #{type => string, value => Value, line => Line};
 make_primitive_value({T, Line, Value}) -> #{type => T, value => Value, line => Line}.
