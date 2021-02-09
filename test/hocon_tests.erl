@@ -108,6 +108,16 @@ test_interop(_, Conf, Json) ->
             ?assertEqual(hocon:load(Json), Res)
     end.
 
+
+read_test() ->
+    {error, {enoent, F}} = hocon:load("notexist.conf"),
+    Base = filename:basename(F),
+    ?assertEqual("notexist.conf", Base).
+
+symlink_cycle_test() ->
+    ?assertEqual({error, {cycle, ["sample-configs/cycle.conf"]}},
+                 hocon:load("etc/symlink-to-cycle.conf")).
+
 commas_test_() ->
     [ ?_assertEqual(binary("a=[1,2,3]"), binary("a=[1,2,3,]"))
     , ?_assertEqual(binary("a=[1,2,3]"), binary("a=[1\n2\n3]"))

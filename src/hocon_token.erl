@@ -211,16 +211,7 @@ load_include(#{type := include, value := Value, required := Required}, Ctx0) ->
 
 is_included(Filename, Ctx) ->
     Includes = hocon_util:get_stack(filename, Ctx),
-    lists:any(fun(F) -> is_same_file(F, Filename) end, Includes).
-
-is_same_file(A, B) ->
-    real_file_name(A) =:= real_file_name(B).
-
-real_file_name(F) ->
-    case file:read_link_all(F) of
-        {ok, Real} -> Real;
-        {error, _} -> F
-    end.
+    lists:any(fun(F) -> hocon_util:is_same_file(F, Filename) end, Includes).
 
 value_of(#{value := V}) -> V.
 line_of(#{line := L}) -> L.

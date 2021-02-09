@@ -44,7 +44,7 @@ load(Filename0) ->
 
 -spec(load(file:filename(), opts()) -> {ok, config()} | {error, term()}).
 load(Filename0, Opts) ->
-    Filename = filename:absname(Filename0),
+    Filename = hocon_util:real_file_name(filename:absname(Filename0)),
     Ctx = hocon_util:stack_multiple_push([{path, '$root'}, {filename, Filename}], #{}),
     try
         Bytes = hocon_token:read(Filename),

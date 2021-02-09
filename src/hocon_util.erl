@@ -19,6 +19,7 @@
 -export([do_deep_merge/2]).
 -export([pipeline_fun/1, pipeline/3]).
 -export([stack_multiple_push/2, stack_push/2, get_stack/2, top_stack/2]).
+-export([is_same_file/2, real_file_name/1]).
 
 do_deep_merge(M1, M2) when is_map(M1), is_map(M2) ->
     maps:fold(fun(K, V2, Acc) ->
@@ -52,3 +53,12 @@ stack_push({Key, Value}, Ctx) ->
 
 get_stack(Key, Ctx) -> maps:get(Key, Ctx, []).
 top_stack(Key, Ctx) -> hd(get_stack(Key, Ctx)).
+
+is_same_file(A, B) ->
+    real_file_name(A) =:= real_file_name(B).
+
+real_file_name(F) ->
+    case file:read_link_all(F) of
+        {ok, Real} -> Real;
+        {error, _} -> F
+    end.
