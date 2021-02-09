@@ -179,9 +179,7 @@ do_resolve({#{type := key}=K, Value}, _Acc, _Unresolved, RootKVList) ->
         {unresolved, Var} ->
             {unresolved, Var};
         skip ->
-            skip;
-        delete ->
-            delete
+            skip
     end;
 do_resolve(_Constant, _Acc, _Unresolved, _RootKVList) ->
     skip.
@@ -277,8 +275,6 @@ do_concat([], Location, Acc) when length(Acc) > 1 ->
     concat_error(lists:reverse(Acc), Location);
 do_concat([], _, [Acc]) ->
     Acc;
-do_concat([], _, Acc) ->
-    lists:reverse(Acc);
 
 do_concat([#{type := array}=A|More], Location, Acc) ->
     do_concat(More, Location, [A#{value => lists:map(fun verify_concat/1, value_of(A))}|Acc]);
@@ -301,7 +297,7 @@ transform(#{type := object}=O) ->
 
 do_transform([], Map) -> Map;
 do_transform([{Key, Value}| More], Map) ->
-    do_transform(More, nested_put(paths(hocon_token:value_of(Key)), unpack(Value), Map)).
+    do_transform(More, merge(hd(paths(hocon_token:value_of(Key))), unpack(Value), Map)).
 
 unpack(#{type := object}=O) ->
     do_transform(remove_nothing(value_of(O)), #{});
@@ -316,15 +312,8 @@ remove_nothing(List) ->
 
 paths(Key) when is_atom(Key) ->
     paths(atom_to_list(Key));
-paths(Key) when is_binary(Key) ->
-    paths(binary_to_list(Key));
 paths(Key) when is_list(Key) ->
     lists:map(fun list_to_atom/1, string:tokens(Key, ".")).
-
-nested_put([Key], Val, Map) ->
-    merge(Key, Val, Map);
-nested_put([Key|Paths], Val, Map) ->
-    merge(Key, nested_put(Paths, Val, #{}), Map).
 
 merge(Key, Val, Map) when is_map(Val) ->
     case maps:find(Key, Map) of
@@ -357,6 +346,7 @@ concat_error(Acc, Location) ->
         end,
     throw({concat_error, iolist_to_binary(ErrorInfo)}).
 
+% transforms tokens to values.
 format_tokens(List) when is_list(List) ->
     lists:map(fun format_tokens/1, List);
 format_tokens(#{type := array}=A) ->
@@ -366,17 +356,9 @@ format_tokens({K, V}) ->
 format_tokens(Token) ->
     hocon_token:value_of(Token).
 
-% transforms tokens to values.
-value_of(nothing) -> nothing;
-value_of({}) -> #{};
-value_of(List) when is_list(List) ->
-    lists:map(fun value_of/1, List);
-value_of(Field) when ?IS_FIELD(Field) ->
-    {value_of(element(1, Field)), value_of(element(2, Field))};
 value_of(Token) ->
     hocon_token:value_of(Token).
 
-% get one representative line number.
 line_of(#{line := Line}) ->
     Line;
 line_of(_Other) ->
@@ -393,9 +375,7 @@ filename_of(_Other) ->
     undefined.
 
 name_of(#{type := variable, name := N}) ->
-    N;
-name_of(_Other) ->
-    undefined.
+    N.
 
 duration(X) ->
     hocon_postprocess:duration(X).

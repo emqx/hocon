@@ -233,34 +233,40 @@ maybe_var_test_() ->
     , ?_assertEqual(#{}, binary(<<"x=${?y}${?z}">>))
     ].
 
-cuttlefish_proplists_test() ->
-    ?assertEqual({ok, [{["node", "name"], "emqx@127.0.0.1"},
-                       {["node", "data_dir"], "platform_data_dir"},
-                       {["node", "cookie"], "emqxsecretcookie"},
-                       {["cluster", "proto_dist"], "inet_tcp"},
-                       {["cluster", "name"], "emqxcl"},
-                       {["cluster", "discovery"], "manual"},
-                       {["cluster", "autoheal"], "on"},
-                       {["cluster", "autoclean"], "5m"}]},
-                 hocon:load("etc/node.conf", #{format => proplists})).
+cuttlefish_proplists_test_() ->
+    [?_assertEqual({ok, [{["cluster", "autoclean"], "5m"},
+                         {["cluster", "autoheal"], "on"},
+                         {["cluster", "discovery"], "manual"},
+                         {["cluster", "name"], "emqxcl"},
+                         {["cluster", "proto_dist"], "inet_tcp"},
+                         {["node", "cookie"], "emqxsecretcookie"},
+                         {["node", "data_dir"], "platform_data_dir"},
+                         {["node", "name"], "emqx@127.0.0.1"}]},
+                 hocon:load("etc/node.conf", #{format => proplists}))
+    , ?_assertEqual({ok, [{["a"], [1, 2, 3]},
+                          {["b", "p"], [1, 2, 3]},
+                          {["c"], [#{p => 1}, #{q => 1}]},
+                          {["d"], ["a", "b", "c"]}]},
+                    hocon:load("etc/proplist-1.conf", #{format => proplists}))].
 
-apply_opts_test() ->
-    ?assertEqual({ok, #{day => 86400000, full => 1.0, gb => 1073741824,
-                        hour => 3600000, kb => 1024, mb => 1048576, min => 60000,
-                        off => false, on => true, percent => 0.01, sec => 1000,
-                        x => #{kb => 1024, sec => 1000}}},
+apply_opts_test_() ->
+    [ ?_assertEqual({ok, #{'GB' => 1073741824, 'KB' => 1024, 'MB' => 1048576,
+                           day => 86400000, full => 1.0, gb => 1073741824,
+                           hour => 3600000, kb => 1024, mb => 1048576, min => 60000,
+                           notkb => <<"1kbkb">>, off => false, on => true,
+                           percent => 0.01, sec => 1000,
+                           x => #{kb => 1024, sec => 1000}}},
                  hocon:load("etc/convert-sample.conf",
                             #{convert => [duration,
                                           bytesize,
                                           percent,
-                                          onoff]})),
-    MyFun = fun (_) -> ok end,
-    ?assertEqual({ok, #{day => ok, full => ok, gb => ok, hour => ok, kb => ok,
-                        mb => ok, min => ok, off => ok, on => ok, percent => ok,
-                        sec => ok,
-                        x => #{kb => ok, sec => ok}}},
+                                          onoff]}))
+    , ?_assertEqual({ok, #{'GB' => ok, 'KB' => ok, 'MB' => ok, day => ok, full => ok,
+                           gb => ok, hour => ok, kb => ok, mb => ok, min => ok,
+                           notkb => ok, off => ok, on => ok, percent => ok, sec => ok,
+                           x => #{kb => ok, sec => ok}}},
                  hocon:load("etc/convert-sample.conf",
-                            #{convert => [MyFun]})).
+                            #{convert => [fun (_) -> ok end]}))].
 
 delete_null_test() ->
     ?assertEqual({ok, #{b => <<"notnull">>, c => <<>>,
@@ -326,6 +332,18 @@ concat_error_file_test_() ->
     , ?_assertEqual([["[1,<<\"xyz\">>]", "concat-error-5.conf", "1"]],
                     re_error("etc/concat-error-5.conf"))
     ].
+
+resolve_error_binary_test_() ->
+    [ ?_assertEqual({error,
+                     {resolve_error,
+                      <<"failed_to_resolve x at_line 1">>}},
+                    hocon:binary("a=${x}"))
+    , ?_assertEqual({error,
+                     {resolve_error,
+                      <<"failed_to_resolve x at_line 1, y at_line 2">>}},
+                    hocon:binary("a=${x}\n ${y}"))
+    , ?_assertEqual({ok, #{}},
+                    hocon:binary("a=${x}\n x=${?y}"))].
 
 resolve_error_file_test_() ->
     [ ?_assertEqual([["x", "resolve-error-1.conf", "2"],

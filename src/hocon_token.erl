@@ -161,9 +161,7 @@ do_include([{Key, #{type := _T}=X}|More], Acc, Ctx, CurrentPath) ->
     do_include(More, [{NewKey, NewX}|Acc], Ctx, CurrentPath);
 do_include([#{type := _T}=X|More], Acc, Ctx, CurrentPath) ->
     NewX = X#{filename => filename(Ctx)},
-    do_include(More, [NewX|Acc], Ctx, CurrentPath);
-do_include([Other|More], Acc, Ctx, CurrentPath) ->
-    do_include(More, [Other|Acc], Ctx, CurrentPath).
+    do_include(More, [NewX|Acc], Ctx, CurrentPath).
 
 filename(Ctx) ->
     hocon_util:top_stack(filename, Ctx).
@@ -171,8 +169,6 @@ filename(Ctx) ->
 abspath(Var, PathStack) ->
     do_abspath(atom_to_binary(Var, utf8), PathStack).
 
-do_abspath(Var, []) ->
-    binary_to_atom(Var, utf8);
 do_abspath(Var, ['$root']) ->
     binary_to_atom(Var, utf8);
 do_abspath(Var, [#{type := key}=K|More]) ->
