@@ -20,6 +20,9 @@
 -export([dump/2, dump/3]).
 -export([main/1]).
 
+% cuttlefish uses duration/1 in
+-export([duration/1]).
+
 -type config() :: map().
 -type ctx() :: #{path => list(),
                  filename => list()}.
@@ -393,3 +396,6 @@ name_of(#{type := variable, name := N}) ->
     N;
 name_of(_Other) ->
     undefined.
+
+duration(X) ->
+    hocon_postprocess:duration(X).
