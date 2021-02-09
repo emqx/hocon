@@ -166,15 +166,29 @@ duration(Str) when is_list(Str) ->
     do_duration(Str);
 duration(Other) ->
     Other.
+
 do_duration(Str) ->
-    {ok, MP} = re:compile("([0-9]+)(d|D|h|H|m|M|s|S|ms|MS)$"),
-    case re:run(string:to_lower(Str), MP, [{capture, all_but_first, list}]) of
-        {match, [Val, Unit]} ->
-            do_duration(list_to_integer(Val), Unit);
-        _ -> Str
+    case do_duration(Str, 0) of
+        skip -> Str;
+        Int -> Int
     end.
-do_duration(Val, "d")  -> Val * ?DAY;
-do_duration(Val, "h")  -> Val * ?HOUR;
-do_duration(Val, "m")  -> Val * ?MINUTE;
-do_duration(Val, "s")  -> Val * ?SECOND;
-do_duration(Val, "ms") -> Val.
+do_duration(Str, Sum) ->
+    {ok, MP} = re:compile("^([0-9]+)(d|D|h|H|m|M|s|S|ms|MS)([0-9]+.+)"),
+    case re_run_first(Str, MP) of
+        {match, [Val, Unit, Next]} ->
+            do_duration(Next, Sum + calc_duration(list_to_integer(Val), string:lowercase(Unit)));
+        nomatch ->
+            {ok, LastMP} = re:compile("^([0-9]+)(d|D|h|H|m|M|s|S|ms|MS)$"),
+            case re_run_first(Str, LastMP) of
+                {match, [Val, Unit]} ->
+                    Sum + calc_duration(list_to_integer(Val), string:lowercase(Unit));
+                nomatch ->
+                    skip
+            end
+    end.
+
+calc_duration(Val, "d")  -> Val * ?DAY;
+calc_duration(Val, "h")  -> Val * ?HOUR;
+calc_duration(Val, "m")  -> Val * ?MINUTE;
+calc_duration(Val, "s")  -> Val * ?SECOND;
+calc_duration(Val, "ms") -> Val.

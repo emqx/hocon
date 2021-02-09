@@ -336,6 +336,20 @@ resolve_error_file_test_() ->
                     re_error("etc/resolve-error-2.conf"))
     ].
 
+duration_test_() ->
+    [ ?_assertEqual(1, hocon_postprocess:duration("1ms"))
+    , ?_assertEqual(1000, hocon_postprocess:duration("1s"))
+    , ?_assertEqual(20000, hocon_postprocess:duration("20s"))
+    , ?_assertEqual(60000, hocon_postprocess:duration("1m"))
+    , ?_assertEqual(86400000, hocon_postprocess:duration("1d"))
+    , ?_assertEqual("10sss", hocon_postprocess:duration("10sss"))
+    , ?_assertEqual(61000, hocon_postprocess:duration("1m1s"))
+    , ?_assertEqual("1m1ss", hocon_postprocess:duration("1m1ss"))
+    , ?_assertEqual(1000, hocon_postprocess:duration("1S"))
+    , ?_assertEqual(61001, hocon_postprocess:duration("1m1S1ms"))
+    , ?_assertEqual(true, hocon_postprocess:duration(true))
+    ].
+
 re_error(Filename0) ->
     {error, {_ErrorType, Msg}} = hocon:load(Filename0),
     {ok, MP} = re:compile("([^ \(\t\n\r\f]+) in_file \"([^ \t\n\r\f]+)\" at_line ([0-9]+)"),
