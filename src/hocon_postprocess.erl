@@ -24,7 +24,7 @@
 -include("hocon.hrl").
 
 proplists(Map) when is_map(Map) ->
-    proplists(maps:iterator(Map), [], []).
+    lists:reverse(proplists(maps:iterator(Map), [], [])).
 proplists(Iter, Path, Acc) ->
     case maps:next(Iter) of
         {K, M, I} when is_map(M) ->
