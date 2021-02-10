@@ -161,9 +161,7 @@ do_include([{Key, #{type := _T}=X}|More], Acc, Ctx, CurrentPath) ->
     do_include(More, [{NewKey, NewX}|Acc], Ctx, CurrentPath);
 do_include([#{type := _T}=X|More], Acc, Ctx, CurrentPath) ->
     NewX = X#{filename => filename(Ctx)},
-    do_include(More, [NewX|Acc], Ctx, CurrentPath);
-do_include([Other|More], Acc, Ctx, CurrentPath) ->
-    do_include(More, [Other|Acc], Ctx, CurrentPath).
+    do_include(More, [NewX|Acc], Ctx, CurrentPath).
 
 filename(Ctx) ->
     hocon_util:top_stack(filename, Ctx).
@@ -171,8 +169,6 @@ filename(Ctx) ->
 abspath(Var, PathStack) ->
     do_abspath(atom_to_binary(Var, utf8), PathStack).
 
-do_abspath(Var, []) ->
-    binary_to_atom(Var, utf8);
 do_abspath(Var, ['$root']) ->
     binary_to_atom(Var, utf8);
 do_abspath(Var, [#{type := key}=K|More]) ->
@@ -211,16 +207,7 @@ load_include(#{type := include, value := Value, required := Required}, Ctx0) ->
 
 is_included(Filename, Ctx) ->
     Includes = hocon_util:get_stack(filename, Ctx),
-    lists:any(fun(F) -> is_same_file(F, Filename) end, Includes).
-
-is_same_file(A, B) ->
-    real_file_name(A) =:= real_file_name(B).
-
-real_file_name(F) ->
-    case file:read_link_all(F) of
-        {ok, Real} -> Real;
-        {error, _} -> F
-    end.
+    lists:any(fun(F) -> hocon_util:is_same_file(F, Filename) end, Includes).
 
 value_of(#{value := V}) -> V.
 line_of(#{line := L}) -> L.
