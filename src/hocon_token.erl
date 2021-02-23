@@ -46,7 +46,7 @@ read(Filename) ->
             throw({Reason, Filename})
     end.
 
--spec scan(binary()|string(), hocon:ctx()) -> list().
+-spec scan(binary() | string(), hocon:ctx()) -> list().
 scan(Input, Ctx) when is_binary(Input) ->
     scan(binary_to_list(Input), Ctx);
 scan(Input, Ctx) when is_list(Input) ->
@@ -136,32 +136,32 @@ include(#{type := object}=O, Ctx) ->
 do_include([], Acc, _Ctx, _CurrentPath) ->
     lists:reverse(Acc);
 
-do_include([#{type := include}=Include|More], Acc, Ctx, CurrentPath) ->
+do_include([#{type := include}=Include | More], Acc, Ctx, CurrentPath) ->
     case load_include(Include, Ctx#{path := CurrentPath}) of
         nothing ->
             do_include(More, Acc, Ctx, CurrentPath);
         #{type := object}=O ->
             do_include(More, lists:reverse(value_of(O), Acc), Ctx, CurrentPath)
     end;
-do_include([#{type := variable}=V|More], Acc, Ctx, CurrentPath) ->
+do_include([#{type := variable}=V | More], Acc, Ctx, CurrentPath) ->
     VarWithAbsPath = abspath(value_of(V), hocon_util:get_stack(path, Ctx)),
     NewV = V#{filename => filename(Ctx), value => VarWithAbsPath},
-    do_include(More, [NewV|Acc], Ctx, CurrentPath);
-do_include([{Key, #{type := T}=X}|More], Acc, Ctx, CurrentPath) when ?IS_VALUE_LIST(T) ->
+    do_include(More, [NewV | Acc], Ctx, CurrentPath);
+do_include([{Key, #{type := T}=X} | More], Acc, Ctx, CurrentPath) when ?IS_VALUE_LIST(T) ->
     NewKey = Key#{filename => filename(Ctx)},
-    NewValue = do_include(value_of(X), [], Ctx, [Key|CurrentPath]),
+    NewValue = do_include(value_of(X), [], Ctx, [Key | CurrentPath]),
     NewX = X#{filename => filename(Ctx), line => line_of(Key), value => NewValue},
-    do_include(More, [{NewKey, NewX}|Acc], Ctx, CurrentPath);
-do_include([#{type := T}=X|More], Acc, Ctx, CurrentPath) when ?IS_VALUE_LIST(T) ->
+    do_include(More, [{NewKey, NewX} | Acc], Ctx, CurrentPath);
+do_include([#{type := T}=X | More], Acc, Ctx, CurrentPath) when ?IS_VALUE_LIST(T) ->
     NewValue = do_include(value_of(X), [], Ctx, CurrentPath),
-    do_include(More, [X#{filename => filename(Ctx), value => NewValue}|Acc], Ctx, CurrentPath);
-do_include([{Key, #{type := _T}=X}|More], Acc, Ctx, CurrentPath) ->
+    do_include(More, [X#{filename => filename(Ctx), value => NewValue} | Acc], Ctx, CurrentPath);
+do_include([{Key, #{type := _T}=X} | More], Acc, Ctx, CurrentPath) ->
     NewKey = Key#{filename => filename(Ctx)},
     NewX = X#{filename => filename(Ctx), line => line_of(Key)},
-    do_include(More, [{NewKey, NewX}|Acc], Ctx, CurrentPath);
-do_include([#{type := _T}=X|More], Acc, Ctx, CurrentPath) ->
+    do_include(More, [{NewKey, NewX} | Acc], Ctx, CurrentPath);
+do_include([#{type := _T}=X | More], Acc, Ctx, CurrentPath) ->
     NewX = X#{filename => filename(Ctx)},
-    do_include(More, [NewX|Acc], Ctx, CurrentPath).
+    do_include(More, [NewX | Acc], Ctx, CurrentPath).
 
 filename(Ctx) ->
     hocon_util:top_stack(filename, Ctx).
@@ -171,7 +171,7 @@ abspath(Var, PathStack) ->
 
 do_abspath(Var, ['$root']) ->
     binary_to_atom(Var, utf8);
-do_abspath(Var, [#{type := key}=K|More]) ->
+do_abspath(Var, [#{type := key}=K | More]) ->
     do_abspath(iolist_to_binary([atom_to_binary(value_of(K), utf8), <<".">>, Var]), More).
 
 
