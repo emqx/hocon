@@ -13,4 +13,5 @@ if [ ! -f ./elvis ] || [ "$(./elvis -v | grep -oE '[1-9]+\.[0-9]+\.[0-9]+\-emqx-
     chmod +x ./elvis
 fi
 
-./elvis rock --config elvis.config
+erlc ./scripts/elvis_more_rules.erl
+./elvis rock --code-path scripts --config elvis.config
