@@ -35,15 +35,15 @@ partial -> '{' '}' : make_object(line_of('$1'), []).
 partial -> '[' elements ']' : make_array(line_of('$1'), '$2').
 partial -> '[' ']' : make_array(line_of('$1'), []).
 
-fields -> field ',' fields : ['$1'|'$3'].
-fields -> field fields : ['$1'|'$2'].
+fields -> field ',' fields : ['$1' | '$3'].
+fields -> field fields : ['$1' | '$2'].
 fields -> field : ['$1'].
 
 field -> key value : {make_primitive_value('$1'), '$2'}.
 field -> directive : '$1'.
 
-elements -> value ',' elements : ['$1'|'$3'].
-elements -> value elements : ['$1'|'$2'].
+elements -> value ',' elements : ['$1' | '$3'].
+elements -> value elements : ['$1' | '$2'].
 elements -> value : ['$1'].
 
 directive -> include string : make_include('$2', false).

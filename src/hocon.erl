@@ -74,7 +74,7 @@ apply_opts(Map, Opts) ->
             NullDeleted
     end.
 
--spec binary(binary()|string()) -> {ok, config()} | {error, term()}.
+-spec binary(binary() | string()) -> {ok, config()} | {error, term()}.
 binary(Binary) ->
     try
         Ctx = hocon_util:stack_multiple_push([{path, '$root'}, {filename, undefined}], #{}),
@@ -111,21 +111,21 @@ expand(#{type := object}=O) ->
 
 do_expand([], Acc) ->
     lists:reverse(Acc);
-do_expand([{#{type := key}=Key, #{type := concat}=C}|More], Acc) ->
-    do_expand(More, [create_nested(Key, C#{value => do_expand(value_of(C), [])})|Acc]);
-do_expand([{#{type := key}=Key, Value}|More], Acc) ->
-    do_expand(More, [create_nested(Key, Value)|Acc]);
-do_expand([#{type := object}=O|More], Acc)  ->
-    do_expand(More, [O#{value => do_expand(value_of(O), [])}|Acc]);
-do_expand([Other|More], Acc) ->
-    do_expand(More, [Other|Acc]).
+do_expand([{#{type := key}=Key, #{type := concat}=C} | More], Acc) ->
+    do_expand(More, [create_nested(Key, C#{value => do_expand(value_of(C), [])}) | Acc]);
+do_expand([{#{type := key}=Key, Value} | More], Acc) ->
+    do_expand(More, [create_nested(Key, Value) | Acc]);
+do_expand([#{type := object}=O | More], Acc)  ->
+    do_expand(More, [O#{value => do_expand(value_of(O), [])} | Acc]);
+do_expand([Other | More], Acc) ->
+    do_expand(More, [Other | Acc]).
 
 create_nested(#{type := key}=Key, Value)  ->
     do_create_nested(paths(value_of(Key)), Value, Key).
 
 do_create_nested([], Value, _OriginalKey) ->
     Value;
-do_create_nested([Path|More], Value, OriginalKey) ->
+do_create_nested([Path | More], Value, OriginalKey) ->
     {maps:merge(OriginalKey, #{value => Path}),
      #{type => concat, value => [do_create_nested(More, Value, OriginalKey)]}}.
 
@@ -143,14 +143,14 @@ do_resolve([], _Acc, [], _RootKVList) ->
     skip;
 do_resolve([], _Acc, Unresolved, _RootKVList) ->
     {unresolved, Unresolved};
-do_resolve([V|More], Acc, Unresolved, RootKVList) ->
+do_resolve([V | More], Acc, Unresolved, RootKVList) ->
     case do_resolve(V, [], [], RootKVList) of
         {resolved, Resolved} ->
-            {resolved, lists:reverse(Acc, [Resolved|More])};
+            {resolved, lists:reverse(Acc, [Resolved | More])};
         {unresolved, Var} ->
-            do_resolve(More, [V| Acc], [Var| Unresolved], RootKVList);
+            do_resolve(More, [V | Acc], [Var | Unresolved], RootKVList);
         skip ->
-            do_resolve(More, [V| Acc], Unresolved, RootKVList);
+            do_resolve(More, [V | Acc], Unresolved, RootKVList);
         delete ->
             {resolved, lists:reverse(Acc, More)}
     end;
@@ -198,26 +198,26 @@ lookup(Var, KVList) ->
 
 lookup(Var, #{type := concat}=C, ResolvedValue) ->
     lookup(Var, value_of(C), ResolvedValue);
-lookup([Var], [{#{type := key, value := Var}, Value} = KV|More], ResolvedValue) ->
+lookup([Var], [{#{type := key, value := Var}, Value} = KV | More], ResolvedValue) ->
     case is_resolved(KV) of
         true ->
             lookup([Var], More, maybe_merge(ResolvedValue, Value));
         false ->
             lookup([Var], More, ResolvedValue)
     end;
-lookup([Path|MorePath] = Var, [{#{type := key, value := Path}, Value}|More], ResolvedValue) ->
+lookup([Path | MorePath] = Var, [{#{type := key, value := Path}, Value} | More], ResolvedValue) ->
     lookup(Var, More, lookup(MorePath, Value, ResolvedValue));
-lookup(Var, [#{type := T}=X|More], ResolvedValue) when T =:= concat orelse T =:= object ->
+lookup(Var, [#{type := T}=X | More], ResolvedValue) when T =:= concat orelse T =:= object ->
     lookup(Var, More, lookup(Var, value_of(X), ResolvedValue));
-lookup(Var, [_Other|More], ResolvedValue) ->
+lookup(Var, [_Other | More], ResolvedValue) ->
     lookup(Var, More, ResolvedValue);
 lookup(_Var, [], ResolvedValue) ->
     ResolvedValue.
 
 % reveal the type of "concat"
-is_object([#{type := concat}=C| _More]) ->
+is_object([#{type := concat}=C | _More]) ->
     is_object(value_of(C));
-is_object([#{type := object}| _]) ->
+is_object([#{type := object} | _]) ->
     true;
 is_object(_Other) ->
     false.
@@ -248,14 +248,14 @@ do_concat(Concat, Location) ->
 
 do_concat([], _, []) ->
     nothing;
-do_concat([], Location, [Field| _Fields] = Acc) when ?IS_FIELD(Field) ->
+do_concat([], Location, [Field | _Fields] = Acc) when ?IS_FIELD(Field) ->
     case lists:all(fun (F) -> ?IS_FIELD(F) end, Acc) of
         true ->
             Location#{type => object, value => lists:reverse(Acc)};
         false ->
             concat_error(lists:reverse(Acc), Location)
     end;
-do_concat([], Location, [#{type:= string}|_] = Acc) ->
+do_concat([], Location, [#{type:= string} | _] = Acc) ->
     case lists:all(fun (A) -> type_of(A) =:= string end, Acc) of
         true ->
             BinList = lists:map(fun(M) -> maps:get(value, M) end, lists:reverse(Acc)),
@@ -263,7 +263,7 @@ do_concat([], Location, [#{type:= string}|_] = Acc) ->
         false ->
             concat_error(lists:reverse(Acc), Location)
     end;
-do_concat([], Location, [#{type := array}|_] = Acc) ->
+do_concat([], Location, [#{type := array} | _] = Acc) ->
     case lists:all(fun (A) -> type_of(A) =:= array end, Acc) of
         true ->
             NewValue = lists:append(lists:reverse(lists:map(fun value_of/1, Acc))),
@@ -276,27 +276,27 @@ do_concat([], Location, Acc) when length(Acc) > 1 ->
 do_concat([], _, [Acc]) ->
     Acc;
 
-do_concat([#{type := array}=A|More], Location, Acc) ->
-    do_concat(More, Location, [A#{value => lists:map(fun verify_concat/1, value_of(A))}|Acc]);
-do_concat([#{type := object}=O|More], Location, Acc) ->
+do_concat([#{type := array}=A | More], Location, Acc) ->
+    do_concat(More, Location, [A#{value => lists:map(fun verify_concat/1, value_of(A))} | Acc]);
+do_concat([#{type := object}=O | More], Location, Acc) ->
     ConcatO = lists:map(fun verify_concat/1, value_of(O)),
     do_concat(More, Location, lists:reverse(ConcatO, Acc));
-do_concat([#{type:= string}=S| More], Location, Acc) ->
-    do_concat(More, Location, [S|Acc]);
-do_concat([#{type := concat}=C|More], Location, Acc) ->
+do_concat([#{type:= string}=S | More], Location, Acc) ->
+    do_concat(More, Location, [S | Acc]);
+do_concat([#{type := concat}=C | More], Location, Acc) ->
     ConcatC = do_concat(value_of(C), #{line => line_of(C), filename => filename_of(C)}),
-    do_concat([ConcatC|More], Location, Acc);
-do_concat([{#{type := key}=K, Value}|More], Location, Acc) ->
-    do_concat(More, Location, [{K, verify_concat(Value)}|Acc]);
-do_concat([Other|More], Location, Acc) ->
-    do_concat(More, Location, [Other|Acc]).
+    do_concat([ConcatC | More], Location, Acc);
+do_concat([{#{type := key}=K, Value} | More], Location, Acc) ->
+    do_concat(More, Location, [{K, verify_concat(Value)} | Acc]);
+do_concat([Other | More], Location, Acc) ->
+    do_concat(More, Location, [Other | Acc]).
 
 -spec(transform(hocon_token:boxed()) -> config()).
 transform(#{type := object}=O) ->
     do_transform(remove_nothing(value_of(O)), #{}).
 
 do_transform([], Map) -> Map;
-do_transform([{Key, Value}| More], Map) ->
+do_transform([{Key, Value} | More], Map) ->
     do_transform(More, merge(hd(paths(hocon_token:value_of(Key))), unpack(Value), Map)).
 
 unpack(#{type := object}=O) ->
