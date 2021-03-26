@@ -131,8 +131,9 @@ parse(Tokens, Ctx) ->
 
 -spec include(boxed(), hocon:ctx()) -> boxed().
 include(#{type := object}=O, Ctx) ->
-    hocon_util:do_deep_merge(O, #{value => do_include(value_of(O), [], Ctx, hocon_util:get_stack(path, Ctx)),
-                                  metadata => #{filename => hd(hocon_util:get_stack(filename, Ctx))}}).
+    NewV = do_include(value_of(O), [], Ctx, hocon_util:get_stack(path, Ctx)),
+    NewMeta = #{filename => hd(hocon_util:get_stack(filename, Ctx))},
+    hocon_util:do_deep_merge(O, #{value => NewV, metadata => NewMeta}).
 
 do_include([], Acc, _Ctx, _CurrentPath) ->
     lists:reverse(Acc);
@@ -152,8 +153,8 @@ do_include([#{type := variable}=V | More], Acc, Ctx, CurrentPath) ->
 do_include([{Key, #{type := T}=X} | More], Acc, Ctx, CurrentPath) when ?IS_VALUE_LIST(T) ->
     NewKey = hocon_util:do_deep_merge(Key, #{metadata => #{filename => filename(Ctx)}}),
     NewValue = do_include(value_of(X), [], Ctx, [Key | CurrentPath]),
-    NewX = hocon_util:do_deep_merge(X, #{metadata => #{filename => filename(Ctx), line => line_of(Key)},
-                                         value => NewValue}),
+    NewMeta = #{filename => filename(Ctx), line => line_of(Key)},
+    NewX = hocon_util:do_deep_merge(X, #{metadata => NewMeta, value => NewValue}),
     do_include(More, [{NewKey, NewX} | Acc], Ctx, CurrentPath);
 do_include([#{type := T}=X | More], Acc, Ctx, CurrentPath) when ?IS_VALUE_LIST(T) ->
     NewValue = do_include(value_of(X), [], Ctx, CurrentPath),
