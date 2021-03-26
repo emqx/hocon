@@ -368,6 +368,52 @@ duration_test_() ->
     , ?_assertEqual(true, hocon_postprocess:duration(true))
     ].
 
+richmap_binary_test() ->
+    {ok, M0} = hocon:binary("a=1", #{format => richmap}),
+    ?assertEqual(#{metadata => #{filename => undefined, line => 0},
+                   type => object,
+                   value =>
+                   #{a =>
+                     #{metadata => #{filename => undefined, line => 1},
+                       type => integer, value => 1}}}, M0),
+    {ok, M1} = hocon:binary("a=[1,2]", #{format => richmap}),
+    ?assertEqual(#{metadata => #{filename => undefined, line => 0},
+                   type => object,
+                   value =>
+                   #{a =>
+                     #{metadata => #{filename => undefined, line => 1},
+                       type => array,
+                       value =>
+                       [#{metadata =>
+                          #{filename => undefined, line => 1},
+                          type => integer, value => 1},
+                        #{metadata =>
+                          #{filename => undefined, line => 1},
+                          type => integer, value => 2}]}}}, M1),
+    {ok, M2} = hocon:binary("a\n{b=foo}", #{format => richmap}),
+    ?assertEqual(#{metadata => #{filename => undefined, line => 0},
+                   type => object,
+                   value =>
+                   #{a =>
+                     #{metadata => #{filename => undefined, line => 1},
+                       type => object,
+                       value =>
+                       #{b =>
+                         #{metadata =>
+                           #{filename => undefined,
+                             line => 2},
+                           type => string,
+                           value => <<"foo">>}}}}}, M2).
+
+richmap_file_test() ->
+    {ok, Map} = hocon:load("etc/node.conf", #{format => richmap}),
+    #{value :=
+      #{cluster :=
+        #{value :=
+          #{autoclean :=
+            #{metadata := #{filename := F, line := 7}, value := <<"5m">>}}}}} = Map,
+    ?assertEqual("node.conf", filename:basename(F)).
+
 re_error(Filename0) ->
     {error, {_ErrorType, Msg}} = hocon:load(Filename0),
     {ok, MP} = re:compile("([^ \(\t\n\r\f]+) in_file \"([^ \t\n\r\f]+)\" at_line ([0-9]+)"),
