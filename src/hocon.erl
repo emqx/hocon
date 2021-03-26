@@ -16,7 +16,7 @@
 
 -module(hocon).
 
--export([load/1, load/2, binary/1]).
+-export([load/1, load/2, binary/1, binary/2]).
 -export([dump/2, dump/3]).
 -export([main/1]).
 
@@ -48,7 +48,7 @@ load(Filename0, Opts) ->
     Ctx = hocon_util:stack_multiple_push([{path, '$root'}, {filename, Filename}], #{}),
     try
         Bytes = hocon_token:read(Filename),
-        Map = do_binary(Bytes, Ctx),
+        Map = transform(do_binary(Bytes, Ctx), Opts),
         {ok, apply_opts(Map, Opts)}
     catch
         throw:Reason -> {error, Reason}
@@ -76,9 +76,13 @@ apply_opts(Map, Opts) ->
 
 -spec binary(binary() | string()) -> {ok, config()} | {error, term()}.
 binary(Binary) ->
+    binary(Binary, #{format => map}).
+
+binary(Binary, Opts) ->
     try
         Ctx = hocon_util:stack_multiple_push([{path, '$root'}, {filename, undefined}], #{}),
-        {ok, do_binary(Binary, Ctx)}
+        Map = transform(do_binary(Binary, Ctx), Opts),
+        {ok, apply_opts(Map, Opts)}
     catch
         throw:Reason -> {error, Reason}
     end.
@@ -92,7 +96,6 @@ do_binary(Binary, Ctx) ->
                        , fun expand/1
                        , fun resolve/1
                        , fun concat/1
-                       , fun transform/1
                        ]).
 
 dump(Config, App) ->
@@ -238,6 +241,8 @@ concat(#{type := object}=O) ->
 
 verify_concat(#{type := concat}=C) ->
     do_concat(value_of(C), #{line => line_of(C), filename => filename_of(C)});
+verify_concat({#{type := key, metadata := Metadata}=K, Value}) when is_map(Value) ->
+    {K, verify_concat(Value#{metadata => Metadata})};
 verify_concat({#{type := key}=K, Value}) ->
     {K, verify_concat(Value)};
 verify_concat(Other) ->
@@ -248,62 +253,71 @@ do_concat(Concat, Location) ->
 
 do_concat([], _, []) ->
     nothing;
-do_concat([], Location, [Field | _Fields] = Acc) when ?IS_FIELD(Field) ->
+do_concat([], Metadata, [Field | _Fields] = Acc) when ?IS_FIELD(Field) ->
     case lists:all(fun (F) -> ?IS_FIELD(F) end, Acc) of
         true ->
-            Location#{type => object, value => lists:reverse(Acc)};
+            #{type => object, value => lists:reverse(Acc), metadata => Metadata};
         false ->
-            concat_error(lists:reverse(Acc), Location)
+            concat_error(lists:reverse(Acc), #{metadata => Metadata})
     end;
-do_concat([], Location, [#{type:= string} | _] = Acc) ->
+do_concat([], Metadata, [#{type:= string} | _] = Acc) ->
     case lists:all(fun (A) -> type_of(A) =:= string end, Acc) of
         true ->
             BinList = lists:map(fun(M) -> maps:get(value, M) end, lists:reverse(Acc)),
-            Location#{type => string, value => iolist_to_binary(BinList)};
+            #{type => string, value => iolist_to_binary(BinList), metadata => Metadata};
         false ->
-            concat_error(lists:reverse(Acc), Location)
+            concat_error(lists:reverse(Acc), #{metadata => Metadata})
     end;
-do_concat([], Location, [#{type := array} | _] = Acc) ->
+do_concat([], Metadata, [#{type := array} | _] = Acc) ->
     case lists:all(fun (A) -> type_of(A) =:= array end, Acc) of
         true ->
             NewValue = lists:append(lists:reverse(lists:map(fun value_of/1, Acc))),
-            Location#{type => array, value => NewValue};
+            #{type => array, value => NewValue, metadata => Metadata};
         false ->
-            concat_error(lists:reverse(Acc), Location)
+            concat_error(lists:reverse(Acc), #{metadata => Metadata})
     end;
-do_concat([], Location, Acc) when length(Acc) > 1 ->
-    concat_error(lists:reverse(Acc), Location);
+do_concat([], Metadata, Acc) when length(Acc) > 1 ->
+    concat_error(lists:reverse(Acc), #{metadata => Metadata});
 do_concat([], _, [Acc]) ->
     Acc;
 
-do_concat([#{type := array}=A | More], Location, Acc) ->
-    do_concat(More, Location, [A#{value => lists:map(fun verify_concat/1, value_of(A))} | Acc]);
-do_concat([#{type := object}=O | More], Location, Acc) ->
+do_concat([#{type := array}=A | More], Metadata, Acc) ->
+    do_concat(More, Metadata, [A#{value => lists:map(fun verify_concat/1, value_of(A))} | Acc]);
+do_concat([#{type := object}=O | More], Metadata, Acc) ->
     ConcatO = lists:map(fun verify_concat/1, value_of(O)),
-    do_concat(More, Location, lists:reverse(ConcatO, Acc));
-do_concat([#{type:= string}=S | More], Location, Acc) ->
-    do_concat(More, Location, [S | Acc]);
-do_concat([#{type := concat}=C | More], Location, Acc) ->
-    ConcatC = do_concat(value_of(C), #{line => line_of(C), filename => filename_of(C)}),
-    do_concat([ConcatC | More], Location, Acc);
-do_concat([{#{type := key}=K, Value} | More], Location, Acc) ->
-    do_concat(More, Location, [{K, verify_concat(Value)} | Acc]);
-do_concat([Other | More], Location, Acc) ->
-    do_concat(More, Location, [Other | Acc]).
+    do_concat(More, Metadata, lists:reverse(ConcatO, Acc));
+do_concat([#{type:= string}=S | More], Metadata, Acc) ->
+    do_concat(More, Metadata, [S | Acc]);
+do_concat([#{type := concat}=C | More], Metadata, Acc) ->
+    ConcatC = do_concat(value_of(C), Metadata#{line => line_of(C), filename => filename_of(C)}),
+    do_concat([ConcatC | More], Metadata, Acc);
+do_concat([{#{type := key}=K, Value} | More], Metadata, Acc) ->
+    do_concat(More, Metadata, [{K, verify_concat(Value)} | Acc]);
+do_concat([Other | More], Metadata, Acc) ->
+    do_concat(More, Metadata, [Other | Acc]).
 
--spec(transform(hocon_token:boxed()) -> config()).
-transform(#{type := object}=O) ->
-    do_transform(remove_nothing(value_of(O)), #{}).
+-spec(transform(hocon_token:boxed(), map()) -> hocon:config()).
+transform(#{type := object, value := V} = O, #{format := richmap} = Opts) ->
+    NewV = do_transform(remove_nothing(V), #{}, Opts),
+    O#{value => NewV};
+transform(#{type := object, value := V}, Opts) ->
+    do_transform(remove_nothing(V), #{}, Opts).
 
-do_transform([], Map) -> Map;
-do_transform([{Key, Value} | More], Map) ->
-    do_transform(More, merge(hd(paths(hocon_token:value_of(Key))), unpack(Value), Map)).
+do_transform([], Map, _Opts) -> Map;
+do_transform([{Key, Value} | More], Map, Opts) ->
+    do_transform(More, merge(hd(paths(hocon_token:value_of(Key))), unpack(Value, Opts), Map), Opts).
 
-unpack(#{type := object}=O) ->
-    do_transform(remove_nothing(value_of(O)), #{});
-unpack(#{type := array}=A) ->
-    [unpack(Val) || Val <- remove_nothing(value_of(A))];
-unpack(Literal) -> value_of(Literal).
+unpack(#{type := object, value := V} = O, #{format := richmap} = Opts) ->
+    O#{value => do_transform(remove_nothing(V), #{}, Opts)};
+unpack(#{type := object, value := V}, Opts) ->
+    do_transform(remove_nothing(V), #{}, Opts);
+unpack(#{type := array, value := V} = A, #{format := richmap} = Opts) ->
+    NewV = [unpack(E, Opts) || E <- remove_nothing(V)],
+    A#{value => NewV};
+unpack(#{type := array, value := V}, Opts) ->
+    [unpack(Val, Opts) || Val <- remove_nothing(V)];
+unpack(M, #{format := richmap}) -> M;
+unpack(#{value := V}, _Opts) -> V.
 
 remove_nothing(List) ->
     lists:filter(fun (nothing) -> false;
@@ -335,14 +349,14 @@ resolve_error(Unresolved) ->
          iolist_to_binary([AccIn, NFL(V)]) end, "", Unresolved),
     throw({resolve_error, iolist_to_binary(["failed_to_resolve", Enriched])}).
 
-concat_error(Acc, Location) ->
-    ErrorInfo = case filename_of(Location) of
+concat_error(Acc, Metadata) ->
+    ErrorInfo = case filename_of(Metadata) of
         undefined ->
             io_lib:format("failed_to_concat ~p at_line ~p",
-                          [format_tokens(Acc), line_of(Location)]);
+                          [format_tokens(Acc), line_of(Metadata)]);
         F ->
             io_lib:format("failed_to_concat ~p in_file ~p at_line ~p",
-                          [format_tokens(Acc), F, line_of(Location)])
+                          [format_tokens(Acc), F, line_of(Metadata)])
         end,
     throw({concat_error, iolist_to_binary(ErrorInfo)}).
 
@@ -359,7 +373,7 @@ format_tokens(Token) ->
 value_of(Token) ->
     hocon_token:value_of(Token).
 
-line_of(#{line := Line}) ->
+line_of(#{metadata := #{line := Line}}) ->
     Line;
 line_of(_Other) ->
     undefined.
@@ -369,7 +383,7 @@ type_of(#{type := Type}) ->
 type_of(_Other) ->
     undefined.
 
-filename_of(#{filename := Filename}) ->
+filename_of(#{metadata := #{filename := Filename}}) ->
     Filename;
 filename_of(_Other) ->
     undefined.
