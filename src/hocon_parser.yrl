@@ -62,20 +62,26 @@ value -> partials : make_concat('$1').
 
 Erlang code.
 
-make_object(Line, Object) -> #{type => object, value => Object, line => Line}.
+make_object(Line, Object) -> #{type => object, value => Object, metadata => #{line => Line}}.
 
-make_array(Line, Array) -> #{type => array, value => Array, line => Line}.
+make_array(Line, Array) -> #{type => array, value => Array, metadata => #{line => Line}}.
 
-make_primitive_value({endstr, Line, Value}) -> #{type => string, value => Value, line => Line};
-make_primitive_value({T, Line, Value}) -> #{type => T, value => Value, line => Line}.
+make_primitive_value({endstr, Line, Value}) -> #{type => string, value => Value, metadata => #{line => Line}};
+make_primitive_value({T, Line, Value}) -> #{type => T, value => Value, metadata => #{line => Line}}.
 
 make_variable({V, Line, {maybe, Value}}) when V =:= variable orelse V =:= endvar ->
-    #{type => variable, value => Value, name => Value, line => Line, required => false};
+    #{type => variable, value => Value, name => Value, metadata => #{line => Line}, required => false};
 make_variable({V, Line, Value}) when V =:= variable orelse V =:= endvar ->
-    #{type => variable, value => Value, name => Value, line => Line, required => true}.
+    #{type => variable, value => Value, name => Value, metadata => #{line => Line}, required => true}.
 
-make_include(String, true) ->  #{type => include, value => value_of(String), line => line_of(String), required => true};
-make_include(String, false) ->  #{type => include, value => value_of(String), line => line_of(String), required => false}.
+make_include(String, true) ->  #{type => include,
+                                 value => value_of(String),
+                                 metadata => #{line => line_of(String)},
+                                 required => true};
+make_include(String, false) ->  #{type => include,
+                                  value => value_of(String),
+                                  metadata => #{line => line_of(String)},
+                                  required => false}.
 
 make_concat(S) -> #{type => concat, value => S}.
 
