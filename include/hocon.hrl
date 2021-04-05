@@ -5,6 +5,8 @@
 -define(MINUTE, (?SECOND*60)).
 -define(HOUR,   (?MINUTE*60)).
 -define(DAY,    (?HOUR*24)).
+-define(WEEK,      (?DAY*7)).
+-define(FORTNIGHT, (?WEEK*2)).
 
 -define(KILOBYTE, 1024).
 -define(MEGABYTE, (?KILOBYTE*1024)). %1048576
