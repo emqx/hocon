@@ -173,12 +173,12 @@ do_duration(Str) ->
         Int -> Int
     end.
 do_duration(Str, Sum) ->
-    {ok, MP} = re:compile("^([0-9]+)(d|D|h|H|m|M|s|S|ms|MS)([0-9]+.+)"),
+    {ok, MP} = re:compile("^([0-9]+)(f|F|w|W|d|D|h|H|m|M|s|S|ms|MS)([0-9]+.+)"),
     case re_run_first(Str, MP) of
         {match, [Val, Unit, Next]} ->
             do_duration(Next, Sum + calc_duration(list_to_integer(Val), string:lowercase(Unit)));
         nomatch ->
-            {ok, LastMP} = re:compile("^([0-9]+)(d|D|h|H|m|M|s|S|ms|MS)$"),
+            {ok, LastMP} = re:compile("^([0-9]+)(f|F|w|W|d|D|h|H|m|M|s|S|ms|MS)$"),
             case re_run_first(Str, LastMP) of
                 {match, [Val, Unit]} ->
                     Sum + calc_duration(list_to_integer(Val), string:lowercase(Unit));
@@ -187,6 +187,8 @@ do_duration(Str, Sum) ->
             end
     end.
 
+calc_duration(Val, "f")  -> Val * ?FORTNIGHT;
+calc_duration(Val, "w")  -> Val * ?WEEK;
 calc_duration(Val, "d")  -> Val * ?DAY;
 calc_duration(Val, "h")  -> Val * ?HOUR;
 calc_duration(Val, "m")  -> Val * ?MINUTE;

@@ -360,6 +360,8 @@ duration_test_() ->
     , ?_assertEqual(20000, hocon_postprocess:duration("20s"))
     , ?_assertEqual(60000, hocon_postprocess:duration("1m"))
     , ?_assertEqual(86400000, hocon_postprocess:duration("1d"))
+    , ?_assertEqual(604800000, hocon_postprocess:duration("1w"))
+    , ?_assertEqual(1209600000, hocon_postprocess:duration("1f"))
     , ?_assertEqual("10sss", hocon_postprocess:duration("10sss"))
     , ?_assertEqual(61000, hocon_postprocess:duration("1m1s"))
     , ?_assertEqual("1m1ss", hocon_postprocess:duration("1m1ss"))
