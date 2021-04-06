@@ -416,6 +416,10 @@ richmap_file_test() ->
             #{metadata := #{filename := F, line := 7}, value := <<"5m">>}}}}} = Map,
     ?assertEqual("node.conf", filename:basename(F)).
 
+utf8_test() ->
+    %todo support unicode
+    ?assertMatch({error, {scan_error, _}}, hocon:load("etc/utf8.conf")).
+
 re_error(Filename0) ->
     {error, {_ErrorType, Msg}} = hocon:load(Filename0),
     {ok, MP} = re:compile("([^ \(\t\n\r\f]+) in_file \"([^ \t\n\r\f]+)\" at_line ([0-9]+)"),
