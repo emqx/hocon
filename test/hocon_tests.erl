@@ -368,6 +368,12 @@ duration_test_() ->
     , ?_assertEqual(1000, hocon_postprocess:duration("1S"))
     , ?_assertEqual(61001, hocon_postprocess:duration("1m1S1ms"))
     , ?_assertEqual(true, hocon_postprocess:duration(true))
+    , ?_assertEqual(30000, hocon_postprocess:duration(".5m"))
+    , ?_assertEqual(1599, hocon_postprocess:duration("1.599s"))
+    , ?_assertEqual(1600, hocon_postprocess:duration("1.6s"))
+    , ?_assertEqual(6100, hocon_postprocess:duration(".1m.1s"))
+    , ?_assertEqual(6100, hocon_postprocess:duration(".1m0.1s"))
+    , ?_assertEqual(6100, hocon_postprocess:duration("0.1m0.1s"))
     ].
 
 richmap_binary_test() ->
