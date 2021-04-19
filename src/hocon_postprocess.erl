@@ -26,16 +26,18 @@
 proplists(Map) when is_map(Map) ->
     lists:reverse(proplists(maps:iterator(Map), [], [])).
 proplists(Iter, Path, Acc) ->
+    KeyToStr = fun (A) when is_atom(A) -> atom_to_list(A);
+                   (I) when is_integer(I) -> integer_to_list(I) end,
     case maps:next(Iter) of
         {K, M, I} when is_map(M) ->
-            Child = proplists(maps:iterator(M), [atom_to_list(K) | Path], []),
+            Child = proplists(maps:iterator(M), [KeyToStr(K) | Path], []),
             proplists(I, Path, lists:append(Child, Acc));
         {K, [Bin | _More]=L, I} when is_binary(Bin) ->
             NewList = [binary_to_list(B) || B <- L],
-            ReversedPath = lists:reverse([atom_to_list(K) | Path]),
+            ReversedPath = lists:reverse([KeyToStr(K) | Path]),
             proplists(I, Path, [{ReversedPath, NewList} | Acc]);
         {K, Bin, I} when is_binary(Bin) ->
-            ReversedPath = lists:reverse([atom_to_list(K) | Path]),
+            ReversedPath = lists:reverse([KeyToStr(K) | Path]),
             proplists(I, Path, [{ReversedPath, binary_to_list(Bin)} | Acc]);
         {K, V, I} ->
             ReversedPath = lists:reverse([atom_to_list(K) | Path]),
@@ -70,6 +72,8 @@ do_resolve_convert_fun(bytesize) ->
     fun bytesize/1;
 do_resolve_convert_fun(percent) ->
     fun percent/1;
+do_resolve_convert_fun(array_to_object) ->
+    fun array_to_object/1;
 do_resolve_convert_fun(F) when is_function(F, 1) ->
     F.
 
@@ -202,3 +206,13 @@ calc_duration(Val, "h")  -> Val * ?HOUR;
 calc_duration(Val, "m")  -> Val * ?MINUTE;
 calc_duration(Val, "s")  -> Val * ?SECOND;
 calc_duration(Val, "ms") -> Val.
+
+array_to_object(A) when is_list(A) ->
+    do_array_to_object(A, #{}, 1);
+array_to_object(Other) ->
+    Other.
+
+do_array_to_object([], Obj, _) ->
+    Obj;
+do_array_to_object([H | T], Obj, Idx) ->
+    do_array_to_object(T, Obj#{Idx => H}, Idx + 1).

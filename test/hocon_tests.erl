@@ -268,6 +268,15 @@ apply_opts_test_() ->
                  hocon:load("etc/convert-sample.conf",
                             #{convert => [fun (_) -> ok end]}))].
 
+array_to_object_test_() ->
+    [ ?_assertEqual(#{a => #{1 => <<"foo">>, 2 => <<"bar">>}},
+                    binary("a=[foo, bar]", #{convert => [array_to_object]}))
+    , ?_assertEqual([{["a", "1"], "foo"}, {["a", "2"], "bar"}],
+                    binary("a=[foo, bar]", #{convert => [array_to_object], format => proplists}))
+    , ?_assertEqual(#{a => #{1 => <<"foo">>, 2 => #{a => 1}}},
+                    binary("a=[foo, {a=1}]", #{convert => [array_to_object]}))
+    ].
+
 delete_null_test() ->
     ?assertEqual({ok, #{b => <<"notnull">>, c => <<>>,
                         d => #{x => <<"foo">>, y => <<"bar">>}}},
@@ -433,7 +442,9 @@ re_error(Filename0) ->
                            [global, {capture, all_but_first, list}]),
     lists:map(fun ([V, F, L]) -> [V, filename:basename(F), L] end, VFLs).
 
-binary(B) when is_binary(B) ->
-    {ok, R} = hocon:binary(B),
+binary(B) ->
+    binary(B, #{}).
+binary(B, Opts) when is_binary(B) ->
+    {ok, R} = hocon:binary(B, Opts),
     R;
-binary(IO) -> binary(iolist_to_binary(IO)).
+binary(IO, Opts) -> binary(iolist_to_binary(IO), Opts).
