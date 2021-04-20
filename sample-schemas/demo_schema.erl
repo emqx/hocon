@@ -1,6 +1,11 @@
 -module(demo_schema).
 
--export([foo__setting/1, foo__endpoint/1]).
+-export([keys/0]).
+
+keys() ->
+    [ {"foo.setting", fun foo__setting/1}
+    , {"foo.endpoint", fun foo__endpoint/1}
+    ].
 
 foo__setting(map_to) -> "app_foo.setting";
 foo__setting(type) -> string;

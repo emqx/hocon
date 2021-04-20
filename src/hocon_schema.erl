@@ -58,11 +58,8 @@ validate(Value, SingleValidator) ->
     validate(Value, [SingleValidator]).
 
 get(Key, Param, Schema) ->
-    Fun = key_to_fun(Key),
-    apply(Schema, Fun, [Param]).
-
-key_to_fun(Key) ->
-    list_to_atom(string:join(Key, "__")).
+    Keys = apply(Schema, keys, []),
+    apply(proplists:get_value(string:join(Key, "."), Keys), [Param]).
 
 -ifdef(TEST).
 
