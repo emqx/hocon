@@ -1,5 +1,9 @@
 {"1.2.0",
-[{<<"getopt">>,{pkg,<<"getopt">>,<<"1.0.1">>},0}]}.
+[{<<"getopt">>,{pkg,<<"getopt">>,<<"1.0.1">>},0},
+ {<<"typerefl">>,
+  {git,"https://github.com/k32/typerefl",
+       {ref,"e0229db6de6d3edfc5f090fe2f43c214ac9499dc"}},
+  0}]}.
 [
 {pkg_hash,[
  {<<"getopt">>, <<"C73A9FA687B217F2FF79F68A3B637711BB1936E712B521D8CE466B29CBF7808A">>}]},

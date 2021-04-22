@@ -5,7 +5,8 @@
   {applications,
    [kernel,
     stdlib,
-    getopt
+    getopt,
+    typerefl
    ]},
   {env,[]},
   {modules, []},
