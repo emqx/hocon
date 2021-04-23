@@ -29,16 +29,7 @@ endpoint(converter) -> fun to_ip/1;
 endpoint(_) -> undefined.
 
 greet(mapping) -> "app_foo.greet";
-greet(type) -> binary();
-greet(validator) ->
-    fun (Value) ->
-        case Value =:= "hello" of
-            true ->
-                ok;
-            false ->
-                {error, greet}
-        end
-    end;
+greet(type) -> typerefl:regexp_string("^hello$");
 greet(_) -> undefined.
 
 numbers(mapping) -> "app_foo.numbers";
