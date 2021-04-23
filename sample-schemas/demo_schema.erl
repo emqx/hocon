@@ -6,15 +6,23 @@
 -type ipv4() :: {0..255, 0..255, 0..255, 0..255}.
 -type ipv6() :: {0..65535, 0..65535, 0..65535, 0..65535, 0..65535, 0..65535, 0..65535, 0..65535}.
 
--reflect_type([ip/0]).
+-type birthdays() :: [#{m := 1..12, d := 1..31}].
 
--export([fields/0]).
+-reflect_type([ip/0, birthdays/0]).
 
-fields() ->
-    [ {"foo.setting", fun setting/1}
-    , {"foo.endpoint", fun endpoint/1}
-    , {"foo.greet", fun greet/1}
-    , {"foo.numbers", fun numbers/1}
+-export([namespaces/0, fields/1]).
+
+namespaces() -> ["foo", "a.b"].
+
+fields("foo") ->
+    [ {"setting", fun setting/1}
+    , {"endpoint", fun endpoint/1}
+    , {"greet", fun greet/1}
+    , {"numbers", fun numbers/1}
+    ];
+
+fields("a.b") ->
+    [ {"birthdays", fun birthdays/1}
     ].
 
 setting(mapping) -> "app_foo.setting";
@@ -30,11 +38,16 @@ endpoint(_) -> undefined.
 
 greet(mapping) -> "app_foo.greet";
 greet(type) -> typerefl:regexp_string("^hello$");
+greet(converter) -> fun to_string/1;
 greet(_) -> undefined.
 
 numbers(mapping) -> "app_foo.numbers";
 numbers(type) -> list(integer());
 numbers(_) -> undefined.
+
+birthdays(mapping) -> "a.b.birthdays";
+birthdays(type) -> birthdays();
+birthdays(_) -> undefined.
 
 to_ip(Bin) when is_binary(Bin) ->
     to_ip(binary_to_list(Bin));
