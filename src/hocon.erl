@@ -17,6 +17,7 @@
 -module(hocon).
 
 -export([load/1, load/2, binary/1, binary/2]).
+-export([transform/2]).
 -export([dump/2, dump/3]).
 -export([main/1]).
 

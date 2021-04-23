@@ -30,7 +30,7 @@ do_map([], _RichMap, Acc) ->
     Acc;
 do_map([{Field, SchemaFun} | More], RichMap, Acc) ->
     RichMap0 = apply_env(SchemaFun, Field, RichMap),
-    Value = deep_get(Field, RichMap0, value),
+    Value = resolve_array(deep_get(Field, RichMap0, value)),
     Value0 = apply_converter(SchemaFun, Value),
     Validators = add_default_validator(SchemaFun(validator), SchemaFun(type)),
     Mapping = string:tokens(SchemaFun(mapping), "."),
@@ -123,6 +123,31 @@ nested_richmap([H], Value, Param) ->
 nested_richmap([H | T], Value, Param) ->
     #{list_to_atom(H) => #{value => nested_richmap(T, Value, Param)}}.
 
+resolve_array(ArrayOfRichMap) when is_list(ArrayOfRichMap) ->
+    [richmap_to_map(R) || R <- ArrayOfRichMap];
+resolve_array(Other) ->
+    Other.
+
+richmap_to_map(RichMap) when is_map(RichMap) ->
+    richmap_to_map(maps:iterator(RichMap), #{}).
+richmap_to_map(Iter, Map) ->
+    case maps:next(Iter) of
+        {metadata, _, I} ->
+            richmap_to_map(I, Map);
+        {type, _, I} ->
+            richmap_to_map(I, Map);
+        {value, M, I} when is_map(M) ->
+            richmap_to_map(maps:iterator(M), #{});
+        {value, A, I} when is_list(A) ->
+            resolve_array(A);
+        {value, V, I} ->
+            V;
+        {K, V, I} ->
+            richmap_to_map(I, Map#{K => richmap_to_map(V)});
+        none ->
+            Map
+    end.
+
 -ifdef(TEST).
 
 deep_get_test() ->
@@ -146,6 +171,17 @@ deep_put_test() ->
     {ok, M2} = hocon:binary("a={b=1}", #{format => richmap}),
     NewM2 = deep_put("a.b", #{x => 1}, M2, value),
     ?assertEqual(#{x => 1}, deep_get("a.b", NewM2, value)).
+
+richmap_to_map_test() ->
+    {ok, M0} = hocon:binary("a.b = 1", #{format => richmap}),
+    ?assertEqual(#{a => #{b => 1}}, richmap_to_map(M0)),
+
+    {ok, M1} = hocon:binary("a.b = [1,2,3]", #{format => richmap}),
+    ?assertEqual(#{a => #{b => [1, 2, 3]}}, richmap_to_map(M1)),
+
+    {ok, M2} = hocon:binary("a.b = [1,2,{x=foo}]", #{format => richmap}),
+    ?assertEqual(#{a => #{b => [1, 2, #{x => <<"foo">>}]}}, richmap_to_map(M2)).
+
 
 mapping_test() ->
     {ok, M0} = hocon:binary("foo.setting=hello", #{format => richmap}),
@@ -171,7 +207,12 @@ mapping_test() ->
     % additional validators
     {ok, M5} = hocon:binary("foo.greet=foo", #{format => richmap}),
     ?assertEqual([{["app_foo", "greet"], {errorlist, [{error, greet}]}}],
-                 map(demo_schema, M5)).
+                 map(demo_schema, M5)),
+
+    % array
+    {ok, M6} = hocon:binary("foo.numbers=[1,2,3]", #{format => richmap}),
+    ?assertEqual([{["app_foo", "numbers"], [1, 2, 3]}],
+        map(demo_schema, M6)).
 
 env_test() ->
     {ok, M0} = hocon:binary("foo.setting=hello", #{format => richmap}),
@@ -180,7 +221,13 @@ env_test() ->
 
     {ok, M1} = hocon:binary("foo.setting=hello", #{format => richmap}),
     Envs1 = [{"EMQX_MY_OVERRIDE", "yo"}, {"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"}],
-    ?assertEqual([{["app_foo", "setting"], "yo"}], with_envs(fun map/2, [demo_schema, M1], Envs1)).
+    ?assertEqual([{["app_foo", "setting"], "yo"}], with_envs(fun map/2, [demo_schema, M1], Envs1)),
+
+    % array
+    {ok, M2} = hocon:binary("foo.numbers=[1,2,3]", #{format => richmap}),
+    Envs2 = [{"EMQX_FOO__NUMBERS", "[4,5,6]"}, {"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"}],
+    ?assertEqual([{["app_foo", "numbers"], [4, 5, 6]}],
+                 with_envs(fun map/2, [demo_schema, M2], Envs2)).
 
 with_envs(Fun, Args, [{_Name, _Value} | _] = Envs) ->
     set_envs(Envs),
