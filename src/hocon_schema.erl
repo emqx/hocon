@@ -23,26 +23,27 @@
 -export([map/2]).
 
 map(Schema, RichMap) ->
-    Fields = apply(Schema, fields, []),
-    do_map(Fields, RichMap, []).
+    Namespaces = apply(Schema, namespaces, []),
+    lists:append([do_map(apply(Schema, fields, [N]), N, RichMap, []) || N <- Namespaces]).
 
-do_map([], _RichMap, Acc) ->
+do_map([], _Namespace, _RichMap, Acc) ->
     Acc;
-do_map([{Field, SchemaFun} | More], RichMap, Acc) ->
-    RichMap0 = apply_env(SchemaFun, Field, RichMap),
-    Value = resolve_array(deep_get(Field, RichMap0, value)),
+do_map([{Field, SchemaFun} | More], Namespace, RichMap, Acc) ->
+    Field0 = Namespace ++ "." ++ Field,
+    RichMap0 = apply_env(SchemaFun, Field0, RichMap),
+    Value = resolve_array(deep_get(Field0, RichMap0, value)),
     Value0 = apply_converter(SchemaFun, Value),
     Validators = add_default_validator(SchemaFun(validator), SchemaFun(type)),
     Mapping = string:tokens(SchemaFun(mapping), "."),
     case {Value0, SchemaFun(default)} of
         {undefined, undefined} ->
-            do_map(More, RichMap0, Acc);
+            do_map(More, Namespace, RichMap0, Acc);
         {undefined, Default} ->
-            do_map(More, RichMap0, [{Mapping, Default} | Acc]);
+            do_map(More, Namespace, RichMap0, [{Mapping, Default} | Acc]);
         {Value0, _} ->
             % TODO when errorlist is returned, throw and print the field metadata
             Value1 = validate(Value0, Validators),
-            do_map(More, RichMap0, [{Mapping, Value1} | Acc])
+            do_map(More, Namespace, RichMap0, [{Mapping, Value1} | Acc])
     end.
 
 apply_env(SchemaFun, Field, RichMap) ->
@@ -226,7 +227,18 @@ env_test() ->
     {ok, M2} = hocon:binary("foo.numbers=[1,2,3]", #{format => richmap}),
     Envs2 = [{"EMQX_FOO__NUMBERS", "[4,5,6]"}, {"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"}],
     ?assertEqual([{["app_foo", "numbers"], [4, 5, 6]}],
-                 with_envs(fun map/2, [demo_schema, M2], Envs2)).
+                 with_envs(fun map/2, [demo_schema, M2], Envs2)),
+
+    {ok, M3} = hocon:binary("", #{format => richmap}),
+    Envs3 = [{"EMQX_FOO__GREET", "hello"}, {"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"}],
+    ?assertEqual([{["app_foo", "greet"], "hello"}],
+        with_envs(fun map/2, [demo_schema, M3], Envs3)),
+
+    {ok, M4} = hocon:binary("", #{format => richmap}),
+    Envs4 = [{"EMQX_A__B__BIRTHDAYS", "[{m=1, d=1}, {m=12, d=12}]"},
+             {"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"}],
+    ?assertEqual([{["a", "b", "birthdays"], [#{m => 1, d => 1}, #{m => 12, d => 12}]}],
+        with_envs(fun map/2, [demo_schema, M4], Envs4)).
 
 with_envs(Fun, Args, [{_Name, _Value} | _] = Envs) ->
     set_envs(Envs),
