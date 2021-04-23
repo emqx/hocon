@@ -204,9 +204,8 @@ mapping_test() ->
                   {["app_foo", "setting"], "hi"}],
                  map(demo_schema, M4)),
 
-    % additional validators
     {ok, M5} = hocon:binary("foo.greet=foo", #{format => richmap}),
-    ?assertEqual([{["app_foo", "greet"], {errorlist, [{error, greet}]}}],
+    ?assertMatch([{["app_foo", "greet"], {errorlist, [{error, _}]}}],
                  map(demo_schema, M5)),
 
     % array
