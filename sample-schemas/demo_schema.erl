@@ -14,6 +14,7 @@ fields() ->
     [ {"foo.setting", fun setting/1}
     , {"foo.endpoint", fun endpoint/1}
     , {"foo.greet", fun greet/1}
+    , {"foo.numbers", fun numbers/1}
     ].
 
 setting(mapping) -> "app_foo.setting";
@@ -39,6 +40,10 @@ greet(validator) ->
         end
     end;
 greet(_) -> undefined.
+
+numbers(mapping) -> "app_foo.numbers";
+numbers(type) -> list(integer());
+numbers(_) -> undefined.
 
 to_ip(Bin) when is_binary(Bin) ->
     to_ip(binary_to_list(Bin));
