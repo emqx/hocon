@@ -19,6 +19,7 @@ fields() ->
 setting(mapping) -> "app_foo.setting";
 setting(type) -> string();
 setting(converter) -> fun to_string/1;
+setting(override_env) -> "MY_OVERRIDE";
 setting(_) -> undefined.
 
 endpoint(mapping) -> "app_foo.endpoint";
