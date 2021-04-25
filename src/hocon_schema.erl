@@ -151,94 +151,63 @@ richmap_to_map(Iter, Map) ->
 
 -ifdef(TEST).
 
-deep_get_test() ->
-    {ok, M0} = hocon:binary("a=1", #{format => richmap}),
-    ?assertEqual(1, deep_get("a", M0, value)),
-    ?assertMatch(#{line := 1}, deep_get("a", M0, metadata)),
-    {ok, M1} = hocon:binary("a={b=1}", #{format => richmap}),
-    ?assertEqual(1, deep_get("a.b", M1, value)),
-    ?assertEqual(1, deep_get(["a", "b"], M1, value)),
-    ?assertEqual(undefined, deep_get("a.c", M1, value)).
+deep_get_test_() ->
+    F = fun(Str, Key, Param) -> {ok, M} = hocon:binary(Str, #{format => richmap}),
+                                deep_get(Key, M, Param) end,
+    [ ?_assertEqual(1, F("a=1", "a", value))
+    , ?_assertMatch(#{line := 1}, F("a=1", "a", metadata))
+    , ?_assertEqual(1, F("a={b=1}", "a.b", value))
+    , ?_assertEqual(1, F("a={b=1}", ["a", "b"], value))
+    , ?_assertEqual(undefined, F("a={b=1}", "a.c", value))
+    ].
 
-deep_put_test() ->
-    {ok, M0} = hocon:binary("a=1", #{format => richmap}),
-    NewM0 = deep_put("a", 2, M0, value),
-    ?assertEqual(2, deep_get("a", NewM0, value)),
+deep_put_test_() ->
+    F = fun(Str, Key, Value, Param) -> {ok, M} = hocon:binary(Str, #{format => richmap}),
+                                       NewM = deep_put(Key, Value, M, Param),
+                                       deep_get(Key, NewM, Param) end,
+    [ ?_assertEqual(2, F("a=1", "a", 2, value))
+    , ?_assertEqual(2, F("a={b=1}", "a.b", 2, value))
+    , ?_assertEqual(#{x => 1}, F("a={b=1}", "a.b", #{x => 1}, value))
+    ].
 
-    {ok, M1} = hocon:binary("a={b=1}", #{format => richmap}),
-    NewM1 = deep_put("a.b", 2, M1, value),
-    ?assertEqual(2, deep_get("a.b", NewM1, value)),
-
-    {ok, M2} = hocon:binary("a={b=1}", #{format => richmap}),
-    NewM2 = deep_put("a.b", #{x => 1}, M2, value),
-    ?assertEqual(#{x => 1}, deep_get("a.b", NewM2, value)).
-
-richmap_to_map_test() ->
-    {ok, M0} = hocon:binary("a.b = 1", #{format => richmap}),
-    ?assertEqual(#{a => #{b => 1}}, richmap_to_map(M0)),
-
-    {ok, M1} = hocon:binary("a.b = [1,2,3]", #{format => richmap}),
-    ?assertEqual(#{a => #{b => [1, 2, 3]}}, richmap_to_map(M1)),
-
-    {ok, M2} = hocon:binary("a.b = [1,2,{x=foo}]", #{format => richmap}),
-    ?assertEqual(#{a => #{b => [1, 2, #{x => <<"foo">>}]}}, richmap_to_map(M2)).
+richmap_to_map_test_() ->
+    F = fun(Str) -> {ok, M} = hocon:binary(Str, #{format => richmap}),
+                    richmap_to_map(M) end,
+    [ ?_assertEqual(#{a => #{b => 1}}, F("a.b=1"))
+    , ?_assertEqual(#{a => #{b => [1, 2, 3]}}, F("a.b = [1,2,3]"))
+    , ?_assertEqual(#{a => #{b => [1, 2, #{x => <<"foo">>}]}}, F("a.b = [1,2,{x=foo}]"))
+    ].
 
 
-mapping_test() ->
-    {ok, M0} = hocon:binary("foo.setting=hello", #{format => richmap}),
-    ?assertEqual([{["app_foo", "setting"], "hello"}], map(demo_schema, M0)),
+mapping_test_() ->
+    F = fun (Str) -> {ok, M} = hocon:binary(Str, #{format => richmap}),
+                     map(demo_schema, M) end,
+    [ ?_assertEqual([{["app_foo", "setting"], "hello"}], F("foo.setting=hello"))
+    , ?_assertEqual([{["app_foo", "setting"], "1"}], F("foo.setting=1"))
+    , ?_assertMatch([{["app_foo", "setting"], {errorlist, _}}], F("foo.setting=[a,b,c]"))
+    , ?_assertEqual([{["app_foo", "endpoint"], {127, 0, 0, 1}}], F("foo.endpoint=\"127.0.0.1\""))
+    , ?_assertMatch([{["app_foo", "endpoint"], {errorlist, _}},
+                    {["app_foo", "setting"], "hi"}],
+                   F("foo.setting=hi, foo.endpoint=hi"))
+    , ?_assertMatch([{["app_foo", "greet"], {errorlist, [{error, _}]}}], F("foo.greet=foo"))
+    , ?_assertEqual([{["app_foo", "numbers"], [1, 2, 3]}], F("foo.numbers=[1,2,3]"))
+    ].
 
-    {ok, M1} = hocon:binary("foo.setting=1", #{format => richmap}),
-    ?assertEqual(1, deep_get("foo.setting", M1, value)),
-    % convert 1 to "1"
-    ?assertEqual([{["app_foo", "setting"], "1"}], map(demo_schema, M1)),
-
-    {ok, M2} = hocon:binary("foo.setting=[a,b,c]", #{format => richmap}),
-    ?assertMatch([{["app_foo", "setting"], {errorlist, _}}],
-                 map(demo_schema, M2)),
-
-    {ok, M3} = hocon:binary("foo.endpoint=\"127.0.0.1\"", #{format => richmap}),
-    ?assertEqual([{["app_foo", "endpoint"], {127, 0, 0, 1}}], map(demo_schema, M3)),
-
-    {ok, M4} = hocon:binary("foo.setting=hi, foo.endpoint=hi", #{format => richmap}),
-    ?assertMatch([{["app_foo", "endpoint"], {errorlist, _}},
-                  {["app_foo", "setting"], "hi"}],
-                 map(demo_schema, M4)),
-
-    {ok, M5} = hocon:binary("foo.greet=foo", #{format => richmap}),
-    ?assertMatch([{["app_foo", "greet"], {errorlist, [{error, _}]}}],
-                 map(demo_schema, M5)),
-
-    % array
-    {ok, M6} = hocon:binary("foo.numbers=[1,2,3]", #{format => richmap}),
-    ?assertEqual([{["app_foo", "numbers"], [1, 2, 3]}],
-        map(demo_schema, M6)).
-
-env_test() ->
-    {ok, M0} = hocon:binary("foo.setting=hello", #{format => richmap}),
-    Envs0 = [{"EMQX_FOO__SETTING", "hi"}, {"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"}],
-    ?assertEqual([{["app_foo", "setting"], "hi"}], with_envs(fun map/2, [demo_schema, M0], Envs0)),
-
-    {ok, M1} = hocon:binary("foo.setting=hello", #{format => richmap}),
-    Envs1 = [{"EMQX_MY_OVERRIDE", "yo"}, {"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"}],
-    ?assertEqual([{["app_foo", "setting"], "yo"}], with_envs(fun map/2, [demo_schema, M1], Envs1)),
-
-    % array
-    {ok, M2} = hocon:binary("foo.numbers=[1,2,3]", #{format => richmap}),
-    Envs2 = [{"EMQX_FOO__NUMBERS", "[4,5,6]"}, {"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"}],
-    ?assertEqual([{["app_foo", "numbers"], [4, 5, 6]}],
-                 with_envs(fun map/2, [demo_schema, M2], Envs2)),
-
-    {ok, M3} = hocon:binary("", #{format => richmap}),
-    Envs3 = [{"EMQX_FOO__GREET", "hello"}, {"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"}],
-    ?assertEqual([{["app_foo", "greet"], "hello"}],
-        with_envs(fun map/2, [demo_schema, M3], Envs3)),
-
-    {ok, M4} = hocon:binary("", #{format => richmap}),
-    Envs4 = [{"EMQX_A__B__BIRTHDAYS", "[{m=1, d=1}, {m=12, d=12}]"},
-             {"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"}],
-    ?assertEqual([{["a", "b", "birthdays"], [#{m => 1, d => 1}, #{m => 12, d => 12}]}],
-        with_envs(fun map/2, [demo_schema, M4], Envs4)).
+env_test_() ->
+    F = fun (Str, Envs) -> {ok, M} = hocon:binary(Str, #{format => richmap}),
+                           with_envs(fun map/2, [demo_schema, M],
+                                     Envs ++ [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"}]) end,
+    [ ?_assertEqual([{["app_foo", "setting"], "hi"}],
+                    F("foo.setting=hello", [{"EMQX_FOO__SETTING", "hi"}]))
+    , ?_assertEqual([{["app_foo", "setting"], "yo"}],
+                    F("foo.setting=hello", [{"EMQX_MY_OVERRIDE", "yo"}]))
+    , ?_assertEqual([{["app_foo", "numbers"], [4, 5, 6]}],
+                    F("foo.numbers=[1,2,3]", [{"EMQX_FOO__NUMBERS", "[4,5,6]"}]))
+    , ?_assertEqual([{["app_foo", "greet"], "hello"}],
+                    F("", [{"EMQX_FOO__GREET", "hello"}]))
+    , ?_assertEqual([{["a", "b", "birthdays"], [#{m => 1, d => 1}, #{m => 12, d => 12}]}],
+                    F("", [{"EMQX_A__B__BIRTHDAYS", "[{m=1, d=1}, {m=12, d=12}]"}]))
+    ].
 
 with_envs(Fun, Args, [{_Name, _Value} | _] = Envs) ->
     set_envs(Envs),
