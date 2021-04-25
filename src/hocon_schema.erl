@@ -71,7 +71,7 @@ string_to_hocon(Str) when is_list(Str) ->
 apply_converter(SchemaFun, Value) ->
     case SchemaFun(converter) of
         undefined ->
-            Value;
+            hocon_schema_builtin:convert(Value, SchemaFun(type));
         Converter ->
             try
                 Converter(Value)
@@ -191,6 +191,7 @@ mapping_test_() ->
                    F("foo.setting=hi, foo.endpoint=hi"))
     , ?_assertMatch([{["app_foo", "greet"], {errorlist, [{error, _}]}}], F("foo.greet=foo"))
     , ?_assertEqual([{["app_foo", "numbers"], [1, 2, 3]}], F("foo.numbers=[1,2,3]"))
+    , ?_assertEqual([{["a", "b", "some_int"], 1}], F("a.b.some_int=1"))
     ].
 
 env_test_() ->
