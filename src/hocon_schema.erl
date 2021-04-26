@@ -48,7 +48,7 @@ do_map([{Field, SchemaFun} | More], Namespace, RichMap, Acc) ->
                          {errorlist, Errors} ->
                              throw({errorlist, Errors});
                          V ->
-                             V
+                             richmap_to_map(V)
                      end,
             do_map(More, Namespace, RichMap0, NewAcc(SchemaFun(mapping), Value1, Acc))
     end.
@@ -146,7 +146,9 @@ resolve_array(Other) ->
     Other.
 
 richmap_to_map(RichMap) when is_map(RichMap) ->
-    richmap_to_map(maps:iterator(RichMap), #{}).
+    richmap_to_map(maps:iterator(RichMap), #{});
+richmap_to_map(Other) ->
+    Other.
 richmap_to_map(Iter, Map) ->
     case maps:next(Iter) of
         {metadata, _, I} ->
@@ -208,6 +210,7 @@ mapping_test_() ->
     , ?_assertEqual([{["a", "b", "some_int"], 1}], F("a.b.some_int=1"))
     , ?_assertEqual([], F("foo.ref_x_y={some_int = 1}"))
     , ?_assertThrow({errorlist, _}, F("foo.ref_x_y={some_int = aaa}"))
+    , ?_assertEqual([{["app_foo", "refjk"], #{some_int => 1}}], F("foo.ref_j_k={some_int = 1}"))
     ].
 
 env_test_() ->
