@@ -2,12 +2,9 @@
 
 -include_lib("typerefl/include/types.hrl").
 
--type ipv4_address() :: {byte(), byte(), byte(), byte()}.
--typerefl_from_string({ipv4_address/0, inet, parse_ipv4_address}).
-
 -type birthdays() :: [#{m := 1..12, d := 1..31}].
 
--reflect_type([ipv4_address/0, birthdays/0]).
+-reflect_type([birthdays/0]).
 
 -export([namespaces/0, fields/1]).
 
@@ -36,7 +33,7 @@ setting(override_env) -> "MY_OVERRIDE";
 setting(_) -> undefined.
 
 endpoint(mapping) -> "app_foo.endpoint";
-endpoint(type) -> ipv4_address();
+endpoint(type) -> typerefl:ip4_address();
 endpoint(_) -> undefined.
 
 greet(mapping) -> "app_foo.greet";
