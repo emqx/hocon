@@ -11,18 +11,23 @@
 
 -export([namespaces/0, fields/1]).
 
-namespaces() -> ["foo", "a.b"].
+namespaces() -> ["foo", "a.b", "x.y"].
 
 fields("foo") ->
     [ {"setting", fun setting/1}
     , {"endpoint", fun endpoint/1}
     , {"greet", fun greet/1}
     , {"numbers", fun numbers/1}
+    , {"ref_x_y", fun ref_x_y/1}
     ];
 
 fields("a.b") ->
     [ {"birthdays", fun birthdays/1}
     , {"some_int", fun int/1}
+    ];
+
+fields("x.y") ->
+    [ {"some_int", fun int/1}
     ].
 
 setting(mapping) -> "app_foo.setting";
@@ -49,3 +54,7 @@ birthdays(_) -> undefined.
 int(mapping) -> "a.b.some_int";
 int(type) -> integer();
 int(_) -> undefined.
+
+ref_x_y(mapping) -> undefined;
+ref_x_y(type) -> {ref, fields("x.y")};
+ref_x_y(_) -> undefined.
