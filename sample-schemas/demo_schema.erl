@@ -16,6 +16,7 @@ fields("foo") ->
     , {"greet", fun greet/1}
     , {"numbers", fun numbers/1}
     , {"ref_x_y", fun ref_x_y/1}
+    , {"ref_j_k", fun ref_j_k/1}
     ];
 
 fields("a.b") ->
@@ -24,6 +25,10 @@ fields("a.b") ->
     ];
 
 fields("x.y") ->
+    [ {"some_int", fun int/1}
+    ];
+
+fields("j.k") ->
     [ {"some_int", fun int/1}
     ].
 
@@ -55,3 +60,7 @@ int(_) -> undefined.
 ref_x_y(mapping) -> undefined;
 ref_x_y(type) -> {ref, fields("x.y")};
 ref_x_y(_) -> undefined.
+
+ref_j_k(mapping) -> "app_foo.refjk";
+ref_j_k(type) -> {ref, fields("j.k")};
+ref_j_k(_) -> undefined.
