@@ -32,18 +32,25 @@ do_map([{Field, SchemaFun} | More], Namespace, RichMap, Acc) ->
     Field0 = Namespace ++ "." ++ Field,
     RichMap0 = apply_env(SchemaFun, Field0, RichMap),
     Value = resolve_array(deep_get(Field0, RichMap0, value)),
-    Value0 = apply_converter(SchemaFun, Value),
+    Value0 = case SchemaFun(type) of
+                 {ref, _} -> Value;
+                 _ -> apply_converter(SchemaFun, Value) end,
     Validators = add_default_validator(SchemaFun(validator), SchemaFun(type)),
-    Mapping = string:tokens(SchemaFun(mapping), "."),
+    NewAcc = fun (undefined, _, Acc) -> Acc;
+                 (Mapping, Value, Acc) -> [{string:tokens(Mapping, "."), Value} | Acc] end,
     case {Value0, SchemaFun(default)} of
         {undefined, undefined} ->
             do_map(More, Namespace, RichMap0, Acc);
         {undefined, Default} ->
-            do_map(More, Namespace, RichMap0, [{Mapping, Default} | Acc]);
+            do_map(More, Namespace, RichMap0, NewAcc(SchemaFun(mapping), Default, Acc));
         {Value0, _} ->
-            % TODO when errorlist is returned, throw and print the field metadata
-            Value1 = validate(Value0, Validators),
-            do_map(More, Namespace, RichMap0, [{Mapping, Value1} | Acc])
+            Value1 = case validate(Value0, Validators) of
+                         {errorlist, Errors} ->
+                             throw({errorlist, Errors});
+                         V ->
+                             V
+                     end,
+            do_map(More, Namespace, RichMap0, NewAcc(SchemaFun(mapping), Value1, Acc))
     end.
 
 apply_env(SchemaFun, Field, RichMap) ->
@@ -84,6 +91,15 @@ add_default_validator(undefined, Type) ->
     add_default_validator([], Type);
 add_default_validator(Validator, Type) when is_function(Validator) ->
     add_default_validator([Validator], Type);
+add_default_validator(Validators, {ref, Fields}) ->
+    RefChecker = fun (V) -> try
+                                do_map(Fields, "", #{value => V}, []),
+                                ok
+                            catch
+                                _:{errorlist, Errors} -> {error, {errorlist, Errors}}
+                            end
+                 end,
+    [RefChecker | Validators];
 add_default_validator(Validators, Type) ->
     TypeChecker = fun (Value) -> typerefl:typecheck(Type, Value) end,
     [TypeChecker | Validators].
@@ -184,14 +200,14 @@ mapping_test_() ->
                      map(demo_schema, M) end,
     [ ?_assertEqual([{["app_foo", "setting"], "hello"}], F("foo.setting=hello"))
     , ?_assertEqual([{["app_foo", "setting"], "1"}], F("foo.setting=1"))
-    , ?_assertMatch([{["app_foo", "setting"], {errorlist, _}}], F("foo.setting=[a,b,c]"))
+    , ?_assertThrow({errorlist, _}, F("foo.setting=[a,b,c]"))
     , ?_assertEqual([{["app_foo", "endpoint"], {127, 0, 0, 1}}], F("foo.endpoint=\"127.0.0.1\""))
-    , ?_assertMatch([{["app_foo", "endpoint"], {errorlist, _}},
-                    {["app_foo", "setting"], "hi"}],
-                   F("foo.setting=hi, foo.endpoint=hi"))
-    , ?_assertMatch([{["app_foo", "greet"], {errorlist, [{error, _}]}}], F("foo.greet=foo"))
+    , ?_assertThrow({errorlist, _}, F("foo.setting=hi, foo.endpoint=hi"))
+    , ?_assertThrow({errorlist, _}, F("foo.greet=foo"))
     , ?_assertEqual([{["app_foo", "numbers"], [1, 2, 3]}], F("foo.numbers=[1,2,3]"))
     , ?_assertEqual([{["a", "b", "some_int"], 1}], F("a.b.some_int=1"))
+    , ?_assertEqual([], F("foo.ref_x_y={some_int = 1}"))
+    , ?_assertThrow({errorlist, _}, F("foo.ref_x_y={some_int = aaa}"))
     ].
 
 env_test_() ->
