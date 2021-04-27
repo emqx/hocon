@@ -33,20 +33,12 @@ convert(Int, Type) when is_integer(Int) ->
             Int
     end;
 convert(Bin, Type) when is_binary(Bin) ->
-    from_string(binary_to_list(Bin), Type);
+    Str = binary_to_list(Bin),
+    case typerefl:from_string(Type, Str) of
+        {ok, V} ->
+            V;
+        {error, _} ->
+            Str
+    end;
 convert(Other, _Type) ->
     Other.
-
-from_string(Str, Type) when is_list(Str) ->
-    {?type_refl, Callbacks} = Type,
-    case maps:get(from_string, Callbacks, undefined) of
-        undefined ->
-            Str;
-        FromString ->
-            case FromString(Str) of
-                {ok, V} ->
-                    V;
-                _ ->
-                    Str
-            end
-    end.
