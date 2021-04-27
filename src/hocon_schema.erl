@@ -20,7 +20,18 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--export([map/2]).
+-export([map/2, translate/3]).
+-export([deep_get/3]).
+
+translate(Schema, Conf, MappedValues) ->
+    Namespaces = apply(Schema, translation, []),
+    lists:append([do_translate(apply(Schema, translation, [N]), N, Conf, MappedValues) || N <- Namespaces]).
+
+do_translate([], _Namespace, _Conf, Acc) ->
+    Acc;
+do_translate([{MappedField, Translator} | More], Namespace, Conf, Acc) ->
+    MappedField0 = Namespace ++ "." ++ MappedField,
+    do_translate(More, Namespace, Conf, [{string:tokens(MappedField0, "."), Translator(Conf)} | Acc]).
 
 map(Schema, RichMap) ->
     Namespaces = apply(Schema, fields, []),
@@ -232,6 +243,14 @@ env_test_() ->
                     F("", [{"EMQX_FOO__GREET", "hello"}]))
     , ?_assertEqual([{["a", "b", "birthdays"], [#{m => 1, d => 1}, #{m => 12, d => 12}]}],
                     F("", [{"EMQX_A__B__BIRTHDAYS", "[{m=1, d=1}, {m=12, d=12}]"}]))
+    ].
+
+translate_test_() ->
+    F = fun (Str) -> {ok, M} = hocon:binary(Str, #{format => richmap}),
+                     {Mapped, Conf} = map(demo_schema, M),
+                     translate(demo_schema, Conf, Mapped) end,
+    [ ?_assertEqual([{["app_foo", "range"], {1, 2}}],
+                    F("foo.min=1, foo.max=2"))
     ].
 
 with_envs(Fun, Args, [{_Name, _Value} | _] = Envs) ->
