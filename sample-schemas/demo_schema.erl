@@ -8,7 +8,7 @@
 
 -export([namespaces/0, fields/1]).
 
-namespaces() -> ["foo", "a.b", "x.y"].
+namespaces() -> ["foo", "a.b"].
 
 fields("foo") ->
     [ {"setting", fun setting/1}
