@@ -23,11 +23,14 @@
 -export([map/2]).
 
 map(Schema, RichMap) ->
-    Namespaces = apply(Schema, namespaces, []),
-    lists:append([do_map(apply(Schema, fields, [N]), N, RichMap, []) || N <- Namespaces]).
+    Namespaces = apply(Schema, fields, []),
+    F = fun (Namespace, {Acc, Conf}) ->
+        {Mapped, NewConf} = do_map(apply(Schema, fields, [Namespace]), Namespace, Conf, []),
+        {lists:append(Acc, Mapped), NewConf} end,
+    lists:foldl(F, {[], RichMap}, Namespaces).
 
-do_map([], _Namespace, _RichMap, Acc) ->
-    Acc;
+do_map([], _Namespace, RichMap, Acc) ->
+    {Acc, RichMap};
 do_map([{Field, SchemaFun} | More], Namespace, RichMap, Acc) ->
     Field0 = Namespace ++ "." ++ Field,
     RichMap0 = apply_env(SchemaFun, Field0, RichMap),
@@ -199,7 +202,8 @@ richmap_to_map_test_() ->
 
 mapping_test_() ->
     F = fun (Str) -> {ok, M} = hocon:binary(Str, #{format => richmap}),
-                     map(demo_schema, M) end,
+                     {Mapped, _} = map(demo_schema, M),
+                     Mapped end,
     [ ?_assertEqual([{["app_foo", "setting"], "hello"}], F("foo.setting=hello"))
     , ?_assertEqual([{["app_foo", "setting"], "1"}], F("foo.setting=1"))
     , ?_assertThrow({errorlist, _}, F("foo.setting=[a,b,c]"))
@@ -215,8 +219,9 @@ mapping_test_() ->
 
 env_test_() ->
     F = fun (Str, Envs) -> {ok, M} = hocon:binary(Str, #{format => richmap}),
-                           with_envs(fun map/2, [demo_schema, M],
-                                     Envs ++ [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"}]) end,
+                           {Mapped, _} = with_envs(fun map/2, [demo_schema, M],
+                                     Envs ++ [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"}]),
+                           Mapped end,
     [ ?_assertEqual([{["app_foo", "setting"], "hi"}],
                     F("foo.setting=hello", [{"EMQX_FOO__SETTING", "hi"}]))
     , ?_assertEqual([{["app_foo", "setting"], "yo"}],
