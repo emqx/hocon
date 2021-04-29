@@ -47,6 +47,12 @@ setting(_) -> undefined.
 range(Conf) ->
     Min = hocon_schema:deep_get("foo.min", Conf, value),
     Max = hocon_schema:deep_get("foo.max", Conf, value),
+    case Min < Max of
+        true ->
+            {Min, Max};
+        _ ->
+            throw("should be min < max")
+    end,
     {Min, Max}.
 
 endpoint(mapping) -> "app_foo.endpoint";

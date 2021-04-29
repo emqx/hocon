@@ -20,9 +20,7 @@
 -export([transform/2]).
 -export([dump/2, dump/3]).
 -export([main/1]).
-
-% cuttlefish uses duration/1 in
--export([duration/1]).
+-export([filename_of/1, line_of/1, value_of/1]).
 
 -type config() :: map().
 -type ctx() :: #{path => list(),
@@ -241,7 +239,7 @@ concat(#{type := object}=O) ->
     O#{value => lists:map(fun (E) -> verify_concat(E) end, value_of(O))}.
 
 verify_concat(#{type := concat}=C) ->
-    do_concat(value_of(C), #{line => line_of(C), filename => filename_of(C)});
+    do_concat(value_of(C), metadata_of(C));
 verify_concat({#{type := key, metadata := Metadata}=K, Value}) when is_map(Value) ->
     {K, verify_concat(Value#{metadata => Metadata})};
 verify_concat({#{type := key}=K, Value}) ->
@@ -254,14 +252,16 @@ do_concat(Concat, Location) ->
 
 do_concat([], _, []) ->
     nothing;
-do_concat([], Metadata, [Field | _Fields] = Acc) when ?IS_FIELD(Field) ->
+do_concat([], MetaKey, [{#{metadata := MetaFirstElem}, _V} = F | _Fs] = Acc) when ?IS_FIELD(F) ->
+    Metadata = hocon_util:do_deep_merge(MetaFirstElem, MetaKey),
     case lists:all(fun (F) -> ?IS_FIELD(F) end, Acc) of
         true ->
             #{type => object, value => lists:reverse(Acc), metadata => Metadata};
         false ->
             concat_error(lists:reverse(Acc), #{metadata => Metadata})
     end;
-do_concat([], Metadata, [#{type:= string} | _] = Acc) ->
+do_concat([], MetaKey, [#{type := string, metadata := MetaFirstElem} | _] = Acc) ->
+    Metadata = hocon_util:do_deep_merge(MetaFirstElem, MetaKey),
     case lists:all(fun (A) -> type_of(A) =:= string end, Acc) of
         true ->
             BinList = lists:map(fun(M) -> maps:get(value, M) end, lists:reverse(Acc)),
@@ -269,7 +269,8 @@ do_concat([], Metadata, [#{type:= string} | _] = Acc) ->
         false ->
             concat_error(lists:reverse(Acc), #{metadata => Metadata})
     end;
-do_concat([], Metadata, [#{type := array} | _] = Acc) ->
+do_concat([], MetaKey, [#{type := array, metadata := MetaFirstElem} | _] = Acc) ->
+    Metadata = hocon_util:do_deep_merge(MetaFirstElem, MetaKey),
     case lists:all(fun (A) -> type_of(A) =:= array end, Acc) of
         true ->
             NewValue = lists:append(lists:reverse(lists:map(fun value_of/1, Acc))),
@@ -389,8 +390,10 @@ filename_of(#{metadata := #{filename := Filename}}) ->
 filename_of(_Other) ->
     undefined.
 
+metadata_of(#{metadata := M}) ->
+    M;
+metadata_of(_Other) ->
+    #{}.
+
 name_of(#{type := variable, name := N}) ->
     N.
-
-duration(X) ->
-    hocon_postprocess:duration(X).
