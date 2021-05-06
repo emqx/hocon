@@ -326,10 +326,10 @@ remove_nothing(List) ->
                      ({_Key, nothing}) -> false;
                      (_Other) -> true end, List).
 
-paths(Key) when is_atom(Key) ->
-    paths(atom_to_list(Key));
+paths(Key) when is_binary(Key) ->
+    paths(binary_to_list(Key));
 paths(Key) when is_list(Key) ->
-    lists:map(fun list_to_atom/1, string:tokens(Key, ".")).
+    lists:map(fun list_to_binary/1, string:tokens(Key, ".")).
 
 merge(Key, Val, Map) when is_map(Val) ->
     case maps:find(Key, Map) of

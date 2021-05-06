@@ -2,7 +2,7 @@
 
 -include_lib("typerefl/include/types.hrl").
 
--type birthdays() :: [#{m := 1..12, d := 1..31}].
+-type birthdays() :: [map()].
 
 -reflect_type([birthdays/0]).
 

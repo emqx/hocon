@@ -154,7 +154,7 @@ deep_get([], RichMap, all) ->
 deep_get([], RichMap, Param) ->
     maps:get(Param, RichMap);
 deep_get([H | T], RichMap, Param) when is_list(H) ->
-    case maps:get(list_to_atom(H), maps:get(value, RichMap, undefined), undefined) of
+    case maps:get(list_to_binary(H), maps:get(value, RichMap, undefined), undefined) of
         undefined ->
             undefined;
         ChildRichMap ->
@@ -169,9 +169,9 @@ deep_put(Str, Value, RichMap, Param) when is_list(Str) ->
     deep_put(string:tokens(Str, "."), Value, RichMap, Param).
 
 nested_richmap([H], Value, Param) ->
-    #{list_to_atom(H) => #{Param => Value}};
+    #{list_to_binary(H) => #{Param => Value}};
 nested_richmap([H | T], Value, Param) ->
-    #{list_to_atom(H) => #{value => nested_richmap(T, Value, Param)}}.
+    #{list_to_binary(H) => #{value => nested_richmap(T, Value, Param)}}.
 
 resolve_array(ArrayOfRichMap) when is_list(ArrayOfRichMap) ->
     [richmap_to_map(R) || R <- ArrayOfRichMap];
@@ -273,9 +273,10 @@ deep_put_test_() ->
 richmap_to_map_test_() ->
     F = fun(Str) -> {ok, M} = hocon:binary(Str, #{format => richmap}),
                     richmap_to_map(M) end,
-    [ ?_assertEqual(#{a => #{b => 1}}, F("a.b=1"))
-    , ?_assertEqual(#{a => #{b => [1, 2, 3]}}, F("a.b = [1,2,3]"))
-    , ?_assertEqual(#{a => #{b => [1, 2, #{x => <<"foo">>}]}}, F("a.b = [1,2,{x=foo}]"))
+    [ ?_assertEqual(#{<<"a">> => #{<<"b">> => 1}}, F("a.b=1"))
+    , ?_assertEqual(#{<<"a">> => #{<<"b">> => [1, 2, 3]}}, F("a.b = [1,2,3]"))
+    , ?_assertEqual(#{<<"a">> =>
+                      #{<<"b">> => [1, 2, #{<<"x">> => <<"foo">>}]}}, F("a.b = [1,2,{x=foo}]"))
     ].
 
 
@@ -304,12 +305,13 @@ mapping_test_() ->
     , ?_assertEqual([{["a", "b", "some_int"], 1}], F("a.b.some_int=1"))
     , ?_assertEqual([], F("foo.ref_x_y={some_int = 1}"))
     , ?_assertThrow({validation_error,
-        <<"validation_failed: \"foo.ref_x_y\" = #{some_int => <<\"aaa\">>} at_line 1,\n"
+        <<"validation_failed: \"foo.ref_x_y\" = #{<<\"some_int\">> => <<\"aaa\">>} at_line 1,\n"
           "validation_failed: \".some_int\" = <<\"aaa\">> at_line 1,\n"
           "Expected type: integer()\n"
           "Got: aaa\n\n\n">>},
         F("foo.ref_x_y={some_int = aaa}"))
-    , ?_assertEqual([{["app_foo", "refjk"], #{some_int => 1}}], F("foo.ref_j_k={some_int = 1}"))
+    , ?_assertEqual([{["app_foo", "refjk"], #{<<"some_int">> => 1}}],
+                    F("foo.ref_j_k={some_int = 1}"))
     , ?_assertThrow({validation_error,
         <<"validation_failed: \"foo.endpoint\" = <<\"hi\">> at_line 2,\n"
           "Expected type: ip4_address()() when\n"
@@ -334,7 +336,8 @@ env_test_() ->
                     F("foo.numbers=[1,2,3]", [{"EMQX_FOO__NUMBERS", "[4,5,6]"}]))
     , ?_assertEqual([{["app_foo", "greet"], "hello"}],
                     F("", [{"EMQX_FOO__GREET", "hello"}]))
-    , ?_assertEqual([{["a", "b", "birthdays"], [#{m => 1, d => 1}, #{m => 12, d => 12}]}],
+    , ?_assertEqual([{["a", "b", "birthdays"], [#{<<"d">> => 1, <<"m">> => 1},
+                                                #{<<"d">> => 12, <<"m">> => 12}]}],
                     F("", [{"EMQX_A__B__BIRTHDAYS", "[{m=1, d=1}, {m=12, d=12}]"}]))
     ].
 
