@@ -16,16 +16,65 @@
 
 -module(hocon_schema).
 
--ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
--endif.
+%% behaviour APIs
+-export([ structs/1
+        , fields/2
+        , translations/1
+        , translation/2
+        ]).
 
 -export([map/2, translate/3]).
 -export([deep_get/3]).
 
+-export_type([ name/0
+             , typefunc/0
+             , translationfunc/0
+             , schema/0]).
+
+-type name() :: atom() | string().
+-type typefunc() :: fun((_) -> _).
+-type translationfunc() :: fun((hocon:config()) -> hocon:config()).
+-type field() :: {name(), typefunc()}.
+-type translation() :: {name(), translationfunc()}.
+-type schema() :: module()
+                | #{ structs := [name()]
+                   , fileds := fun((name()) -> [field()])
+                   , translations => [name()]
+                   , translation => fun((name()) -> [translation()])
+                   }.
+
+-callback structs() -> [name()].
+-callback fields(name()) -> [field()].
+-callback translations() -> [name()].
+-callback translation(name()) -> [translation()].
+
+-optional_callbacks([translations/0, translation/1]).
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
+%% behaviour APIs
+-spec structs(schema()) -> [name()].
+structs(Mod) when is_atom(Mod) -> Mod:structs();
+structs(#{structs := Names}) -> Names.
+
+-spec fields(schema(), name()) -> [field()].
+fields(Mod, Name) when is_atom(Mod) -> Mod:fields(Name);
+fields(#{fields := F}, Name) -> F(Name).
+
+-spec translations(schema()) -> [name()].
+translations(Mod) when is_atom(Mod) -> Mod:translations();
+translations(#{translations := Trs}) -> Trs.
+
+-spec translation(schema(), name()) -> [translation()].
+translation(Mod, Name) when is_atom(Mod) -> Mod:translation(Name);
+translation(#{translation := Tr}, Name) -> Tr(Name).
+
+%% TODO: spec
 translate(Schema, Conf, Mapped) ->
-    Namespaces = apply(Schema, translation, []),
-    Res = lists:append([do_translate(apply(Schema, translation, [N]), N, Conf, Mapped) ||
+    Namespaces = translations(Schema),
+    Res = lists:append([do_translate(translation(Schema, N), str(N), Conf, Mapped) ||
                         N <- Namespaces]),
     ok = find_error(Res),
     Res.
@@ -41,23 +90,25 @@ do_translate([{MappedField, Translator} | More], Namespace, Conf, Acc) ->
         _:Reason ->
             Error = {string:tokens(MappedField0, "."),
                      {error, {translation_error, Reason, MappedField0}}},
-            do_translate(More, Namespace, Conf,
-                         [Error | Acc])
+            do_translate(More, Namespace, Conf, [Error | Acc])
     end.
 
 map(Schema, RichMap) ->
-    Namespaces = apply(Schema, fields, []),
+    Namespaces = structs(Schema),
     F = fun (Namespace, {Acc, Conf}) ->
-        {Mapped, NewConf} = do_map(apply(Schema, fields, [Namespace]), Namespace, Conf, []),
+        {Mapped, NewConf} = do_map(fields(Schema, Namespace), str(Namespace), Conf, []),
         {lists:append(Acc, Mapped), NewConf} end,
     {Mapped, RichMap0} = lists:foldl(F, {[], RichMap}, Namespaces),
     ok = find_error(Mapped),
     {Mapped, RichMap0}.
 
+str(A) when is_atom(A) -> atom_to_list(A);
+str(S) -> S.
+
 do_map([], _Namespace, RichMap, Acc) ->
     {Acc, RichMap};
 do_map([{Field, SchemaFun} | More], Namespace, RichMap, Acc) ->
-    Field0 = Namespace ++ "." ++ Field,
+    Field0 = Namespace ++ "." ++ str(Field),
     RichMap0 = apply_env(SchemaFun, Field0, RichMap),
     Value = resolve_array(deep_get(Field0, RichMap0, value)),
     Value0 = case SchemaFun(type) of

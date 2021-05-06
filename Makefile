@@ -37,3 +37,7 @@ dialyzer:
 .PHONY: es
 es: compile
 	$(REBAR) escriptize
+
+.PHONY: elvis
+elvis:
+	./scripts/elvis-check.sh
