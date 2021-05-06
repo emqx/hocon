@@ -121,11 +121,11 @@ unquote(Str) -> string:strip(Str, both, $").
 
 maybe_var_ref_name("${?" ++ Name_CR) ->
     [$} | NameRev] = lists:reverse(Name_CR),
-    list_to_atom(string:trim(lists:reverse(NameRev))).
+    list_to_binary(string:trim(lists:reverse(NameRev))).
 
 var_ref_name("${" ++ Name_CR) ->
     [$} | NameRev] = lists:reverse(Name_CR),
-    list_to_atom(string:trim(lists:reverse(NameRev))).
+    list_to_binary(string:trim(lists:reverse(NameRev))).
 
 to_float("." ++ Fraction) -> to_float("0." ++ Fraction);
 to_float(Str) -> list_to_float(Str).

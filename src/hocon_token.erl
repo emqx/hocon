@@ -84,7 +84,7 @@ trans_key([T | Tokens], Acc) ->
     trans_key(Tokens, [T | Acc]).
 
 trans_key_lb([{string, Line, Value} | TokensRev]) ->
-    [{key, Line, binary_to_atom(Value, utf8)} | TokensRev];
+    [{key, Line, Value} | TokensRev];
 trans_key_lb(Otherwise) -> Otherwise.
 
 trans_splice_end(Tokens) ->
@@ -173,12 +173,12 @@ filename(Ctx) ->
     hocon_util:top_stack(filename, Ctx).
 
 abspath(Var, PathStack) ->
-    do_abspath(atom_to_binary(Var, utf8), PathStack).
+    do_abspath(Var, PathStack).
 
 do_abspath(Var, ['$root']) ->
-    binary_to_atom(Var, utf8);
+    Var;
 do_abspath(Var, [#{type := key}=K | More]) ->
-    do_abspath(iolist_to_binary([atom_to_binary(value_of(K), utf8), <<".">>, Var]), More).
+    do_abspath(iolist_to_binary([value_of(K), <<".">>, Var]), More).
 
 
 -spec load_include(boxed(), hocon:ctx()) -> boxed() | nothing.
