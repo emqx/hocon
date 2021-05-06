@@ -3,22 +3,24 @@
 -include_lib("typerefl/include/types.hrl").
 
 -type birthdays() :: [map()].
+-behaviour(hocon_schema).
 
 -reflect_type([birthdays/0]).
 
--export([fields/0, fields/1, translation/0, translation/1]).
+-export([structs/0, fields/1, translations/0, translation/1]).
 
-fields() -> ["foo", "a.b"].
+structs() -> [foo, "a.b"].
+translations() -> ["app_foo"].
 
-fields("foo") ->
-    [ {"setting", fun setting/1}
-    , {"endpoint", fun endpoint/1}
-    , {"greet", fun greet/1}
-    , {"numbers", fun numbers/1}
-    , {"ref_x_y", fun ref_x_y/1}
-    , {"ref_j_k", fun ref_j_k/1}
-    , {"min", fun priv_int/1}
-    , {"max", fun priv_int/1}
+fields(foo) ->
+    [ {setting, fun setting/1}
+    , {endpoint, fun endpoint/1}
+    , {greet, fun greet/1}
+    , {numbers, fun numbers/1}
+    , {ref_x_y, fun ref_x_y/1}
+    , {ref_j_k, fun ref_j_k/1}
+    , {min, fun priv_int/1}
+    , {max, fun priv_int/1}
     ];
 
 fields("a.b") ->
@@ -34,7 +36,6 @@ fields("j.k") ->
     [ {"some_int", fun priv_int/1}
     ].
 
-translation() -> ["app_foo"].
 
 translation("app_foo") ->
     [ {"range", fun range/1} ].
