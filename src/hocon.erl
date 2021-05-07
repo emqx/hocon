@@ -22,6 +22,8 @@
 -export([main/1]).
 -export([filename_of/1, line_of/1, value_of/1]).
 
+-export([duration/1]).
+
 -type config() :: map().
 -type ctx() :: #{path => list(),
                  filename => list()}.
@@ -397,3 +399,6 @@ metadata_of(_Other) ->
 
 name_of(#{type := variable, name := N}) ->
     N.
+
+duration(X) ->
+    hocon_postprocess:duration(X).
