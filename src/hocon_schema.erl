@@ -23,7 +23,7 @@
         , translation/2
         ]).
 
--export([map/2, translate/3]).
+-export([map/2, translate/3, generate/2]).
 -export([deep_get/3]).
 
 -export_type([ name/0
@@ -70,6 +70,26 @@ translations(#{translations := Trs}) -> Trs.
 -spec translation(schema(), name()) -> [translation()].
 translation(Mod, Name) when is_atom(Mod) -> Mod:translation(Name);
 translation(#{translation := Tr}, Name) -> Tr(Name).
+
+generate(Schema, RichMap) ->
+    {Mapped, RichMap0} = map(Schema, RichMap),
+    Translated = translate(Schema, RichMap0, Mapped),
+    nest(Translated).
+
+nest(Proplist) ->
+    nest(Proplist, []).
+nest([], Acc) ->
+    Acc;
+nest([{Field, Value} | More], Acc) ->
+    nest(More, set_value(Field, Acc, Value)).
+
+set_value([LastToken], Acc, Value) ->
+    Token = list_to_atom(LastToken),
+    lists:keystore(Token, 1, Acc, {Token, Value});
+set_value([HeadToken | MoreTokens], PList, Value) ->
+    Token = list_to_atom(HeadToken),
+    OldValue = proplists:get_value(Token, PList, []),
+    lists:keystore(Token, 1, PList, {Token, set_value(MoreTokens, OldValue, Value)}).
 
 %% TODO: spec
 translate(Schema, Conf, Mapped) ->
@@ -402,6 +422,55 @@ translate_test_() ->
                     <<"translation_failed: \"app_foo.range\",\n"
                       "should be min < max\n">>},
                     F("foo.min=2, foo.max=1"))
+    ].
+
+generate_compatibility_test() ->
+    Conf = [
+        {["foo", "setting"], "val"},
+        {["foo", "min"], "1"},
+        {["foo", "max"], "2"}
+    ],
+
+    Mappings = [
+        cuttlefish_mapping:parse({mapping, "foo.setting", "app_foo.setting", [
+            {datatype, string}
+        ]}),
+        cuttlefish_mapping:parse({mapping, "foo.min", "app_foo.range", [
+            {datatype, integer}
+        ]}),
+        cuttlefish_mapping:parse({mapping, "foo.max", "app_foo.range", [
+            {datatype, integer}
+        ]})
+    ],
+
+    MinMax = fun(C) ->
+        Min = cuttlefish:conf_get("foo.min", C),
+        Max = cuttlefish:conf_get("foo.max", C),
+        case Min < Max of
+            true ->
+                {Min, Max};
+            _ ->
+                throw("should be min < max")
+        end end,
+
+    Translations = [
+        cuttlefish_translation:parse({translation, "app_foo.range", MinMax})
+    ],
+
+    {ok, Hocon} = hocon:binary("foo.setting=val,foo.min=1,foo.max=2",
+                               #{format => richmap}),
+
+    [{app_foo, C0}] = cuttlefish_generator:map({Translations, Mappings, []}, Conf),
+    [{app_foo, C1}] = generate(demo_schema, Hocon),
+    ?assertEqual(lists:ukeysort(1, C0), lists:ukeysort(1, C1)).
+
+nest_test_() ->
+    [ ?_assertEqual([{a, [{b, {1, 2}}]}],
+                    nest([{["a", "b"], {1, 2}}]))
+    , ?_assertEqual([{a, [{b, 1}, {c, 2}]}],
+                    nest([{["a", "b"], 1}, {["a", "c"], 2}]))
+    , ?_assertEqual([{a, [{b, 1}, {z, 2}]}, {x, [{a, 3}]}],
+                    nest([{["a", "b"], 1}, {["a", "z"], 2}, {["x", "a"], 3}]))
     ].
 
 with_envs(Fun, Args, [{_Name, _Value} | _] = Envs) ->
