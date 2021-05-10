@@ -23,3 +23,7 @@ src/hocon_scanner.erl
 
 # IDEs
 /.idea/
+
+# generated
+/hocon
+generated/

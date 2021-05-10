@@ -29,7 +29,7 @@
                  filename => list()}.
 -type convert() :: duration | bytesize | percent | onoff | convert_func().
 -type convert_func() :: fun((term()) -> term()).
--type opts() :: #{format => map | proplists,
+-type opts() :: #{format => map | proplists | richmap,
                   convert => [convert()]}.
 
 -export_type([config/0, ctx/0]).
