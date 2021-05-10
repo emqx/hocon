@@ -71,6 +71,12 @@ translations(#{translations := Trs}) -> Trs.
 translation(Mod, Name) when is_atom(Mod) -> Mod:translation(Name);
 translation(#{translation := Tr}, Name) -> Tr(Name).
 
+%% @doc generates application env from a parsed .conf and a schema module.
+%% For example, one can set the output values by
+%%    lists:foreach(fun({AppName, Envs}) ->
+%%        [application:set_env(AppName, Par, Val) || {Par, Val} <- Envs]
+%%    end, hocon_schema_generate(Schema, Conf)).
+-spec(generate(schema(), hocon:config()) -> [proplists:property()]).
 generate(Schema, RichMap) ->
     {Mapped, RichMap0} = map(Schema, RichMap),
     Translated = translate(Schema, RichMap0, Mapped),
@@ -91,7 +97,7 @@ set_value([HeadToken | MoreTokens], PList, Value) ->
     OldValue = proplists:get_value(Token, PList, []),
     lists:keystore(Token, 1, PList, {Token, set_value(MoreTokens, OldValue, Value)}).
 
-%% TODO: spec
+-spec(translate(schema(), hocon:config(), [proplists:property()]) -> [proplists:property()]).
 translate(Schema, Conf, Mapped) ->
     Namespaces = translations(Schema),
     Res = lists:append([do_translate(translation(Schema, N), str(N), Conf, Mapped) ||
@@ -113,6 +119,7 @@ do_translate([{MappedField, Translator} | More], Namespace, Conf, Acc) ->
             do_translate(More, Namespace, Conf, [Error | Acc])
     end.
 
+-spec(map(schema(), hocon:config()) -> {[proplists:property()], hocon:config()}).
 map(Schema, RichMap) ->
     Namespaces = structs(Schema),
     F = fun (Namespace, {Acc, Conf}) ->
