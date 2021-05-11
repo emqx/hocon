@@ -26,6 +26,15 @@ fields(foo) ->
 fields("a.b") ->
     [ {"birthdays", fun birthdays/1}
     , {"some_int", fun int/1}
+    , {"union", fun my_union/1}
+    ];
+
+fields("priv.bool") ->
+    [ {"val", fun priv_bool/1}
+    ];
+
+fields("priv.int") ->
+    [ {"val", fun priv_int/1}
     ];
 
 fields("x.y") ->
@@ -79,10 +88,17 @@ int(_) -> undefined.
 priv_int(type) -> integer();
 priv_int(_) -> undefined.
 
+priv_bool(type) -> boolean();
+priv_bool(_) -> undefined.
+
 ref_x_y(mapping) -> undefined;
-ref_x_y(type) -> {ref, fields("x.y")};
+ref_x_y(type) -> "x.y";
 ref_x_y(_) -> undefined.
 
 ref_j_k(mapping) -> "app_foo.refjk";
-ref_j_k(type) -> {ref, fields("j.k")};
+ref_j_k(type) -> "j.k";
 ref_j_k(_) -> undefined.
+
+my_union(mapping) -> "app_foo.union";
+my_union(type) -> {union, ["priv.bool", "priv.int"]};
+my_union(_) -> undefined.
