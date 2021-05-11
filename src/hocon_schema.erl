@@ -123,7 +123,7 @@ do_translate([{MappedField, Translator} | More], Namespace, Conf, Acc) ->
 map(Schema, RichMap) ->
     Namespaces = structs(Schema),
     F = fun (Namespace, {Acc, Conf}) ->
-        {Mapped, NewConf} = do_map(fields(Schema, Namespace), str(Namespace), Conf, []),
+        {Mapped, NewConf} = do_map(fields(Schema, Namespace), str(Namespace), Conf, [], Schema),
         {lists:append(Acc, Mapped), NewConf} end,
     {Mapped, RichMap0} = lists:foldl(F, {[], RichMap}, Namespaces),
     ok = find_error(Mapped),
@@ -132,24 +132,25 @@ map(Schema, RichMap) ->
 str(A) when is_atom(A) -> atom_to_list(A);
 str(S) -> S.
 
-do_map([], _Namespace, RichMap, Acc) ->
+do_map([], _Namespace, RichMap, Acc, _Schema) ->
     {Acc, RichMap};
-do_map([{Field, SchemaFun} | More], Namespace, RichMap, Acc) ->
+do_map([{Field, SchemaFun} | More], Namespace, RichMap, Acc, SchemaModule) ->
     Field0 = Namespace ++ "." ++ str(Field),
     RichMap0 = apply_env(SchemaFun, Field0, RichMap),
     Value = resolve_array(deep_get(Field0, RichMap0, value)),
     Value0 = case SchemaFun(type) of
                  {ref, _} -> Value;
                  _ -> apply_converter(SchemaFun, Value) end,
-    Validators = add_default_validator(SchemaFun(validator), SchemaFun(type)),
+    Validators = add_default_validator(SchemaFun(validator), SchemaFun(type), SchemaModule),
     NewAcc = fun (undefined, {error, _} = E, A) -> [{ref, E} | A];
                  (undefined, _, A) -> A;
                  (Mapping, V, A) -> [{string:tokens(Mapping, "."), V} | A] end,
     case {Value0, SchemaFun(default)} of
         {undefined, undefined} ->
-            do_map(More, Namespace, RichMap0, Acc);
+            do_map(More, Namespace, RichMap0, Acc, SchemaModule);
         {undefined, Default} ->
-            do_map(More, Namespace, RichMap0, NewAcc(SchemaFun(mapping), Default, Acc));
+            New = NewAcc(SchemaFun(mapping), Default, Acc),
+            do_map(More, Namespace, RichMap0, New, SchemaModule);
         {Value0, _} ->
             Value1 = case validate(Value0, Validators) of
                          {errorlist, Reasons} ->
@@ -158,7 +159,7 @@ do_map([{Field, SchemaFun} | More], Namespace, RichMap, Acc) ->
                          V ->
                              richmap_to_map(V)
                      end,
-            do_map(More, Namespace, RichMap0, NewAcc(SchemaFun(mapping), Value1, Acc))
+            do_map(More, Namespace, RichMap0, NewAcc(SchemaFun(mapping), Value1, Acc), SchemaModule)
     end.
 
 apply_env(SchemaFun, Field, RichMap) ->
@@ -195,23 +196,38 @@ apply_converter(SchemaFun, Value) ->
             end
     end.
 
-add_default_validator(undefined, Type) ->
-    add_default_validator([], Type);
-add_default_validator(Validator, Type) when is_function(Validator) ->
-    add_default_validator([Validator], Type);
-add_default_validator(Validators, {ref, Fields}) ->
-    RefChecker = fun (V) -> try
-                                {M, _} = do_map(Fields, "", #{value => V}, []),
-                                find_error(M),
-                                ok
-                            catch
-                                _:{validation_error, Errors} -> {error, Errors}
-                            end
-                 end,
+add_default_validator(undefined, Type, Schema) ->
+    add_default_validator([], Type, Schema);
+add_default_validator(Validator, Type, Schema) when is_function(Validator) ->
+    add_default_validator([Validator], Type, Schema);
+add_default_validator(Validators, {union, Structs}, Schema) ->
+  RefChecker = fun (V) ->
+      Results = [ref_checker(V, Schema:fields(Struct), Schema)  || Struct <- Structs],
+      case lists:filtermap(fun ({error, _}) -> false; (_) -> true end, Results) of
+          [] ->
+              Errors = [E || {error, E} <- Results],
+              ErrorInfo = io_lib:format("Expected type: union~p,~nErrors: ~s", [Structs, Errors]),
+              {error, ErrorInfo};
+          _ ->
+              ok
+      end end,
+  [RefChecker | Validators];
+add_default_validator(Validators, Struct, Schema) when is_list(Struct) ->
+    Fields = Schema:fields(Struct),
+    RefChecker = fun (V) -> ref_checker(V, Fields, Schema) end,
     [RefChecker | Validators];
-add_default_validator(Validators, Type) ->
+add_default_validator(Validators, Type, _Schema) ->
     TypeChecker = fun (Value) -> typerefl:typecheck(Type, Value) end,
     [TypeChecker | Validators].
+
+ref_checker(Value, Fields, Schema) ->
+    try
+        {M, _} = do_map(Fields, "", #{value => Value}, [], Schema),
+        find_error(M),
+        ok
+    catch
+        _:{validation_error, Errors} -> {error, Errors}
+    end.
 
 validate(Value, Validators) ->
     validate(Value, Validators, []).
@@ -399,6 +415,18 @@ mapping_test_() ->
           "Expected type: string(\"^hello$\")\n"
           "Got: \"foo\"\n\n">>},
         F("foo.greet=foo\n foo.endpoint=hi"))
+    , ?_assertEqual([{["app_foo", "union"], #{<<"val">> => true}}],
+        F("a.b.union={val = true}"))
+    , ?_assertEqual([{["app_foo", "union"], #{<<"val">> => 1}}],
+        F("a.b.union={val = 1}"))
+    , ?_assertThrow({validation_error,
+        <<"validation_failed: \"a.b.union\" = #{<<\"val\">> => <<\"aaa\">>} at_line 1,\n"
+          "Expected type: union[\"priv.bool\",\"priv.int\"],\n"
+          "Errors: validation_failed: \".val\" = <<\"aaa\">> at_line 1,\n"
+          "Expected type: boolean()\nGot: aaa\n\n"
+          "validation_failed: \".val\" = <<\"aaa\">> at_line 1,\n"
+          "Expected type: integer()\nGot: aaa\n\n\n">>},
+        F("a.b.union={val = aaa}"))
     ].
 
 env_test_() ->
