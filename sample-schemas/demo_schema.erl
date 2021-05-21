@@ -9,6 +9,8 @@
 
 -export([structs/0, fields/1, translations/0, translation/1]).
 
+-define(FIELD(NAME, TYPE), fun(mapping) -> NAME; (type) -> TYPE; (_) -> undefined end).
+
 structs() -> [foo, "a.b", person, "id"].
 translations() -> ["app_foo"].
 
@@ -46,13 +48,10 @@ fields("j.k") ->
     ];
 
 fields(person) ->
-    [{id, fun(mapping) -> "person.id"; (type) -> "id"; (_) -> undefined end}];
+    [{id, ?FIELD("person.id", "id")}];
 
 fields("id") ->
-    [fun(mapping) -> "id";
-        (type) -> integer();
-        (_) -> undefined
-     end].
+    [?FIELD("id", integer())].
 
 translation("app_foo") ->
     [ {"range", fun range/1} ].
