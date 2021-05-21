@@ -9,7 +9,7 @@
 
 -export([structs/0, fields/1, translations/0, translation/1]).
 
-structs() -> [foo, "a.b"].
+structs() -> [foo, "a.b", person, "id"].
 translations() -> ["app_foo"].
 
 fields(foo) ->
@@ -43,8 +43,16 @@ fields("x.y") ->
 
 fields("j.k") ->
     [ {"some_int", fun priv_int/1}
-    ].
+    ];
 
+fields(person) ->
+    [{id, fun(mapping) -> "person.id"; (type) -> "id"; (_) -> undefined end}];
+
+fields("id") ->
+    [fun(mapping) -> "id";
+        (type) -> integer();
+        (_) -> undefined
+     end].
 
 translation("app_foo") ->
     [ {"range", fun range/1} ].
@@ -62,8 +70,7 @@ range(Conf) ->
             {Min, Max};
         _ ->
             throw("should be min < max")
-    end,
-    {Min, Max}.
+    end.
 
 endpoint(mapping) -> "app_foo.endpoint";
 endpoint(type) -> typerefl:ip4_address();

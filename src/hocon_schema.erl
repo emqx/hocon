@@ -134,8 +134,14 @@ str(S) -> S.
 
 do_map([], _Namespace, RichMap, Acc, _Schema) ->
     {Acc, RichMap};
-do_map([{Field, SchemaFun} | More], Namespace, RichMap, Acc, SchemaModule) ->
-    Field0 = Namespace ++ "." ++ str(Field),
+
+do_map([Field | More], Namespace, RichMap, Acc, SchemaModule) ->
+    {Field0, SchemaFun} = case Field of
+        {Name, Func} ->
+            {Namespace ++ "." ++ str(Name), Func};
+        Func ->
+            {Namespace, Func}
+    end,
     RichMap0 = apply_env(SchemaFun, Field0, RichMap),
     Value = resolve_array(deep_get(Field0, RichMap0, value)),
     Value0 = case SchemaFun(type) of
@@ -378,7 +384,9 @@ mapping_test_() ->
     F = fun (Str) -> {ok, M} = hocon:binary(Str, #{format => richmap}),
                      {Mapped, _} = map(demo_schema, M),
                      Mapped end,
-    [ ?_assertEqual([{["app_foo", "setting"], "hello"}], F("foo.setting=hello"))
+    [ ?_assertEqual([{["id"], 123}], F("id=123"))
+    , ?_assertEqual([{["person", "id"], 123}], F("person.id=123"))
+    , ?_assertEqual([{["app_foo", "setting"], "hello"}], F("foo.setting=hello"))
     , ?_assertEqual([{["app_foo", "setting"], "1"}], F("foo.setting=1"))
     , ?_assertThrow({validation_error,
         <<"validation_failed: \"foo.setting\" = [<<\"a\">>,<<\"b\">>,<<\"c\">>] at_line 1,\n"
