@@ -59,13 +59,21 @@ generate_test_() ->
     ].
 
 generate_basic() ->
+    Output = [{app_foo, [{range, {1, 10}}, {setting, "hello"}]}],
     ?CAPTURING(begin
                    hocon_cli:main(["-i", ss("demo_schema.erl"),
                        "-c", etc("demo-schema-example-1.conf"),
                        "-d", out()]),
                    {ok, Stdout} = cuttlefish_test_group_leader:get_output(),
                    {ok, Config} = file:consult(regexp_config(Stdout)),
-                   ?assertEqual([{app_foo, [{range, {1, 10}}, {setting, "hello"}]}], hd(Config))
+                   ?assertEqual(Output, hd(Config))
+               end),
+    ?CAPTURING(begin
+                   hocon_cli:main(["-c", etc("demo-schema-example-1.conf"),
+                                   "-s", "demo_schema", "-d", out()]),
+                   {ok, Stdout} = cuttlefish_test_group_leader:get_output(),
+                   {ok, Config} = file:consult(regexp_config(Stdout)),
+                   ?assertEqual(Output, hd(Config))
                end).
 
 prune_test() ->
