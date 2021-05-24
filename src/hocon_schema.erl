@@ -24,7 +24,7 @@
         ]).
 
 -export([map/2, translate/3, generate/2]).
--export([deep_get/3]).
+-export([deep_get/3, deep_get/4]).
 
 -export_type([ name/0
              , typefunc/0
@@ -85,13 +85,16 @@ translation(#{translation := Tr}, Name) -> Tr(Name).
 %%        [application:set_env(AppName, Par, Val) || {Par, Val} <- Envs]
 %%    end, hocon_schema_generate(Schema, Conf)).
 -spec(generate(schema(), hocon:config()) -> [proplists:property()]).
-generate(Schema, RichMap) ->
-    {Mapped, RichMap0} = map(Schema, RichMap),
-    Translated = translate(Schema, RichMap0, Mapped),
+generate(Schema, Conf) ->
+    {Mapped, NewConf} = map(Schema, Conf),
+    Translated = translate(Schema, NewConf, Mapped),
     nest(Translated).
 
+%% @private returns a nested proplist with atom keys
+-spec(nest([proplists:property()]) -> [proplists:property()]).
 nest(Proplist) ->
     nest(Proplist, []).
+
 nest([], Acc) ->
     Acc;
 nest([{Field, Value} | More], Acc) ->
@@ -113,7 +116,8 @@ translate(Schema, Conf, Mapped) ->
             Res = lists:append([do_translate(translation(Schema, N), str(N), Conf, Mapped) ||
                         N <- Namespaces]),
             ok = find_error(Res),
-            Res
+            %% rm field if translation returns undefined
+            [{K, V} || {K, V} <- lists:ukeymerge(1, Res, Mapped), V =/= undefined]
     end.
 
 do_translate([], _Namespace, _Conf, Acc) ->
@@ -124,9 +128,8 @@ do_translate([{MappedField, Translator} | More], Namespace, Conf, Acc) ->
         do_translate(More, Namespace, Conf,
                      [{string:tokens(MappedField0, "."), Translator(Conf)} | Acc])
     catch
-        _:Reason ->
-            Error = {string:tokens(MappedField0, "."),
-                     {error, {translation_error, Reason, MappedField0}}},
+        _:Reason:St ->
+            Error = {error, {translation_error, Reason, St, MappedField0}},
             do_translate(More, Namespace, Conf, [Error | Acc])
     end.
 
@@ -145,44 +148,39 @@ str(S) -> S.
 
 do_map([], _Namespace, RichMap, Acc, _Schema) ->
     {Acc, RichMap};
-
-do_map([Field | More], Namespace, RichMap, Acc, SchemaModule) ->
-    {Field0, SchemaFun} = case Field of
-        {Name, Func} ->
-            {Namespace ++ "." ++ str(Name), Func};
-        Func ->
-            {Namespace, Func}
-    end,
-    RichMap0 = apply_env(SchemaFun, Field0, RichMap),
-    Value = resolve_array(deep_get(Field0, RichMap0, value)),
-    Value0 = case SchemaFun(type) of
-                 {ref, _} -> Value;
-                 _ -> apply_converter(SchemaFun, Value) end,
+% wildcard
+do_map([{[$$ | _], SchemaFun}], Namespace, Conf, Acc, SchemaModule) ->
+    Fields = [binary_to_list(K) || K <- maps:keys(deep_get(Namespace, Conf, value, #{}))],
+    do_map([{F, SchemaFun} || F <- Fields], Namespace, Conf, Acc, SchemaModule);
+do_map([Field | More], Namespace, Conf, Acc, SchemaModule) ->
+    {AbsField, SchemaFun} = case Field of
+                                {Name, Func} ->
+                                    {Namespace ++ "." ++ str(Name), Func};
+                                Func ->
+                                    {Namespace, Func}
+                            end,
+    ConfWithEnv = apply_env(SchemaFun, AbsField, Conf),
+    % metadata inside array is lost here
+    ValueWithEnv = resolve_array(deep_get(AbsField, ConfWithEnv, value)),
+    ValueWithDefault = apply_default(SchemaFun, ValueWithEnv),
+    ConvertedValue = apply_converter(SchemaFun, ValueWithDefault),
+    {RefAcc, RefResolvedValue} = ref(SchemaFun(type), ConvertedValue, Namespace, SchemaModule),
     Validators = add_default_validator(SchemaFun(validator), SchemaFun(type), SchemaModule),
-    NewAcc = fun (undefined, {error, _} = E, A) -> [{ref, E} | A];
-                 (undefined, _, A) -> A;
-                 (Mapping, V, A) -> [{string:tokens(Mapping, "."), V} | A] end,
-    case {Value0, SchemaFun(default)} of
-        {undefined, undefined} ->
-            do_map(More, Namespace, RichMap0, Acc, SchemaModule);
-        {undefined, Default} ->
-            New = NewAcc(SchemaFun(mapping), Default, Acc),
-            do_map(More, Namespace, RichMap0, New, SchemaModule);
-        {Value0, _} ->
-            Value1 = case validate(Value0, Validators) of
-                         {errorlist, Reasons} ->
-                             AllInfo = deep_get(Field0, RichMap0, all),
-                             {error, {validation_error, Reasons, Field0, AllInfo}};
-                         V ->
-                             richmap_to_map(V)
-                     end,
-            do_map(More, Namespace, RichMap0, NewAcc(SchemaFun(mapping), Value1, Acc), SchemaModule)
-    end.
+    RefResolvedConf = deep_put(AbsField, RefResolvedValue, Conf, value),
+    ValidatedValue = validate(RefResolvedValue, Validators, AbsField, RefResolvedConf),
+    NewAcc = case {SchemaFun(mapping), ValidatedValue} of
+        {_, {error, _} = E} -> RefAcc ++ [E | Acc];
+        {M, V} when M =/= undefined andalso V =/= undefined ->
+            RefAcc ++ [{string:tokens(M, "."), richmap_to_map(V)} | Acc];
+        _ -> RefAcc ++ Acc % skip if no mapping / the value is undefined
+        end,
+    do_map(More, Namespace, RefResolvedConf, NewAcc, SchemaModule).
 
-apply_env(SchemaFun, Field, RichMap) ->
+-spec(apply_env(typefunc(), string(), hocon:config()) -> hocon:config()).
+apply_env(TypeFunc, Field, Conf) ->
     Prefix = os:getenv("HOCON_ENV_OVERRIDE_PREFIX", ""),
     Key = Prefix ++ string:join(string:replace(string:uppercase(Field), ".", "__", all), ""),
-    OverrideKey = case SchemaFun(override_env) of
+    OverrideKey = case TypeFunc(override_env) of
                       undefined ->
                           "";
                       Sth ->
@@ -190,17 +188,41 @@ apply_env(SchemaFun, Field, RichMap) ->
                   end,
     case {os:getenv(Key), os:getenv(OverrideKey)} of
         {false, false} ->
-            RichMap;
+            Conf;
         {V0, false} ->
-            deep_put(Field, string_to_hocon(V0), RichMap, value);
+            deep_put(Field, string_to_hocon(V0), Conf, value);
         {_, V1} ->
-            deep_put(Field, string_to_hocon(V1), RichMap, value)
+            deep_put(Field, string_to_hocon(V1), Conf, value)
     end.
+
+-spec(apply_default(typefunc(), term()) -> term()).
+apply_default(TypeFunc, undefined) ->
+    TypeFunc(default);
+apply_default(_, Value) ->
+    Value.
+
+-spec(ref(string() | typefunc(), hocon:config(), string(), schema()) ->
+      {[proplists:property()], hocon:config() | undefined}).
+ref(Ref, undefined, Namespace, Schema) when is_list(Ref) ->
+    ref(Ref, #{}, Namespace, Schema);
+ref(_, undefined, _, _) ->
+    {[], undefined};
+ref(Ref, Conf, _, Schema) when is_list(Ref) ->
+    {Acc, #{value := NewConf}} = do_map(Schema:fields(Ref), "", #{value => Conf}, [], Schema),
+    case [V || V <- maps:values(NewConf), #{value => undefined} =/= V] of
+        [] ->
+            {[], undefined};
+        _ ->
+            {Acc, NewConf}
+    end;
+ref(_, Value, _, _) ->
+    {[], Value}.
 
 string_to_hocon(Str) when is_list(Str) ->
     {ok, RichMap} = hocon:binary("key = " ++ Str, #{format => richmap}),
     deep_get("key", RichMap, value).
 
+-spec(apply_converter(typefunc(), term()) -> term()).
 apply_converter(SchemaFun, Value) ->
     case SchemaFun(converter) of
         undefined ->
@@ -217,72 +239,80 @@ add_default_validator(undefined, Type, Schema) ->
     add_default_validator([], Type, Schema);
 add_default_validator(Validator, Type, Schema) when is_function(Validator) ->
     add_default_validator([Validator], Type, Schema);
-add_default_validator(Validators, {union, Structs}, Schema) ->
-  RefChecker = fun (V) ->
-      Results = [ref_checker(V, Schema:fields(Struct), Schema)  || Struct <- Structs],
-      case lists:filtermap(fun ({error, _}) -> false; (_) -> true end, Results) of
-          [] ->
-              Errors = [E || {error, E} <- Results],
-              ErrorInfo = io_lib:format("Expected type: union~p,~nErrors: ~s", [Structs, Errors]),
-              {error, ErrorInfo};
-          _ ->
-              ok
-      end end,
-  [RefChecker | Validators];
-add_default_validator(Validators, Struct, Schema) when is_list(Struct) ->
-    Fields = Schema:fields(Struct),
-    RefChecker = fun (V) -> ref_checker(V, Fields, Schema) end,
-    [RefChecker | Validators];
+add_default_validator(Validators, Struct, _Schema) when is_list(Struct) ->
+    Validators;
 add_default_validator(Validators, Type, _Schema) ->
     TypeChecker = fun (Value) -> typerefl:typecheck(Type, Value) end,
     [TypeChecker | Validators].
 
-ref_checker(Value, Fields, Schema) ->
-    try
-        {M, _} = do_map(Fields, "", #{value => Value}, [], Schema),
-        find_error(M),
-        ok
-    catch
-        _:{validation_error, Errors} -> {error, Errors}
-    end.
-
-validate(Value, Validators) ->
-    validate(Value, Validators, []).
-validate(Value, [], []) ->
+validate(undefined, _, _, _) ->
+    undefined; % do not validate if no value is set
+validate(Value, [], _, _) ->
     Value;
-validate(_Value, [], Reasons) ->
-    {errorlist, Reasons};
-validate(Value, [H | T], Reasons) ->
+validate(Value, [H | T], Field, Conf) ->
     case H(Value) of
         ok ->
-            validate(Value, T, Reasons);
+            validate(Value, T, Field, Conf);
         {error, Reason} ->
-            validate(Value, T, [Reason | Reasons])
+            {error, {validation_error, Reason, Field, deep_get(Field, Conf, all)}}
     end.
 
-deep_get([], RichMap, all) ->
-    RichMap;
-deep_get([], RichMap, Param) ->
-    maps:get(Param, RichMap);
-deep_get([H | T], RichMap, Param) when is_list(H) ->
-    case maps:get(list_to_binary(H), maps:get(value, RichMap, undefined), undefined) of
+%% @doc get a child from richmap.
+%% Key (first arg) can be "foo.bar.baz" or ["foo.bar", "baz"] or ["foo", "bar", "baz"].
+%% if Param (third arg) is `all`, returns a child richmap.
+-spec(deep_get(string() | [string()], hocon:config(), atom()) -> hocon:config() | undefined).
+deep_get([], Conf, all) ->
+    Conf;
+deep_get([], Conf, Param) ->
+    maps:get(Param, Conf);
+deep_get([H | T], Conf, Param) when is_list(H) ->
+    {NewH, NewT} = retokenize(H, T),
+    Value = case maps:get(value, Conf, undefined) of
+            undefined -> #{};
+            Sth -> Sth
+        end,
+    case maps:get(list_to_binary(NewH), Value, undefined) of
         undefined ->
             undefined;
-        ChildRichMap ->
-            deep_get(T, ChildRichMap, Param)
+        ChildConf ->
+            deep_get(NewT, ChildConf, Param)
     end;
 deep_get(Str, RichMap, Param) when is_list(Str) ->
     deep_get(string:tokens(Str, "."), RichMap, Param).
 
+deep_get(Str, RichMap, Param, Default) ->
+    case deep_get(Str, RichMap, Param) of
+        undefined ->
+            Default;
+        V ->
+            V
+    end.
+
+%% @doc put a value to the child richmap.
+-spec(deep_put(string() | [string()], term(), hocon:config(), atom()) -> hocon:config()).
 deep_put([H | _T] = L, Value, RichMap, Param) when is_list(H) ->
     hocon_util:do_deep_merge(RichMap, #{value => nested_richmap(L, Value, Param)});
 deep_put(Str, Value, RichMap, Param) when is_list(Str) ->
     deep_put(string:tokens(Str, "."), Value, RichMap, Param).
 
 nested_richmap([H], Value, Param) ->
-    #{list_to_binary(H) => #{Param => Value}};
+    case retokenize(H, []) of
+        {H, []} ->
+            #{list_to_binary(H) => #{Param => Value}};
+        {NewH, NewT} ->
+            #{list_to_binary(NewH) => #{value => nested_richmap(NewT, Value, Param)}}
+    end;
 nested_richmap([H | T], Value, Param) ->
-    #{list_to_binary(H) => #{value => nested_richmap(T, Value, Param)}}.
+    {NewH, NewT} = retokenize(H, T),
+    #{list_to_binary(NewH) => #{value => nested_richmap(NewT, Value, Param)}}.
+
+retokenize(H, T) ->
+    case string:tokens(H, ".") of
+        [H] ->
+            {H, T};
+        [Token | More] ->
+            {Token, More ++ T}
+    end.
 
 resolve_array(ArrayOfRichMap) when is_list(ArrayOfRichMap) ->
     [richmap_to_map(R) || R <- ArrayOfRichMap];
@@ -317,27 +347,27 @@ find_error(Proplist) ->
     case do_find_error(Proplist, []) of
         [{validation_error, _, _, _} | _] = Errors ->
             validation_error(Errors);
-        [{translation_error, _, _} | _] = Errors ->
+        [{translation_error, _, _, _} | _] = Errors ->
             translation_error(Errors);
         [] ->
             ok
     end.
 do_find_error([], Res) ->
     Res;
-do_find_error([{_MappedField, {error, E}} | More], Errors) ->
+do_find_error([{error, E} | More], Errors) ->
     do_find_error(More, [E | Errors]);
 do_find_error([_ | More], Errors) ->
     do_find_error(More, Errors).
 
 validation_error(Errors) ->
-    F = fun ({validation_error, Reasons, Field, M}, Acc) ->
+    F = fun ({validation_error, Reason, Field, M}, Acc) ->
         case hocon:filename_of(M) of
             undefined ->
                 Acc ++ io_lib:format("validation_failed: ~p = ~p at_line ~p,~n~s~n",
                        [Field,
                         richmap_to_map(hocon:value_of(M)),
                         hocon:line_of(M),
-                        lists:append(Reasons)]);
+                        Reason]);
             F ->
                 Acc ++ io_lib:format("validation_failed: ~p = ~p " ++
                                      "in_file ~p at_line ~p,~n~s~n",
@@ -345,16 +375,16 @@ validation_error(Errors) ->
                         richmap_to_map(hocon:value_of(M)),
                         F,
                         hocon:line_of(M),
-                        lists:append(Reasons)])
+                        Reason])
         end
     end,
     ErrorInfo = lists:foldl(F, "", Errors),
     throw({validation_error, iolist_to_binary(ErrorInfo)}).
 
 translation_error(Errors) ->
-    F = fun ({translation_error, Reason, MappedField}, Acc) ->
-                Acc ++ io_lib:format("translation_failed: ~p,~n~s~n",
-                    [MappedField, Reason])
+    F = fun ({translation_error, Reason, St, MappedField}, Acc) ->
+                Acc ++ io_lib:format("translation_failed: ~p,~n~p~n~p~n",
+                    [MappedField, Reason, lists:sublist(St, 5)])
         end,
     ErrorInfo = lists:foldl(F, "", Errors),
     throw({translation_error, iolist_to_binary(ErrorInfo)}).
@@ -405,47 +435,20 @@ mapping_test_() ->
           "  string() :: [char()].\n"
           "Got: [<<\"a\">>,<<\"b\">>,<<\"c\">>]\n\n">>}, F("foo.setting=[a,b,c]"))
     , ?_assertEqual([{["app_foo", "endpoint"], {127, 0, 0, 1}}], F("foo.endpoint=\"127.0.0.1\""))
-    , ?_assertThrow({validation_error,
-        <<"validation_failed: \"foo.endpoint\" = <<\"hi\">> at_line 1,\n"
-          "Expected type: ip4_address()() when\n"
-          "  ip4_address()() :: {0..255, 0..255, 0..255, 0..255}.\n"
-          "Got: \"hi\"\n\n">>}, F("foo.setting=hi, foo.endpoint=hi"))
-    , ?_assertThrow({validation_error,
-        <<"validation_failed: \"foo.greet\" = <<\"foo\">> at_line 1,\n"
-          "Expected type: string(\"^hello$\")\nGot: \"foo\"\n\n">>},
+    , ?_assertThrow({validation_error, _}, F("foo.setting=hi, foo.endpoint=hi"))
+    , ?_assertThrow({validation_error, _},
         F("foo.greet=foo"))
     , ?_assertEqual([{["app_foo", "numbers"], [1, 2, 3]}], F("foo.numbers=[1,2,3]"))
     , ?_assertEqual([{["a", "b", "some_int"], 1}], F("a.b.some_int=1"))
     , ?_assertEqual([], F("foo.ref_x_y={some_int = 1}"))
-    , ?_assertThrow({validation_error,
-        <<"validation_failed: \"foo.ref_x_y\" = #{<<\"some_int\">> => <<\"aaa\">>} at_line 1,\n"
-          "validation_failed: \".some_int\" = <<\"aaa\">> at_line 1,\n"
-          "Expected type: integer()\n"
-          "Got: aaa\n\n\n">>},
+    , ?_assertThrow({validation_error, _},
         F("foo.ref_x_y={some_int = aaa}"))
+    , ?_assertEqual([],
+        F("foo.ref_x_y={some_dur = 5s}"))
     , ?_assertEqual([{["app_foo", "refjk"], #{<<"some_int">> => 1}}],
                     F("foo.ref_j_k={some_int = 1}"))
-    , ?_assertThrow({validation_error,
-        <<"validation_failed: \"foo.endpoint\" = <<\"hi\">> at_line 2,\n"
-          "Expected type: ip4_address()() when\n"
-          "  ip4_address()() :: {0..255, 0..255, 0..255, 0..255}.\n"
-          "Got: \"hi\"\n\n"
-          "validation_failed: \"foo.greet\" = <<\"foo\">> at_line 1,\n"
-          "Expected type: string(\"^hello$\")\n"
-          "Got: \"foo\"\n\n">>},
+    , ?_assertThrow({validation_error, _},
         F("foo.greet=foo\n foo.endpoint=hi"))
-    , ?_assertEqual([{["app_foo", "union"], #{<<"val">> => true}}],
-        F("a.b.union={val = true}"))
-    , ?_assertEqual([{["app_foo", "union"], #{<<"val">> => 1}}],
-        F("a.b.union={val = 1}"))
-    , ?_assertThrow({validation_error,
-        <<"validation_failed: \"a.b.union\" = #{<<\"val\">> => <<\"aaa\">>} at_line 1,\n"
-          "Expected type: union[\"priv.bool\",\"priv.int\"],\n"
-          "Errors: validation_failed: \".val\" = <<\"aaa\">> at_line 1,\n"
-          "Expected type: boolean()\nGot: aaa\n\n"
-          "validation_failed: \".val\" = <<\"aaa\">> at_line 1,\n"
-          "Expected type: integer()\nGot: aaa\n\n\n">>},
-        F("a.b.union={val = aaa}"))
     ].
 
 env_test_() ->
@@ -461,9 +464,6 @@ env_test_() ->
                     F("foo.numbers=[1,2,3]", [{"EMQX_FOO__NUMBERS", "[4,5,6]"}]))
     , ?_assertEqual([{["app_foo", "greet"], "hello"}],
                     F("", [{"EMQX_FOO__GREET", "hello"}]))
-    , ?_assertEqual([{["a", "b", "birthdays"], [#{<<"d">> => 1, <<"m">> => 1},
-                                                #{<<"d">> => 12, <<"m">> => 12}]}],
-                    F("", [{"EMQX_A__B__BIRTHDAYS", "[{m=1, d=1}, {m=12, d=12}]"}]))
     ].
 
 translate_test_() ->
@@ -472,9 +472,7 @@ translate_test_() ->
                      translate(demo_schema, Conf, Mapped) end,
     [ ?_assertEqual([{["app_foo", "range"], {1, 2}}],
                     F("foo.min=1, foo.max=2"))
-    , ?_assertThrow({translation_error,
-                    <<"translation_failed: \"app_foo.range\",\n"
-                      "should be min < max\n">>},
+    , ?_assertThrow({translation_error, _},
                     F("foo.min=2, foo.max=1"))
     ].
 
