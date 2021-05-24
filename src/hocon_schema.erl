@@ -209,11 +209,16 @@ ref(_, undefined, _, _) ->
     {[], undefined};
 ref(Ref, Conf, _, Schema) when is_list(Ref) ->
     {Acc, #{value := NewConf}} = do_map(Schema:fields(Ref), "", #{value => Conf}, [], Schema),
-    case [V || V <- maps:values(NewConf), #{value => undefined} =/= V] of
-        [] ->
-            {[], undefined};
-        _ ->
-            {Acc, NewConf}
+    case is_map(Conf) of
+        true ->
+            case [V || V <- maps:values(NewConf), #{value => undefined} =/= V] of
+                [] ->
+                    {[], undefined};
+                _ ->
+                    {Acc, NewConf}
+            end;
+        false ->
+            {[], NewConf}
     end;
 ref(_, Value, _, _) ->
     {[], Value}.
@@ -290,6 +295,8 @@ deep_get(Str, RichMap, Param, Default) ->
 
 %% @doc put a value to the child richmap.
 -spec(deep_put(string() | [string()], term(), hocon:config(), atom()) -> hocon:config()).
+deep_put([], Value, Conf, Param) ->
+    hocon_util:do_deep_merge(Conf, #{Param => Value});
 deep_put([H | _T] = L, Value, RichMap, Param) when is_list(H) ->
     hocon_util:do_deep_merge(RichMap, #{value => nested_richmap(L, Value, Param)});
 deep_put(Str, Value, RichMap, Param) when is_list(Str) ->
