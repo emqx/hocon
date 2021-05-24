@@ -1090,7 +1090,6 @@ tr_modules(Conf) ->
         Rules = keys("module.rewrite.rule", Conf),
         PubRules = keys("module.rewrite.pub_rule", Conf),
         SubRules = keys("module.rewrite.sub_rule", Conf),
-        io:format("kk~p~n", [Rules ++ PubRules]),
         TotalRules =
             [ {["module", "rewrite", "pub", "rule", R], conf_get(["module.rewrite.rule", R], Conf)} || R <- Rules] ++
             [ {["module", "rewrite", "pub", "rule", R], conf_get(["module.rewrite.pub_rule", R], Conf)} || R <- PubRules] ++
