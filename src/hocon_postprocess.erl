@@ -19,7 +19,7 @@
 -export([proplists/1]).
 -export([convert_value/2]).
 -export([delete_null/1]).
--export([duration/1]).
+-export([duration/1, bytesize/1, onoff/1, percent/1]).
 
 -include("hocon.hrl").
 
@@ -99,14 +99,18 @@ is_null(null) -> true;
 is_null(_Other) -> false.
 
 onoff(Bin) when is_binary(Bin) ->
+    erlang:display(do_onoff(binary_to_list(Bin))),
     case do_onoff(binary_to_list(Bin)) of
         Bool when Bool =:= true orelse Bool =:= false ->
             Bool;
         Str when is_list(Str) ->
             list_to_binary(Str)
     end;
+onoff(Str) when is_list(Str) ->
+    do_onoff(Str);
 onoff(Other) ->
     Other.
+
 do_onoff("on")  -> true;
 do_onoff("off") -> false;
 do_onoff(X) -> X.
@@ -121,8 +125,11 @@ percent(Bin) when is_binary(Bin) ->
         Str when is_list(Str) ->
             list_to_binary(Str)
     end;
+percent(Str) when is_list(Str) ->
+    do_percent(Str);
 percent(Other) ->
     Other.
+
 do_percent(Str) ->
     {ok, MP} = re:compile("([0-9]+)(%)$"),
     case re_run_first(Str, MP) of
@@ -139,8 +146,11 @@ bytesize(Bin) when is_binary(Bin) ->
         Str when is_list(Str) ->
             list_to_binary(Str)
     end;
+bytesize(Str) when is_list(Str) ->
+    do_bytesize(Str);
 bytesize(Other) ->
     Other.
+
 do_bytesize(Str) ->
     {ok, MP} = re:compile("([0-9]+)(kb|KB|mb|MB|gb|GB)$"),
     case re_run_first(Str, MP) of
