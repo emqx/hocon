@@ -1,0 +1,18 @@
+{mapping, "a.b", "app_foo.a.b", [
+  {datatype, integer},
+  {default, 64}
+]}.
+
+{mapping, "a.c", "app_foo.a.c", [
+  {datatype, string},
+  {default, "foo"}
+]}.
+
+{mapping, "a.d", "app_foo.a.d", [
+  {datatype, [integer, string]},
+  {default, "foo"}
+]}.
+
+{mapping, "a.e", "app_foo.a.e", [
+  {datatype, {enum, [on, off]}}
+]}.

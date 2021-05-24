@@ -24,6 +24,10 @@ src/hocon_scanner.erl
 # IDEs
 /.idea/
 
+<<<<<<< HEAD
 # generated
 /hocon
+=======
+# test
+>>>>>>> feat(hocon_schema_cuttlefish): add conversion module from cuttlefish
 generated/
