@@ -2,10 +2,13 @@
 
 -include_lib("typerefl/include/types.hrl").
 
--type birthdays() :: [map()].
 -behaviour(hocon_schema).
 
--reflect_type([birthdays/0]).
+-type duration() :: integer().
+
+-typerefl_from_string({duration/0, emqx_schema, to_duration}).
+
+-reflect_type([duration/0]).
 
 -export([structs/0, fields/1, translations/0, translation/1]).
 
@@ -24,9 +27,7 @@ fields(foo) ->
     ];
 
 fields("a.b") ->
-    [ {"birthdays", fun birthdays/1}
-    , {"some_int", fun int/1}
-    , {"union", fun my_union/1}
+    [ {"some_int", fun int/1}
     ];
 
 fields("priv.bool") ->
@@ -39,6 +40,7 @@ fields("priv.int") ->
 
 fields("x.y") ->
     [ {"some_int", fun priv_int/1}
+    , {"some_dur", fun priv_duration/1}
     ];
 
 fields("j.k") ->
@@ -77,9 +79,6 @@ numbers(mapping) -> "app_foo.numbers";
 numbers(type) -> list(integer());
 numbers(_) -> undefined.
 
-birthdays(mapping) -> "a.b.birthdays";
-birthdays(type) -> birthdays();
-birthdays(_) -> undefined.
 
 int(mapping) -> "a.b.some_int";
 int(type) -> integer();
@@ -87,6 +86,9 @@ int(_) -> undefined.
 
 priv_int(type) -> integer();
 priv_int(_) -> undefined.
+
+priv_duration(type) -> duration();
+priv_duration(_) -> undefined.
 
 priv_bool(type) -> boolean();
 priv_bool(_) -> undefined.
@@ -98,7 +100,3 @@ ref_x_y(_) -> undefined.
 ref_j_k(mapping) -> "app_foo.refjk";
 ref_j_k(type) -> "j.k";
 ref_j_k(_) -> undefined.
-
-my_union(mapping) -> "app_foo.union";
-my_union(type) -> {union, ["priv.bool", "priv.int"]};
-my_union(_) -> undefined.
