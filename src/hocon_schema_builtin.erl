@@ -40,5 +40,12 @@ convert(Bin, Type) when is_binary(Bin) ->
         {error, _} ->
             Str
     end;
+convert(Str, Type) when is_list(Str) ->
+    case typerefl:from_string(Type, Str) of
+        {ok, V} ->
+            V;
+        {error, _} ->
+            Str
+    end;
 convert(Other, _Type) ->
     Other.
