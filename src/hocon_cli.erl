@@ -44,7 +44,8 @@ cli_options() ->
     , {etc_dir, $e, "etc_dir", {string, "/etc"}, "etc dir"}
     , {dest_dir, $d, "dest_dir", string, "specifies the directory to write the config file to"}
     , {dest_file, $f, "dest_file", {string, "app"}, "the file name to write"}
-    , {schema_file, $i, "schema_file", string, "schema module"}
+    , {schema_file, $i, "schema_file", string, "the file name of schema module"}
+    , {schema_module, $s, "schema_module", atom, "the name of schema module"}
     , {conf_file, $c, "conf_file", string, "a cuttlefish conf file, multiple files allowed"}
     , {log_level, $l, "log_level", {string, "notice"}, "log level for cuttlefish output"}
     , {max_history, $m, "max_history", {integer, 3},
@@ -118,10 +119,15 @@ generate(ParsedArgs) ->
     end.
 
 load_schema(ParsedArgs) ->
-    SchemaFile = proplists:get_value(schema_file, ParsedArgs),
-    ErlLibs = os:getenv("ERL_LIBS", ""),
-    {ok, Module} = compile:file(SchemaFile, [{i, ErlLibs}]),
-    Module.
+    case {proplists:get_value(schema_file, ParsedArgs),
+          proplists:get_value(schema_module, ParsedArgs)} of
+        {undefined, Mod0} ->
+            Mod0;
+        {SchemaFile, _} ->
+            ErlLibs = os:getenv("ERL_LIBS", ""),
+            {ok, Module} = compile:file(SchemaFile, [{i, ErlLibs}]),
+            Module
+    end.
 
 -spec load_conf([proplists:property()]) -> hocon:config() | no_return().
 load_conf(ParsedArgs) ->
