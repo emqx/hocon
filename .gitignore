@@ -24,5 +24,8 @@ src/hocon_scanner.erl
 # IDEs
 /.idea/
 
+#es
+/hocon
+
 # test
 generated/
