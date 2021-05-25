@@ -14,7 +14,7 @@
 
 -define(FIELD(NAME, TYPE), fun(mapping) -> NAME; (type) -> TYPE; (_) -> undefined end).
 
-structs() -> [foo, "a.b", person, "id"].
+structs() -> [foo, "a.b", person, "id", "vm"].
 translations() -> ["app_foo"].
 
 fields(foo) ->
@@ -53,7 +53,12 @@ fields(person) ->
     [{id, ?FIELD("person.id", "id")}];
 
 fields("id") ->
-    [?FIELD("id", integer())].
+    [?FIELD("id", integer())];
+
+fields("vm") ->
+    [ {"name", fun nodename/1}
+    , {"max_ports", fun max_ports/1}
+    ].
 
 translation("app_foo") ->
     [ {"range", fun range/1} ].
@@ -106,3 +111,11 @@ ref_x_y(_) -> undefined.
 ref_j_k(mapping) -> "app_foo.refjk";
 ref_j_k(type) -> "j.k";
 ref_j_k(_) -> undefined.
+
+nodename(mapping) -> "vm_args.-name";
+nodename(type) -> string();
+nodename(_) -> undefined.
+
+max_ports(mapping) -> "vm_args.-env ERL_MAX_PORTS";
+max_ports(type) -> integer();
+max_ports(_) -> undefined.

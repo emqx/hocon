@@ -56,6 +56,7 @@
 generate_test_() ->
     [
         {"`generate` output is correct", fun generate_basic/0}
+    ,    {"dump vm.args correctly", fun generate_vmargs/0}
     ].
 
 generate_basic() ->
@@ -74,6 +75,15 @@ generate_basic() ->
                    {ok, Stdout} = cuttlefish_test_group_leader:get_output(),
                    {ok, Config} = file:consult(regexp_config(Stdout)),
                    ?assertEqual(Output, hd(Config))
+               end).
+
+generate_vmargs() ->
+    ?CAPTURING(begin
+                   hocon_cli:main(["-c", etc("demo-schema-example-2.conf"),
+                                   "-s", "demo_schema", "-d", out()]),
+                   {ok, Stdout} = cuttlefish_test_group_leader:get_output(),
+                   {ok, Config} = file:read_file(regexp_vmargs(Stdout)),
+                   ?assertEqual(<<"-env ERL_MAX_PORTS 64000\n-name emqx@127.0.0.1">>, Config)
                end).
 
 prune_test() ->
@@ -122,4 +132,9 @@ out() ->
 regexp_config(StdOut) ->
     {ok, MP} = re:compile("-config (.+config)"),
     {match, Path} = re:run(StdOut, MP, [global, {capture, all_but_first, list}]),
+    Path.
+
+regexp_vmargs(StdOut) ->
+    {ok, MP} = re:compile("-vm_args (.+args)"),
+    {match, Path} = re:run(StdOut, MP, [{capture, all_but_first, list}, global]),
     Path.
