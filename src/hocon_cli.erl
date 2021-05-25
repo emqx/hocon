@@ -16,6 +16,10 @@
 
 -module(hocon_cli).
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 -export([main/1]).
 
 -define(STDOUT(Str, Args), io:format(Str ++ "~n", Args)).
@@ -205,7 +209,7 @@ engage_hocon(ParsedArgs) ->
             prune(DestinationVMArgs, MaxHistory),
 
             case { file:write_file(Destination, io_lib:fwrite("~p.\n", [AppConfig])),
-                file:write_file(DestinationVMArgs, [VmArgs, "\n"])} of
+                   file:write_file(DestinationVMArgs, string:join(VmArgs, "\n"))} of
                 {ok, ok} ->
                     {Destination, DestinationVMArgs};
                 {Err1, Err2} ->
