@@ -134,14 +134,15 @@ do_translate([{MappedField, Translator} | More], Namespace, Conf, Acc) ->
     end.
 
 -spec(map(schema(), hocon:config()) -> {[proplists:property()], hocon:config()}).
-map(Schema, RichMap) ->
+map(Schema, Conf) ->
     Namespaces = structs(Schema),
-    F = fun (Namespace, {Acc, Conf}) ->
-        {Mapped, NewConf} = do_map(fields(Schema, Namespace), str(Namespace), Conf, [], Schema),
+    F = fun (Namespace, {Acc, Conf0}) ->
+        {Mapped, NewConf} = do_map(fields(Schema, Namespace), str(Namespace), Conf0, [], Schema),
         {lists:append(Acc, Mapped), NewConf} end,
-    {Mapped, RichMap0} = lists:foldl(F, {[], RichMap}, Namespaces),
+    ConfWithEnv= apply_env(Conf),
+    {Mapped, NewConf} = lists:foldl(F, {[], ConfWithEnv}, Namespaces),
     ok = find_error(Mapped),
-    {Mapped, RichMap0}.
+    {Mapped, NewConf}.
 
 str(A) when is_atom(A) -> atom_to_list(A);
 str(S) -> S.
@@ -159,10 +160,9 @@ do_map([Field | More], Namespace, Conf, Acc, SchemaModule) ->
                                 Func ->
                                     {Namespace, Func}
                             end,
-    ConfWithEnv = apply_env(SchemaFun, AbsField, Conf),
-    % metadata inside array is lost here
-    ValueWithEnv = resolve_array(deep_get(AbsField, ConfWithEnv, value)),
-    ValueWithDefault = apply_default(SchemaFun, ValueWithEnv),
+    ConfWithEnv = apply_override_env(SchemaFun, AbsField, Conf),
+    ValueWithDefault = apply_default(SchemaFun,
+                                     resolve_array(deep_get(AbsField, ConfWithEnv, value))),
     ConvertedValue = apply_converter(SchemaFun, ValueWithDefault),
     {RefAcc, RefResolvedValue} = ref(SchemaFun(type), ConvertedValue, Namespace, SchemaModule),
     Validators = add_default_validator(SchemaFun(validator), SchemaFun(type), SchemaModule),
@@ -176,23 +176,32 @@ do_map([Field | More], Namespace, Conf, Acc, SchemaModule) ->
         end,
     do_map(More, Namespace, RefResolvedConf, NewAcc, SchemaModule).
 
--spec(apply_env(typefunc(), string(), hocon:config()) -> hocon:config()).
-apply_env(TypeFunc, Field, Conf) ->
-    Prefix = os:getenv("HOCON_ENV_OVERRIDE_PREFIX", ""),
-    Key = Prefix ++ string:join(string:replace(string:uppercase(Field), ".", "__", all), ""),
-    OverrideKey = case TypeFunc(override_env) of
-                      undefined ->
-                          "";
-                      Sth ->
-                          Prefix ++ Sth
-                  end,
-    case {os:getenv(Key), os:getenv(OverrideKey)} of
-        {false, false} ->
+apply_env(Conf) ->
+    case os:getenv("HOCON_ENV_OVERRIDE_PREFIX") of
+        false ->
             Conf;
-        {V0, false} ->
-            deep_put(Field, string_to_hocon(V0), Conf, value);
-        {_, V1} ->
-            deep_put(Field, string_to_hocon(V1), Conf, value)
+        Prefix ->
+            AllEnvs = [string:split(string:prefix(KV, Prefix), "=")
+                || KV <- os:getenv(), string:prefix(KV, Prefix) =/= nomatch],
+            apply_env(AllEnvs, Conf)
+    end.
+
+apply_env([], Conf) ->
+    Conf;
+apply_env([[K, V] | More], Conf) ->
+    Field = string:join(string:replace(string:lowercase(K), "__", ".", all), ""),
+    apply_env(More, deep_put(Field, V, Conf, value)).
+
+-spec(apply_env(hocon:config()) -> hocon:config()).
+apply_override_env(TypeFunc, Field, Conf) ->
+    case {os:getenv("HOCON_ENV_OVERRIDE_PREFIX"), TypeFunc(override_env)} of
+        {false, _} -> Conf;
+        {_, undefined} -> Conf;
+        {Prefix, Key} ->
+            case os:getenv(Prefix ++ Key) of
+                false -> Conf;
+                V -> deep_put(Field, V, Conf, value)
+            end
     end.
 
 -spec(apply_default(typefunc(), term()) -> term()).
@@ -223,9 +232,6 @@ ref(Ref, Conf, _, Schema) when is_list(Ref) ->
 ref(_, Value, _, _) ->
     {[], Value}.
 
-string_to_hocon(Str) when is_list(Str) ->
-    {ok, RichMap} = hocon:binary("key = " ++ Str, #{format => richmap}),
-    deep_get("key", RichMap, value).
 
 -spec(apply_converter(typefunc(), term()) -> term()).
 apply_converter(SchemaFun, Value) ->

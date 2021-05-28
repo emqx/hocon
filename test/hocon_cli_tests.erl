@@ -56,7 +56,7 @@
 generate_test_() ->
     [
         {"`generate` output is correct", fun generate_basic/0}
-    ,    {"dump vm.args correctly", fun generate_vmargs/0}
+    ,   {"dump vm.args correctly", fun generate_vmargs/0}
     ].
 
 generate_basic() ->
