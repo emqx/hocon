@@ -64,11 +64,19 @@ fields(Mod, Name) when is_atom(Mod) -> Mod:fields(Name);
 fields(#{fields := F}, Name) -> F(Name).
 
 -spec translations(schema()) -> [name()].
-translations(Mod) when is_atom(Mod) -> Mod:translations();
+translations(Mod) when is_atom(Mod) ->
+    case erlang:function_exported(Mod, translations, 0) of
+        false -> [];
+        true -> Mod:translations()
+    end;
 translations(#{translations := Trs}) -> Trs.
 
 -spec translation(schema(), name()) -> [translation()].
-translation(Mod, Name) when is_atom(Mod) -> Mod:translation(Name);
+translation(Mod, Name) when is_atom(Mod) ->
+    case erlang:function_exported(Mod, translation, 1) of
+        false -> [];
+        true -> Mod:translation(Name)
+    end;
 translation(#{translation := Tr}, Name) -> Tr(Name).
 
 %% @doc generates application env from a parsed .conf and a schema module.
@@ -99,11 +107,14 @@ set_value([HeadToken | MoreTokens], PList, Value) ->
 
 -spec(translate(schema(), hocon:config(), [proplists:property()]) -> [proplists:property()]).
 translate(Schema, Conf, Mapped) ->
-    Namespaces = translations(Schema),
-    Res = lists:append([do_translate(translation(Schema, N), str(N), Conf, Mapped) ||
+    case translations(Schema) of
+        [] -> Mapped;
+        Namespaces ->
+            Res = lists:append([do_translate(translation(Schema, N), str(N), Conf, Mapped) ||
                         N <- Namespaces]),
-    ok = find_error(Res),
-    Res.
+            ok = find_error(Res),
+            Res
+    end.
 
 do_translate([], _Namespace, _Conf, Acc) ->
     Acc;
