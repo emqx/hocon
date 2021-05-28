@@ -62,6 +62,8 @@ log_test_() ->
                          sub(kernel, load_hocon(tp("logger.conf"))))
     , ?_assertEqualPlist(sub(lager, load_cuttlefish(tp("logger.cuttlefish.conf"))),
                          sub(lager, load_hocon(tp("logger.conf"))))
+    , ?_assertEqualPlist(load_cuttlefish(tp("logger_disabled.conf")),
+                         load_hocon(tp("logger_disabled.conf")))
     ].
 
 acl_test_() ->
@@ -103,25 +105,111 @@ misc_test_() ->
                          sub(emqx, load_hocon(tp("misc.conf"))))
     ].
 
+http_test_() ->
+    [ ?_assertEqualPlist(load_cuttlefish(tp("http.cuttlefish.conf"),
+                                         ss("emqx_auth_http.schema")),
+                         load_hocon(tp("http.conf"), emqx_auth_http_schema))
+    ].
+
+jwt_test_() ->
+    [ ?_assertEqualPlist(load_cuttlefish(tp("jwt.cuttlefish.conf"),
+                                         ss("emqx_auth_jwt.schema")),
+                         load_hocon(tp("jwt.conf"), emqx_auth_jwt_schema))
+    ].
+
+ldap_test_() ->
+    [ ?_assertEqualPlist(load_cuttlefish(tp("ldap.cuttlefish.conf"),
+                                         ss("emqx_auth_ldap.schema")),
+                         load_hocon(tp("ldap.conf"), emqx_auth_ldap_schema))
+    , ?_assertEqualPlist(load_cuttlefish(tp("ldap_filters.cuttlefish.conf"),
+                                         ss("emqx_auth_ldap.schema")),
+                         load_hocon(tp("ldap_filters.conf"), emqx_auth_ldap_schema))
+    , ?_assertEqual(lists:keyfind(filters, 1,
+                        sub(emqx_auth_ldap, load_cuttlefish(tp("ldap_filters.cuttlefish.conf"),
+                                                            ss("emqx_auth_ldap.schema")))),
+                    lists:keyfind(filters, 1,
+                        sub(emqx_auth_ldap, load_hocon(tp("ldap_filters.conf"),
+                                                       emqx_auth_ldap_schema))))
+    ].
+
+mnesia_test_() ->
+    [ ?_assertEqualPlist(load_cuttlefish(tp("mnesia.cuttlefish.conf"),
+                                         ss("emqx_auth_mnesia.schema")),
+                         load_hocon(tp("mnesia.conf"), emqx_auth_mnesia_schema))
+    ].
+
+mysql_test_() ->
+    [ ?_assertEqualPlist(load_cuttlefish(tp("mysql.cuttlefish.conf"),
+                                         ss("emqx_auth_mysql.schema")),
+                         load_hocon(tp("mysql.conf"), emqx_auth_mysql_schema))
+    ].
+
+pgsql_test_() ->
+    [ ?_assertEqualPlist(load_cuttlefish(tp("pgsql.cuttlefish.conf"),
+                                         ss("emqx_auth_pgsql.schema")),
+                         load_hocon(tp("pgsql.conf"), emqx_auth_pgsql_schema))
+    ].
+
+redis_test_() ->
+    [ ?_assertEqualPlist(load_cuttlefish(tp("redis.cuttlefish.conf"),
+                                         ss("emqx_auth_redis.schema")),
+                         load_hocon(tp("redis.conf"), emqx_auth_redis_schema))
+    ].
+
+mongo_test_() ->
+    [ ?_assertEqualPlist(sub(acl_query,
+                             sub(emqx_auth_mongo,
+                                 load_cuttlefish(tp("mongo.cuttlefish.conf"),
+                                     ss("emqx_auth_mongo.schema")))),
+                         sub(acl_query,
+                             sub(emqx_auth_mongo,
+                                 load_hocon(tp("mongo.conf"), emqx_auth_mongo_schema))))
+    , ?_assertEqualPlist(sub(mongodb,
+                             load_cuttlefish(tp("mongo.cuttlefish.conf"),
+                                 ss("emqx_auth_mongo.schema"))),
+                         sub(mongodb, load_hocon(tp("mongo.conf"), emqx_auth_mongo_schema)))
+    ].
+
+management_test_() ->
+    [ ?_assertEqualPlist(load_cuttlefish(tp("management.cuttlefish.conf"),
+                                         ss("emqx_management.schema")),
+                         load_hocon(tp("management.conf"), emqx_management_schema))
+    ].
+
 load_hocon(File) ->
     {ok, C} = hocon:load(File, #{format => richmap}),
     hocon_schema:generate(emqx_schema, C).
 
+load_hocon(File, Schema) ->
+    {ok, C} = hocon:load(File, #{format => richmap}),
+    hocon_schema:generate(Schema, C).
+
 load_cuttlefish(File) ->
-    cuttlefish_generator:map(cuttlefish_schema:files(["sample-schemas/emqx.cuttlefish.schema"]),
+    cuttlefish_generator:map(cuttlefish_schema:files(["sample-schemas/emqx.schema"]),
                              cuttlefish_conf:file(File)).
+
+load_cuttlefish(File, Schema) ->
+    cuttlefish_generator:map(cuttlefish_schema:files([Schema]),
+        cuttlefish_conf:file(File)).
 
 tp(File) ->
     filename:join("test/compatibility", File).
+
+ss(File) ->
+    filename:join("sample-schemas", File).
 
 % get sub-proplist
 sub(Key, Plist) ->
     proplists:get_value(Key, Plist).
 
-sort_nested_plist([{_, _} | _] = Plist) ->
-    ChildrenSorted = [{K, sort_nested_plist(V)} || {K, V} <- Plist],
+sort_nested_plist([X | _] = Plist) when is_tuple(X) ->
+    ChildrenSorted = [sort_nested_plist(KV) || KV <- Plist],
     lists:sort(ChildrenSorted);
 sort_nested_plist({K, V}) ->
     {K, sort_nested_plist(V)};
+sort_nested_plist({A, B, V}) ->
+    {A, B, sort_nested_plist(V)};
+sort_nested_plist(L) when is_list(L) ->
+    lists:sort(L);
 sort_nested_plist(Other)->
     Other.
