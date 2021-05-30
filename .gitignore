@@ -14,8 +14,6 @@ ebin/*.beam
 deps
 
 # rebar 3
-.rebar3
-rebar.lock
 _build/
 _checkouts/
 src/hocon_parser.erl
@@ -24,7 +22,7 @@ src/hocon_scanner.erl
 # IDEs
 /.idea/
 
-#es
+#escript
 /hocon
 
 # test
