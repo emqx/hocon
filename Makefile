@@ -1,10 +1,14 @@
-REBAR := rebar3
+REBAR := $(CURDIR)/rebar3
 
 .PHONY: all
 all: es
 
+$(REBAR):
+	@curl -k -f -L "https://github.com/emqx/rebar3/releases/download/3.14.3-emqx-6/rebar3" -o ./rebar3
+	@chmod +x ./rebar3
+
 .PHONY: compile
-compile:
+compile: $(REBAR)
 	$(REBAR) compile
 
 .PHONY: clean
@@ -12,7 +16,7 @@ clean: distclean
 
 .PHONY: distclean
 distclean:
-	@rm -rf _build erl_crash.dump rebar3.crashdump src/hocon_parser.erl src/hocon_scanner.erl
+	@rm -rf rebar3 _build erl_crash.dump rebar3.crashdump src/hocon_parser.erl src/hocon_scanner.erl
 
 .PHONY: xref
 xref:
@@ -36,7 +40,7 @@ dialyzer:
 
 .PHONY: es
 es: export HOCON_ESCRIPT = true
-es: compile
+es: $(REBAR)
 	$(REBAR) as es escriptize
 
 .PHONY: elvis
