@@ -14,7 +14,7 @@
 
 -define(FIELD(NAME, TYPE), fun(mapping) -> NAME; (type) -> TYPE; (_) -> undefined end).
 
-structs() -> [foo, "a.b", person, "id", "vm"].
+structs() -> [foo, "a.b", "b", person, "id", "vm"].
 translations() -> ["app_foo"].
 
 fields(foo) ->
@@ -30,6 +30,18 @@ fields(foo) ->
 
 fields("a.b") ->
     [ {"some_int", fun int/1}
+    ];
+
+fields("b") ->
+    [ {"u", fun (type) -> {union, ["priv.bool", "priv.int"]};
+                (mapping) -> "app_foo.u";
+                (_) -> undefined end}
+    , {"arr", fun (type) -> {array, "priv.int"};
+                  (mapping) -> "app_foo.arr";
+                  (_) -> undefined end}
+    , {"ua", fun (type) -> {array, {union, ["priv.int", "priv.bool"]}};
+                  (mapping) -> "app_foo.ua";
+                  (_) -> undefined end}
     ];
 
 fields("priv.bool") ->
@@ -75,7 +87,7 @@ range(Conf) ->
         true ->
             {Min, Max};
         _ ->
-            throw("should be min < max")
+            undefined
     end.
 
 endpoint(mapping) -> "app_foo.endpoint";

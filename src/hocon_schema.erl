@@ -54,6 +54,10 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
+-define(IS_REF(Type), is_list(Type)
+               orelse element(1, Type) =:= union
+               orelse element(1, Type) =:= array).
+
 %% behaviour APIs
 -spec structs(schema()) -> [name()].
 structs(Mod) when is_atom(Mod) -> Mod:structs();
@@ -161,20 +165,20 @@ do_map([Field | More], Namespace, Conf, Acc, SchemaModule) ->
                                     {Namespace, Func}
                             end,
     ConfWithEnv = apply_override_env(SchemaFun, AbsField, Conf),
-    ValueWithDefault = apply_default(SchemaFun,
-                                     resolve_array(deep_get(AbsField, ConfWithEnv, value))),
-    ConvertedValue = apply_converter(SchemaFun, ValueWithDefault),
-    {RefAcc, RefResolvedValue} = ref(SchemaFun(type), ConvertedValue, Namespace, SchemaModule),
+    ValueWithDefault = apply_default(SchemaFun, deep_get(AbsField, ConfWithEnv, value)),
+    {RefAcc, RefResolvedValue} = ref(SchemaFun(type), ValueWithDefault, Namespace, SchemaModule),
+    ArrayResolvedValue = resolve_array(RefResolvedValue),
+    ConvertedValue = apply_converter(SchemaFun, ArrayResolvedValue),
     Validators = add_default_validator(SchemaFun(validator), SchemaFun(type), SchemaModule),
-    RefResolvedConf = deep_put(AbsField, RefResolvedValue, Conf, value),
-    ValidatedValue = validate(RefResolvedValue, Validators, AbsField, RefResolvedConf),
+    NewConf = deep_put(AbsField, ConvertedValue, Conf, value),
+    ValidatedValue = validate(ConvertedValue, Validators, AbsField, NewConf),
     NewAcc = case {SchemaFun(mapping), ValidatedValue} of
         {_, {error, _} = E} -> RefAcc ++ [E | Acc];
         {M, V} when M =/= undefined andalso V =/= undefined ->
             RefAcc ++ [{string:tokens(M, "."), richmap_to_map(V)} | Acc];
         _ -> RefAcc ++ Acc % skip if no mapping / the value is undefined
         end,
-    do_map(More, Namespace, RefResolvedConf, NewAcc, SchemaModule).
+    do_map(More, Namespace, NewConf, NewAcc, SchemaModule).
 
 apply_env(Conf) ->
     case os:getenv("HOCON_ENV_OVERRIDE_PREFIX") of
@@ -218,27 +222,50 @@ ref(_, undefined, _, _) ->
     {[], undefined};
 ref(Ref, Conf, _, Schema) when is_list(Ref) ->
     {Acc, #{value := NewConf}} = do_map(Schema:fields(Ref), "", #{value => Conf}, [], Schema),
-    case is_map(Conf) of
-        true ->
-            case [V || V <- maps:values(NewConf), #{value => undefined} =/= V] of
-                [] ->
-                    {[], undefined};
-                _ ->
-                    {Acc, NewConf}
-            end;
-        false ->
-            {[], NewConf}
+    return_ref(Conf, NewConf, Acc);
+ref({union, Refs}, Conf, Namespace, Schema) ->
+    Candidates = [ref(Ref, Conf, Namespace, Schema) || Ref <- Refs],
+    Results = [{find_error_(Acc), NewConf} || {Acc, NewConf} <- Candidates],
+    case [ok || {{ok, _}, _} <- Results] of
+        [] ->
+            Errors = lists:append([E || {{errorlist, E}, _} <- Results]),
+            {Errors, Conf};
+        _ ->
+            {Acc, NewConf} = hd([{Acc0, Conf0} || {{ok, Acc0}, Conf0} <- Results]),
+            return_ref(Conf, NewConf, Acc)
+    end;
+ref({array, Ref}, Conf, Namespace, Schema) when is_list(Conf) ->
+    Array = [ref(Ref, hocon:value_of(Elem), Namespace, Schema) || Elem <- Conf],
+    Results = [{find_error_(Acc), NewConf} || {Acc, NewConf} <- Array],
+    case [error || {{errorlist, _}, _} <- Results] of
+        [] ->
+            NewConf = [Conf0 || {{ok, _}, Conf0} <- Results],
+            return_ref(Conf, NewConf, []);
+        _ ->
+            Errors = lists:append([E || {{errorlist, E}, _} <- Results]),
+            {Errors, Conf}
     end;
 ref(_, Value, _, _) ->
     {[], Value}.
 
+return_ref(Conf, NewConf, Acc) when is_map(Conf) ->
+    case [V || V <- maps:values(NewConf), #{value => undefined} =/= V] of
+        [] ->
+            {[], undefined};
+        _ ->
+            {Acc, NewConf}
+    end;
+return_ref(_, NewConf, _) ->
+    {[], NewConf}.
 
 -spec(apply_converter(typefunc(), term()) -> term()).
 apply_converter(SchemaFun, Value) ->
-    case SchemaFun(converter) of
-        undefined ->
-            hocon_schema_builtin:convert(Value, SchemaFun(type));
-        Converter ->
+    case {SchemaFun(converter), SchemaFun(type)}  of
+        {_, Ref} when ?IS_REF(Ref) ->
+            Value;
+        {undefined, Type} ->
+            hocon_schema_builtin:convert(Value, Type);
+        {Converter, _} ->
             try
                 Converter(Value)
             catch
@@ -250,7 +277,7 @@ add_default_validator(undefined, Type, Schema) ->
     add_default_validator([], Type, Schema);
 add_default_validator(Validator, Type, Schema) when is_function(Validator) ->
     add_default_validator([Validator], Type, Schema);
-add_default_validator(Validators, Struct, _Schema) when is_list(Struct) ->
+add_default_validator(Validators, Ref, _Schema) when ?IS_REF(Ref) ->
     Validators;
 add_default_validator(Validators, Type, _Schema) ->
     TypeChecker = fun (Value) -> typerefl:typecheck(Type, Value) end,
@@ -365,6 +392,16 @@ find_error(Proplist) ->
         [] ->
             ok
     end.
+
+%% find error but do not throw, return result
+find_error_(Proplist) ->
+    case do_find_error(Proplist, []) of
+        [] ->
+            {ok, Proplist};
+        Errors ->
+            {errorlist, [{error, E} || E <- Errors]}
+    end.
+
 do_find_error([], Res) ->
     Res;
 do_find_error([{error, E} | More], Errors) ->
@@ -462,6 +499,17 @@ mapping_test_() ->
                     F("foo.ref_j_k={some_int = 1}"))
     , ?_assertThrow({validation_error, _},
         F("foo.greet=foo\n foo.endpoint=hi"))
+    , ?_assertEqual([{["app_foo", "u"], #{<<"val">> => 1}}], F("b.u.val=1"))
+    , ?_assertEqual([{["app_foo", "u"], #{<<"val">> => true}}], F("b.u.val=true"))
+    , ?_assertThrow({validation_error, _}, F("b.u.val=aaa"))
+    , ?_assertEqual([{["app_foo", "u"], #{<<"a">> => <<"aaa">>, <<"val">> => undefined}}],
+                    F("b.u.a=aaa")) % additional field is not validated
+    , ?_assertEqual([{["app_foo", "arr"], [#{<<"val">> => 1}, #{<<"val">> => 2}]}],
+                    F("b.arr=[{val=1},{val=2}]"))
+    , ?_assertThrow({validation_error, _}, F("b.arr=[{val=1},{val=2},{val=a}]"))
+    , ?_assertEqual([{["app_foo", "ua"], [#{<<"val">> => 1}, #{<<"val">> => true}]}],
+                    F("b.ua=[{val=1},{val=true}]"))
+    , ?_assertThrow({validation_error, _}, F("b.ua=[{val=1},{val=a},{val=true}]"))
     ].
 
 env_test_() ->
@@ -485,8 +533,7 @@ translate_test_() ->
                      translate(demo_schema, Conf, Mapped) end,
     [ ?_assertEqual([{["app_foo", "range"], {1, 2}}],
                     F("foo.min=1, foo.max=2"))
-    , ?_assertThrow({translation_error, _},
-                    F("foo.min=2, foo.max=1"))
+    , ?_assertEqual([], F("foo.min=2, foo.max=1"))
     ].
 
 generate_compatibility_test() ->
