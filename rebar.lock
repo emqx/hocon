@@ -2,7 +2,7 @@
 [{<<"getopt">>,{pkg,<<"getopt">>,<<"1.0.1">>},0},
  {<<"typerefl">>,
   {git,"https://github.com/k32/typerefl.git",
-       {ref,"e57d1956a2c04ae4064981e7aeb054d3c1f2a10c"}},
+       {ref,"f23e2ff5fe5da5f37f42a2c83ac87ef260eae323"}},
   0}]}.
 [
 {pkg_hash,[
