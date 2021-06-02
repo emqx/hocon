@@ -23,7 +23,7 @@
         , translation/2
         ]).
 
--export([map/2, translate/3, generate/2]).
+-export([map/2, translate/3, generate/2, check/2]).
 -export([deep_get/3, deep_get/4]).
 
 -export_type([ name/0
@@ -51,6 +51,7 @@
 -optional_callbacks([translations/0, translation/1]).
 
 -ifdef(TEST).
+-export([with_envs/2, with_envs/3]).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
@@ -135,6 +136,20 @@ do_translate([{MappedField, Translator} | More], Namespace, Conf, Acc) ->
         _:Reason:St ->
             Error = {error, {translation_error, Reason, St, MappedField0}},
             do_translate(More, Namespace, Conf, [Error | Acc])
+    end.
+
+%% @doc Check richmap input against schema.
+%% Returns a new config with:
+%% 1) default values from schema if not found in input config
+%% 2) environment variable overrides applyed
+-spec(check(schema(), hocon:config()) -> hocon:config()).
+check(Schema, Conf) ->
+    case map(Schema, Conf) of
+        {[], NewConf} ->
+            NewConf;
+        {_Mapped, _} ->
+            %% should call map/2 instead
+            error({schema_supports_mapping, Schema})
     end.
 
 -spec(map(schema(), hocon:config()) -> {[proplists:property()], hocon:config()}).
@@ -300,20 +315,28 @@ validate(Value, [H | T], Field, Conf) ->
 %% if Param (third arg) is `all`, returns a child richmap.
 -spec(deep_get(string() | [string()], hocon:config(), atom()) -> hocon:config() | undefined).
 deep_get([], Conf, all) ->
+    %% value as-is
     Conf;
 deep_get([], Conf, Param) ->
+    %% terminal value
     maps:get(Param, Conf);
 deep_get([H | T], Conf, Param) when is_list(H) ->
+    %% deep value, get by path
     {NewH, NewT} = retokenize(H, T),
     Value = case maps:get(value, Conf, undefined) of
             undefined -> #{};
             Sth -> Sth
         end,
-    case maps:get(list_to_binary(NewH), Value, undefined) of
-        undefined ->
-            undefined;
-        ChildConf ->
-            deep_get(NewT, ChildConf, Param)
+    case is_map(Value) of
+        true ->
+            case maps:get(list_to_binary(NewH), Value, undefined) of
+                undefined ->
+                    undefined;
+                ChildConf ->
+                    deep_get(NewT, ChildConf, Param)
+            end;
+        false ->
+            undefined
     end;
 deep_get(Str, RichMap, Param) when is_list(Str) ->
     deep_get(string:tokens(Str, "."), RichMap, Param).
@@ -584,6 +607,9 @@ nest_test_() ->
     , ?_assertEqual([{a, [{b, 1}, {z, 2}]}, {x, [{a, 3}]}],
                     nest([{["a", "b"], 1}, {["a", "z"], 2}, {["x", "a"], 3}]))
     ].
+
+with_envs(Fun, Envs) ->
+    with_envs(Fun, [], Envs).
 
 with_envs(Fun, Args, [{_Name, _Value} | _] = Envs) ->
     set_envs(Envs),
