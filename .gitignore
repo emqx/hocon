@@ -27,3 +27,6 @@ src/hocon_scanner.erl
 
 # test
 generated/
+
+# git shallow clone does not work with rebar.lock
+rebar.lock
