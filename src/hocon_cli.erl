@@ -76,7 +76,7 @@ parse_and_command(Args) ->
 
 %% @doc Entry point of the script
 main(Args) ->
-    {Command, ParsedArgs, _Extra} = parse_and_command(Args),
+    {Command, ParsedArgs, Extra} = parse_and_command(Args),
 
     SuggestedLogLevel = list_to_atom(proplists:get_value(log_level, ParsedArgs)),
     LogLevel = case lists:member(SuggestedLogLevel, [debug, info, notice, warning,
@@ -100,11 +100,26 @@ main(Args) ->
     case Command of
         help ->
             print_help();
+        get ->
+            get(ParsedArgs, Extra);
         generate ->
             generate(ParsedArgs);
         _Other ->
             print_help()
     end.
+
+-spec get([proplists:property()], [string()]) -> no_return().
+get(_ParsedArgs, []) ->
+    %% No query, you get nothing.
+    ?STDOUT("hocon's get command requires a variable to query.", []),
+    ?STDOUT("Try `get setting.name`", []),
+    stop_deactivate();
+get(ParsedArgs, [Query | _]) ->
+    Schema = load_schema(ParsedArgs),
+    Conf = load_conf(ParsedArgs),
+    {_, NewConf} = hocon_schema:map(Schema, Conf),
+    ?STDOUT("~p", [hocon_schema:deep_get(Query, NewConf, value)]),
+    stop_ok().
 
 -spec generate([proplists:property()]) -> no_return().
 generate(ParsedArgs) ->
