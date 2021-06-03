@@ -42,4 +42,4 @@ check(Str) ->
     Opts = #{format => richmap},
     {ok, RichMap} = hocon:binary(Str, Opts),
     RichMap2 = hocon_schema:check(?MODULE, RichMap),
-    hocon:richmap_to_map(RichMap2).
+    hocon_schema:richmap_to_map(RichMap2).
