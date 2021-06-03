@@ -35,7 +35,7 @@ cover:
 	$(REBAR) cover
 
 .PHONY: dialyzer
-dialyzer:
+dialyzer: compile
 	$(REBAR) dialyzer
 
 .PHONY: es
