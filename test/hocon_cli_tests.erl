@@ -64,14 +64,14 @@ generate_basic() ->
     ?CAPTURING(begin
                    hocon_cli:main(["-i", ss("demo_schema.erl"),
                        "-c", etc("demo-schema-example-1.conf"),
-                       "-d", out()]),
+                       "-d", out(), "generate"]),
                    {ok, Stdout} = cuttlefish_test_group_leader:get_output(),
                    {ok, Config} = file:consult(regexp_config(Stdout)),
                    ?assertEqual(Output, hd(Config))
                end),
     ?CAPTURING(begin
                    hocon_cli:main(["-c", etc("demo-schema-example-1.conf"),
-                                   "-s", "demo_schema", "-d", out()]),
+                                   "-s", "demo_schema", "-d", out(), "generate"]),
                    {ok, Stdout} = cuttlefish_test_group_leader:get_output(),
                    {ok, Config} = file:consult(regexp_config(Stdout)),
                    ?assertEqual(Output, hd(Config))
@@ -80,11 +80,34 @@ generate_basic() ->
 generate_vmargs() ->
     ?CAPTURING(begin
                    hocon_cli:main(["-c", etc("demo-schema-example-2.conf"),
-                                   "-s", "demo_schema", "-d", out()]),
+                                    "-d", out(), "-s", "demo_schema", "generate"]),
                    {ok, Stdout} = cuttlefish_test_group_leader:get_output(),
                    {ok, Config} = file:read_file(regexp_vmargs(Stdout)),
                    ?assertEqual(<<"-env ERL_MAX_PORTS 64000\n-name emqx@127.0.0.1">>, Config)
                end).
+
+get_test_() ->
+    [
+        {"`get` output is correct", fun get_basic/0}
+    ,   {"`get` respect env var", fun get_env/0}
+    ].
+
+get_basic() ->
+    ?CAPTURING(begin
+                   hocon_cli:main(["-c", etc("demo-schema-example-1.conf"),
+                                   "-s", "demo_schema", "get", "foo.setting"]),
+                   ?assertPrinted("\"hello\"")
+               end).
+
+get_env() ->
+        ?CAPTURING(begin
+                   with_envs(fun hocon_cli:main/1,
+                                [["-c", etc("demo-schema-example-2.conf"),
+                                   "-s", "demo_schema", "get", "foo.setting"]],
+                                [{"EMQX_FOO__SETTING", "hi"},
+                                 {"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"}]),
+                   ?assertPrinted("\"hi\"")
+                   end).
 
 prune_test() ->
     GenDir = out(),
@@ -138,3 +161,6 @@ regexp_vmargs(StdOut) ->
     {ok, MP} = re:compile("-vm_args (.+args)"),
     {match, Path} = re:run(StdOut, MP, [{capture, all_but_first, list}, global]),
     Path.
+
+with_envs(Fun, Args, Envs) ->
+    hocon_schema:with_envs(Fun, Args, Envs).
