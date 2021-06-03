@@ -438,6 +438,15 @@ richmap_file_test() ->
             #{metadata := #{filename := F, line := 7}, value := <<"5m">>}}}}} = Map,
     ?assertEqual("node.conf", filename:basename(F)).
 
+files_test() ->
+    Filename = fun (Metadata) -> filename:basename(maps:get(filename, Metadata)) end,
+    {ok, Conf} = hocon:files(["sample-configs/a_1.conf", "sample-configs/b_2.conf"],
+                             #{format => richmap}),
+    ?assertEqual(1, hocon_schema:deep_get("a", Conf, value)),
+    ?assertEqual("a_1.conf", Filename(hocon_schema:deep_get("a", Conf, metadata))),
+    ?assertEqual(2, hocon_schema:deep_get("b", Conf, value)),
+    ?assertEqual("b_2.conf", Filename(hocon_schema:deep_get("b", Conf, metadata))).
+
 utf8_test() ->
     %todo support unicode
     ?assertMatch({error, {scan_error, _}}, hocon:load("etc/utf8.conf")).

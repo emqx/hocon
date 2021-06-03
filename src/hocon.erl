@@ -16,7 +16,7 @@
 
 -module(hocon).
 
--export([load/1, load/2, binary/1, binary/2]).
+-export([load/1, load/2, files/1, files/2, binary/1, binary/2]).
 -export([transform/2]).
 -export([dump/2, dump/3]).
 -export([main/1]).
@@ -49,11 +49,18 @@ load(Filename0, Opts) ->
     Ctx = hocon_util:stack_multiple_push([{path, '$root'}, {filename, Filename}], #{}),
     try
         Bytes = hocon_token:read(Filename),
-        Map = transform(do_binary(Bytes, Ctx), Opts),
-        {ok, apply_opts(Map, Opts)}
+        Conf = transform(do_binary(Bytes, Ctx), Opts),
+        {ok, apply_opts(Conf, Opts)}
     catch
         throw:Reason -> {error, Reason}
     end.
+
+files(Files) ->
+    load(Files, #{format => map}).
+
+files(Files, Opts) ->
+    IncludesAll = lists:append(["include \"" ++ Filename ++ "\"\n" || Filename <- Files]),
+    binary(IncludesAll, Opts).
 
 apply_opts(Map, Opts) ->
     ConvertedMap = case maps:find(convert, Opts) of
