@@ -21,7 +21,6 @@
 -export([dump/2, dump/3]).
 -export([main/1]).
 -export([filename_of/1, line_of/1, value_of/1]).
--export([richmap_to_map/1]).
 
 -export([duration/1]).
 
@@ -36,14 +35,6 @@
 -export_type([config/0, ctx/0]).
 
 -include("hocon.hrl").
-
-%% @doc Convert richmap to plain-map.
-richmap_to_map(#{value := Value}) when is_map(Value) ->
-    maps:fold(fun(Key, Val, Acc) ->
-                      Acc#{Key => richmap_to_map(Val)}
-              end, #{}, Value);
-richmap_to_map(#{value := Value}) ->
-    Value.
 
 main(Args) ->
     hocon_cli:main(Args).

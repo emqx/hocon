@@ -25,6 +25,7 @@
 
 -export([map/2, translate/3, generate/2, check/2]).
 -export([deep_get/3, deep_get/4]).
+-export([richmap_to_map/1]).
 
 -export_type([ name/0
              , typefunc/0
@@ -382,6 +383,7 @@ resolve_array(ArrayOfRichMap) when is_list(ArrayOfRichMap) ->
 resolve_array(Other) ->
     Other.
 
+%% @doc Convert richmap to plain-map.
 richmap_to_map(RichMap) when is_map(RichMap) ->
     richmap_to_map(maps:iterator(RichMap), #{});
 richmap_to_map(Array) when is_list(Array) ->
