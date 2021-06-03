@@ -152,7 +152,7 @@ load_schema(ParsedArgs) ->
 load_conf(ParsedArgs) ->
     ConfFiles = proplists:get_all_values(conf_file, ParsedArgs),
     ?LOG:debug("ConfFiles: ~p", [ConfFiles]),
-    case hocon:load(ConfFiles, #{format => richmap}) of
+    case hocon:files(ConfFiles, #{format => richmap}) of
         {error, E} ->
             ?LOG:error("~p~n", [E]),
             stop_deactivate();

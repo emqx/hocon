@@ -54,9 +54,8 @@
      end)()).
 
 generate_test_() ->
-    [
-        {"`generate` output is correct", fun generate_basic/0}
-    ,   {"dump vm.args correctly", fun generate_vmargs/0}
+    [ {"`generate` output is correct", fun generate_basic/0}
+    , {"dump vm.args correctly", fun generate_vmargs/0}
     ].
 
 generate_basic() ->
@@ -75,6 +74,15 @@ generate_basic() ->
                    {ok, Stdout} = cuttlefish_test_group_leader:get_output(),
                    {ok, Config} = file:consult(regexp_config(Stdout)),
                    ?assertEqual(Output, hd(Config))
+               end),
+    ?CAPTURING(begin
+                   hocon_cli:main(["-s", "demo_schema",
+                                   "-c", etc("demo-schema-example-2.conf"),
+                                   "-c", etc("demo-schema-example-3.conf"),
+                                   "-d", out(), "generate"]),
+                   {ok, Stdout} = cuttlefish_test_group_leader:get_output(),
+                   {ok, [[{app_foo, Plist}]]} = file:consult(regexp_config(Stdout)),
+                   ?assertEqual("yaa", proplists:get_value(setting, Plist))
                end).
 
 generate_vmargs() ->
@@ -87,9 +95,8 @@ generate_vmargs() ->
                end).
 
 get_test_() ->
-    [
-        {"`get` output is correct", fun get_basic/0}
-    ,   {"`get` respect env var", fun get_env/0}
+    [ {"`get` output is correct", fun get_basic/0}
+    , {"`get` respect env var", fun get_env/0}
     ].
 
 get_basic() ->
