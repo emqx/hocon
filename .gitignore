@@ -14,6 +14,7 @@ ebin/*.beam
 deps
 
 # rebar 3
+/rebar3
 _build/
 _checkouts/
 src/hocon_parser.erl
