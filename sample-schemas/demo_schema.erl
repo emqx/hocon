@@ -14,7 +14,7 @@
 
 -define(FIELD(NAME, TYPE), fun(mapping) -> NAME; (type) -> TYPE; (_) -> undefined end).
 
-structs() -> [foo, "a.b", "b", person, "id", "vm"].
+structs() -> [foo, "a.b", "b", person, "vm"].
 translations() -> ["app_foo"].
 
 fields(foo) ->
@@ -65,7 +65,7 @@ fields(person) ->
     [{id, ?FIELD("person.id", "id")}];
 
 fields("id") ->
-    [?FIELD("id", integer())];
+    [{id, ?FIELD("num", integer())}];
 
 fields("vm") ->
     [ {"name", fun nodename/1}
