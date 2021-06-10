@@ -174,7 +174,8 @@ check(Schema, Conf) ->
 
 check(Schema, Conf, Opts0) ->
     Opts = maps:merge(#{getter => fun deep_get/2,
-                        setter => fun deep_put/4
+                        setter => fun deep_put/4,
+                        atom_key => false
                         }, Opts0),
     do_check(Schema, Conf, Opts).
 
@@ -189,14 +190,20 @@ check_plain(Schema, Conf) ->
 check_plain(Schema, Conf, Opts0) ->
     Opts = maps:merge(#{getter => fun plain_get/2,
                         setter => fun plain_put/4,
-                        is_richmap => false
+                        is_richmap => false,
+                        atom_key => false
                        }, Opts0),
     do_check(Schema, Conf, Opts).
 
 do_check(Schema, Conf, Opts) ->
     case map(Schema, Conf, structs(Schema), Opts) of
         {[], NewConf} ->
-            NewConf;
+            case maps:get(atom_key, Opts, false) of
+                true ->
+                    atom_key_map(NewConf);
+                false ->
+                    NewConf
+            end;
         {_Mapped, _} ->
             %% should call map/2 instead
             error({schema_supports_mapping, Schema})
@@ -618,6 +625,19 @@ do_find_error([{error, E} | More], Errors) ->
     do_find_error(More, [E | Errors]);
 do_find_error([_ | More], Errors) ->
     do_find_error(More, Errors).
+
+atom_key_map(BinKeyMap) when is_map(BinKeyMap) ->
+    maps:fold(
+        fun(K, V, Acc) when is_binary(K) ->
+              Acc#{binary_to_existing_atom(K, utf8) => atom_key_map(V)};
+           (K, V, Acc) when is_list(K) ->
+              Acc#{list_to_existing_atom(K) => atom_key_map(V)};
+           (K, V, Acc) when is_atom(K) ->
+              Acc#{K => atom_key_map(V)}
+        end, #{}, BinKeyMap);
+atom_key_map(ListV) when is_list(ListV) ->
+    [atom_key_map(V) || V <- ListV];
+atom_key_map(Val) -> Val.
 
 -ifdef(TEST).
 

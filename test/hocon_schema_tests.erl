@@ -132,3 +132,12 @@ generate_compatibility_test() ->
     [{app_foo, C0}] = cuttlefish_generator:map({Translations, Mappings, []}, Conf),
     [{app_foo, C1}] = hocon_schema:generate(demo_schema, Hocon),
     ?assertEqual(lists:ukeysort(1, C0), lists:ukeysort(1, C1)).
+
+atom_key_test() ->
+    Sc = #{structs => [''],
+          fields => [{val, binary()}]
+        },
+    ?assertEqual(#{val => <<"a">>},
+                 hocon_schema:check(Sc, #{<<"val">> => <<"a">>}), #{atom_key => true}),
+    ?assertEqual(#{<<"val">> => <<"a">>},
+                 hocon_schema:check(Sc, #{<<"val">> => <<"a">>})).
