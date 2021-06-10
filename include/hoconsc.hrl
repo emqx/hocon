@@ -14,6 +14,13 @@
 %% limitations under the License.
 %%--------------------------------------------------------------------
 
+%% This header file is inteded for internal use in schema modules.
+
+-ifndef(HOCONSC_HRL).
+-define(HOCONSC_HRL, true).
+
 -define(ARRAY(OfTYpe), {array, OfTYpe}).
 -define(UNION(OfTypes), {union, OfTypes}).
 -define(IS_TYPEREFL(X), (is_tuple(X) andalso element(1, Type) =:= '$type_refl')).
+
+-endif.

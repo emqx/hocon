@@ -14,6 +14,11 @@
 %% limitations under the License.
 %%--------------------------------------------------------------------
 
+%% This header file is inteded for internal use in parser modules.
+
+-ifndef(HOCON_HRL).
+-define(HOCON_HRL, true).
+
 -define(IS_VALUE_LIST(T), (T =:= array orelse T =:= concat orelse T =:= object)).
 -define(IS_FIELD(F), (is_tuple(F) andalso size(F) =:= 2)).
 
@@ -27,3 +32,5 @@
 -define(KILOBYTE, 1024).
 -define(MEGABYTE, (?KILOBYTE*1024)). %1048576
 -define(GIGABYTE, (?MEGABYTE*1024)). %1073741824
+
+-endif.
