@@ -14,23 +14,21 @@
 %% limitations under the License.
 %%--------------------------------------------------------------------
 
-%% This header file is inteded for internal use in parser modules.
+%% this module exports APIs to help composing hocon field schema.
+-module(hoconsc).
 
--ifndef(HOCON_HRL).
--define(HOCON_HRL, true).
+-export([t/1, t/2]).
+-export([array/1, union/1]).
 
--define(IS_VALUE_LIST(T), (T =:= array orelse T =:= concat orelse T =:= object)).
--define(IS_FIELD(F), (is_tuple(F) andalso size(F) =:= 2)).
+-include("hoconsc.hrl").
 
--define(SECOND, 1000).
--define(MINUTE, (?SECOND*60)).
--define(HOUR,   (?MINUTE*60)).
--define(DAY,    (?HOUR*24)).
--define(WEEK,      (?DAY*7)).
--define(FORTNIGHT, (?WEEK*2)).
+t(Type) -> #{type => Type}.
 
--define(KILOBYTE, 1024).
--define(MEGABYTE, (?KILOBYTE*1024)). %1048576
--define(GIGABYTE, (?MEGABYTE*1024)). %1073741824
+t(Type, Opts) ->
+    Opts#{type => Type}.
 
--endif.
+%% make an array type
+array(OfType) -> ?ARRAY(OfType).
+
+%% make a union type.
+union(OfTypes) when is_list(OfTypes) -> ?UNION(OfTypes).
