@@ -19,12 +19,23 @@
 -include_lib("typerefl/include/types.hrl").
 -include_lib("typerefl/src/typerefl_int.hrl").
 
+-include("hoconsc.hrl").
+
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
 -export([convert/2]).
 
+convert(Symbol, ?ENUM(_Synbos)) ->
+    case is_binary(Symbol) of
+        true ->
+            try binary_to_existing_atom(Symbol, utf8)
+            catch _ : _ -> Symbol
+            end;
+        false ->
+            Symbol
+    end;
 convert(Int, Type) when is_integer(Int) ->
     case Type =:= string() of
         true ->

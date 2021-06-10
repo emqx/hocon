@@ -18,7 +18,7 @@
 -module(hoconsc).
 
 -export([t/1, t/2]).
--export([array/1, union/1]).
+-export([array/1, union/1, enum/1]).
 
 -include("hoconsc.hrl").
 
@@ -27,8 +27,11 @@ t(Type) -> #{type => Type}.
 t(Type, Opts) ->
     Opts#{type => Type}.
 
-%% make an array type
+%% @doc make an array type
 array(OfType) -> ?ARRAY(OfType).
 
-%% make a union type.
+%% @dock make a union type.
 union(OfTypes) when is_list(OfTypes) -> ?UNION(OfTypes).
+
+%% @doc make a enum type.
+enum(OfSymbols) when is_list(OfSymbols) -> ?ENUM(OfSymbols).
