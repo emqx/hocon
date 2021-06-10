@@ -14,16 +14,21 @@
 %% limitations under the License.
 %%--------------------------------------------------------------------
 
--define(IS_VALUE_LIST(T), (T =:= array orelse T =:= concat orelse T =:= object)).
--define(IS_FIELD(F), (is_tuple(F) andalso size(F) =:= 2)).
+%% this module exports APIs to help composing hocon field schema.
+-module(hoconsc).
 
--define(SECOND, 1000).
--define(MINUTE, (?SECOND*60)).
--define(HOUR,   (?MINUTE*60)).
--define(DAY,    (?HOUR*24)).
--define(WEEK,      (?DAY*7)).
--define(FORTNIGHT, (?WEEK*2)).
+-export([t/1, t/2]).
+-export([array/1, union/1]).
 
--define(KILOBYTE, 1024).
--define(MEGABYTE, (?KILOBYTE*1024)). %1048576
--define(GIGABYTE, (?MEGABYTE*1024)). %1073741824
+-include("hoconsc.hrl").
+
+t(Type) -> #{type => Type}.
+
+t(Type, Opts) ->
+    Opts#{type => Type}.
+
+%% make an array type
+array(OfType) -> ?ARRAY(OfType).
+
+%% make a union type.
+union(OfTypes) when is_list(OfTypes) -> ?UNION(OfTypes).

@@ -30,6 +30,8 @@
 -export([deep_get/2, deep_get/3, deep_get/4, deep_put/4, plain_put/4, plain_get/2]).
 -export([richmap_to_map/1]).
 
+-include("hoconsc.hrl").
+
 -ifdef(TEST).
 -export([nest/1]).
 -endif.
@@ -44,13 +46,14 @@
 -type name() :: atom() | string().
 -type type() :: typerefl:type() %% primitive (or complex, but terminal) type
               | name() %% reference to another struct
-              | {array, type()} %% array of
-              | {union, [type()]} %% one-of
+              | ?ARRAY(type()) %% array of
+              | ?UNION([type()]) %% one-of
               .
 
 -type typefunc() :: fun((_) -> _).
 -type translationfunc() :: fun((hocon:config()) -> hocon:config()).
--type field_schema() :: #{ type := type()
+-type field_schema() :: typerefl:type()
+                      | #{ type := type()
                          , default => term()
                          , mapping => string()
                          , converter => function()
@@ -295,7 +298,7 @@ map_one_field(FieldType, FieldSchema, FieldValue, Opts) ->
             {Acc, FieldValue}
     end.
 
-map_field({union, Types}, Schema, Value, Opts) ->
+map_field(?UNION(Types), Schema, Value, Opts) ->
     %% union is not a boxed value
     F = fun(Type) -> map_field(Type, Schema, Value, Opts) end,
     case do_map_union(Types, F, #{}) of
@@ -306,7 +309,7 @@ map_field(Ref, _Schema, Value,
           #{schema_mod := SchemaModule} = Opts) when is_list(Ref) ->
     Fields = fields(SchemaModule, Ref),
     do_map(Fields, Value, [], Opts);
-map_field({array, Type}, Schema, Value0, Opts) ->
+map_field(?ARRAY(Type), Schema, Value0, Opts) ->
     %% array needs an unbox
     Array = unbox(Opts, Value0),
     F= fun(Elem) -> map_field(Type, Schema, Elem, Opts) end,
@@ -337,6 +340,8 @@ map_field(Type, Schema, Value0, Opts) ->
     ValidationResult = validate(ConvertedValue, Validators, Opts),
     {ValidationResult, boxit(Opts, ConvertedValue, Value0)}.
 
+field_schema(Type, SchemaKey) when ?IS_TYPEREFL(Type) ->
+    field_schema(hoconsc:t(Type), SchemaKey);
 field_schema(FieldSchema, SchemaKey) when is_function(FieldSchema, 1) ->
     FieldSchema(SchemaKey);
 field_schema(FieldSchema, SchemaKey) when is_map(FieldSchema) ->
@@ -637,5 +642,3 @@ do_find_error([{error, E} | More], Errors) ->
     do_find_error(More, [E | Errors]);
 do_find_error([_ | More], Errors) ->
     do_find_error(More, Errors).
-
-
