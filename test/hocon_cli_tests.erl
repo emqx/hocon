@@ -170,4 +170,4 @@ regexp_vmargs(StdOut) ->
     Path.
 
 with_envs(Fun, Args, Envs) ->
-    hocon_schema:with_envs(Fun, Args, Envs).
+    hocon_test_lib:with_envs(Fun, Args, Envs).

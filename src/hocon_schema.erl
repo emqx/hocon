@@ -30,6 +30,10 @@
 -export([deep_get/2, deep_get/3, deep_get/4, deep_put/4, plain_put/4, plain_get/2]).
 -export([richmap_to_map/1]).
 
+-ifdef(TEST).
+-export([nest/1]).
+-endif.
+
 -export_type([ name/0
              , typefunc/0
              , translationfunc/0
@@ -81,11 +85,6 @@
 -callback translation(name()) -> [translation()].
 
 -optional_callbacks([translations/0, translation/1]).
-
--ifdef(TEST).
--export([with_envs/2, with_envs/3]).
--include_lib("eunit/include/eunit.hrl").
--endif.
 
 -define(IS_REF(Type), is_list(Type)
                orelse element(1, Type) =:= union
@@ -639,87 +638,4 @@ do_find_error([{error, E} | More], Errors) ->
 do_find_error([_ | More], Errors) ->
     do_find_error(More, Errors).
 
--ifdef(TEST).
 
-deep_get_test_() ->
-    F = fun(Str, Key, Param) -> {ok, M} = hocon:binary(Str, #{format => richmap}),
-                                deep_get(Key, M, Param, undefined) end,
-    [ ?_assertEqual(1, F("a=1", "a", value))
-    , ?_assertMatch(#{line := 1}, F("a=1", "a", metadata))
-    , ?_assertEqual(1, F("a={b=1}", "a.b", value))
-    , ?_assertEqual(1, F("a={b=1}", ["a", "b"], value))
-    , ?_assertEqual(undefined, F("a={b=1}", "a.c", value))
-    ].
-
-deep_put_test_() ->
-    F = fun(Str, Key, Value, Param) -> {ok, M} = hocon:binary(Str, #{format => richmap}),
-                                       NewM = deep_put(Key, Value, M, Param),
-                                       deep_get(Key, NewM, Param, undefined) end,
-    [ ?_assertEqual(2, F("a=1", "a", 2, value))
-    , ?_assertEqual(2, F("a={b=1}", "a.b", 2, value))
-    , ?_assertEqual(#{x => 1}, F("a={b=1}", "a.b", #{x => 1}, value))
-    ].
-
-richmap_to_map_test_() ->
-    F = fun(Str) -> {ok, M} = hocon:binary(Str, #{format => richmap}),
-                    richmap_to_map(M) end,
-    [ ?_assertEqual(#{<<"a">> => #{<<"b">> => 1}}, F("a.b=1"))
-    , ?_assertEqual(#{<<"a">> => #{<<"b">> => [1, 2, 3]}}, F("a.b = [1,2,3]"))
-    , ?_assertEqual(#{<<"a">> =>
-                      #{<<"b">> => [1, 2, #{<<"x">> => <<"foo">>}]}}, F("a.b = [1,2,{x=foo}]"))
-    ].
-
-
-env_test_() ->
-    F = fun (Str, Envs) ->
-                    {ok, M} = hocon:binary(Str, #{format => richmap}),
-                    {Mapped, _} = with_envs(fun map/2, [demo_schema, M],
-                                            Envs ++ [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"}]),
-                    Mapped
-        end,
-    [ ?_assertEqual([{["app_foo", "setting"], "hi"}],
-                    F("foo.setting=hello", [{"EMQX_FOO__SETTING", "hi"}]))
-    , ?_assertEqual([{["app_foo", "setting"], "yo"}],
-                    F("foo.setting=hello", [{"EMQX_MY_OVERRIDE", "yo"}]))
-    , ?_assertEqual([{["app_foo", "numbers"], [4, 5, 6]}],
-                    F("foo.numbers=[1,2,3]", [{"EMQX_FOO__NUMBERS", "[4,5,6]"}]))
-    , ?_assertEqual([{["app_foo", "greet"], "hello"}],
-                    F("", [{"EMQX_FOO__GREET", "hello"}]))
-    ].
-
-translate_test_() ->
-    F = fun (Str) -> {ok, M} = hocon:binary(Str, #{format => richmap}),
-                     {Mapped, Conf} = map(demo_schema, M),
-                     translate(demo_schema, Conf, Mapped) end,
-    [ ?_assertEqual([{["app_foo", "range"], {1, 2}}],
-                    F("foo.min=1, foo.max=2"))
-    , ?_assertEqual([], F("foo.min=2, foo.max=1"))
-    ].
-
-nest_test_() ->
-    [ ?_assertEqual([{a, [{b, {1, 2}}]}],
-                    nest([{["a", "b"], {1, 2}}]))
-    , ?_assertEqual([{a, [{b, 1}, {c, 2}]}],
-                    nest([{["a", "b"], 1}, {["a", "c"], 2}]))
-    , ?_assertEqual([{a, [{b, 1}, {z, 2}]}, {x, [{a, 3}]}],
-                    nest([{["a", "b"], 1}, {["a", "z"], 2}, {["x", "a"], 3}]))
-    ].
-
-with_envs(Fun, Envs) ->
-    with_envs(Fun, [], Envs).
-
-with_envs(Fun, Args, [{_Name, _Value} | _] = Envs) ->
-    set_envs(Envs),
-    try
-        apply(Fun, Args)
-    after
-        unset_envs(Envs)
-    end.
-
-set_envs([{_Name, _Value} | _] = Envs) ->
-    lists:map(fun ({Name, Value}) -> os:putenv(Name, Value) end, Envs).
-
-unset_envs([{_Name, _Value} | _] = Envs) ->
-    lists:map(fun ({Name, _}) -> os:unsetenv(Name) end, Envs).
-
--endif.
