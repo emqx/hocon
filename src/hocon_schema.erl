@@ -30,6 +30,10 @@
 -export([deep_get/2, deep_get/3, deep_get/4, deep_put/4, plain_put/4, plain_get/2]).
 -export([richmap_to_map/1]).
 
+-ifdef(TEST).
+-export([nest/1]).
+-endif.
+
 -export_type([ name/0
              , typefunc/0
              , translationfunc/0
@@ -38,9 +42,23 @@
              ]).
 
 -type name() :: atom() | string().
+-type type() :: typerefl:type() %% primitive (or complex, but terminal) type
+              | name() %% reference to another struct
+              | {array, type()} %% array of
+              | {union, [type()]} %% one-of
+              .
+
 -type typefunc() :: fun((_) -> _).
 -type translationfunc() :: fun((hocon:config()) -> hocon:config()).
--type field() :: {name(), typefunc()}.
+-type field_schema() :: #{ type := type()
+                         , default => term()
+                         , mapping => string()
+                         , converter => function()
+                         , validator => function()
+                         , override_env => string()
+                         }.
+
+-type field() :: {name(), typefunc() | field_schema()}.
 -type translation() :: {name(), translationfunc()}.
 -type schema() :: module()
                 | #{ structs := [name()]
@@ -67,11 +85,6 @@
 -callback translation(name()) -> [translation()].
 
 -optional_callbacks([translations/0, translation/1]).
-
--ifdef(TEST).
--export([with_envs/2, with_envs/3]).
--include_lib("eunit/include/eunit.hrl").
--endif.
 
 -define(IS_REF(Type), is_list(Type)
                orelse element(1, Type) =:= union
@@ -241,14 +254,14 @@ str(A) when is_atom(A) -> atom_to_list(A);
 str(B) when is_binary(B) -> binary_to_list(B);
 str(S) when is_list(S) -> S.
 
-do_map([{[$$ | _] = _Wildcard, _SchemaFun}], undefined, Acc, _Opts) ->
+do_map([{[$$ | _] = _Wildcard, _Schema}], undefined, Acc, _Opts) ->
     {Acc, undefined};
-do_map([{[$$ | _] = _Wildcard, SchemaFun}], Conf, Acc, Opts) ->
+do_map([{[$$ | _] = _Wildcard, Schema}], Conf, Acc, Opts) ->
     %% wildcard, this 'virtual' boxing only exists in schema but not in data
     Keys = maps:keys(unbox(Opts, Conf)),
     FieldNames = [str(K) || K <- Keys],
     % All objects in this map should share the same schema.
-    Fields = [{FieldName, SchemaFun} || FieldName <- FieldNames],
+    Fields = [{FieldName, Schema} || FieldName <- FieldNames],
     map_fields(Fields, Conf, Acc, Opts);
 do_map(Fields, Conf, Acc, Opts) ->
     map_fields(Fields, Conf, Acc, Opts).
@@ -256,7 +269,7 @@ do_map(Fields, Conf, Acc, Opts) ->
 map_fields([], Conf, Mapped, _Opts) ->
     {Mapped, Conf};
 map_fields([{FieldName, FieldSchema} | Fields], Conf0, Acc, Opts) ->
-    FieldType = FieldSchema(type),
+    FieldType = field_schema(FieldSchema, type),
     FieldValue0 = get_field(Opts, FieldName, Conf0),
     FieldValue = resolve_field_value(FieldSchema, FieldValue0, Opts),
     NewOpts = push_stack(Opts, FieldName),
@@ -275,27 +288,28 @@ map_one_field(FieldType, FieldSchema, FieldValue, Opts) ->
                       end,
     case find_errors(Acc) of
         ok ->
-            Mapped = maybe_mapping(FieldSchema(mapping), plain_value(NewValue, Opts)),
+            Mapped = maybe_mapping(field_schema(FieldSchema, mapping),
+                                   plain_value(NewValue, Opts)),
             {Mapped ++ Acc, NewValue};
         _ ->
             {Acc, FieldValue}
     end.
 
-map_field({union, Types}, SchemaFunc, Value, Opts) ->
+map_field({union, Types}, Schema, Value, Opts) ->
     %% union is not a boxed value
-    F = fun(Type) -> map_field(Type, SchemaFunc, Value, Opts) end,
+    F = fun(Type) -> map_field(Type, Schema, Value, Opts) end,
     case do_map_union(Types, F, #{}) of
         {ok, {Mapped, NewValue}} -> {Mapped, NewValue};
         {error, Reasons} -> {[{error, Reasons}], Value}
     end;
-map_field(Ref, _SchemaFunc, Value,
+map_field(Ref, _Schema, Value,
           #{schema_mod := SchemaModule} = Opts) when is_list(Ref) ->
     Fields = fields(SchemaModule, Ref),
     do_map(Fields, Value, [], Opts);
-map_field({array, Type}, SchemaFunc, Value0, Opts) ->
+map_field({array, Type}, Schema, Value0, Opts) ->
     %% array needs an unbox
     Array = unbox(Opts, Value0),
-    F= fun(Elem) -> map_field(Type, SchemaFunc, Elem, Opts) end,
+    F= fun(Elem) -> map_field(Type, Schema, Elem, Opts) end,
     case is_list(Array) of
         true ->
             case do_map_array(F, Array) of
@@ -314,14 +328,19 @@ map_field({array, Type}, SchemaFunc, Value0, Opts) ->
                               value => Value0 %% Value0 because it has metadata (when richmap)
                              })}], Value0}
     end;
-map_field(Type, SchemaFunc, Value0, Opts) ->
+map_field(Type, Schema, Value0, Opts) ->
     %% primitive type
     Value = unbox(Opts, Value0),
     PlainValue = plain_value(Value, Opts),
-    ConvertedValue = apply_converter(SchemaFunc, PlainValue),
-    Validators = add_default_validator(SchemaFunc(validator), Type),
+    ConvertedValue = apply_converter(Schema, PlainValue),
+    Validators = add_default_validator(field_schema(Schema, validator), Type),
     ValidationResult = validate(ConvertedValue, Validators, Opts),
     {ValidationResult, boxit(Opts, ConvertedValue, Value0)}.
+
+field_schema(FieldSchema, SchemaKey) when is_function(FieldSchema, 1) ->
+    FieldSchema(SchemaKey);
+field_schema(FieldSchema, SchemaKey) when is_map(FieldSchema) ->
+    maps:get(SchemaKey, FieldSchema, undefined).
 
 maybe_mapping(undefined, _) -> []; % no mapping defined for this field
 maybe_mapping(_, undefined) -> []; % no value retrieved fro this field
@@ -360,9 +379,9 @@ do_map_array2(F, [Elem | Rest], Mapped0, Res) ->
     {Mapped, NewElem} = F(Elem),
     do_map_array2(F, Rest, Mapped ++ Mapped0, [NewElem | Res]).
 
-resolve_field_value(SchemaFunc, FieldValue, Opts) ->
-    case get_override_env(SchemaFunc) of
-        undefined -> maybe_use_default(SchemaFunc(default), FieldValue, Opts);
+resolve_field_value(Schema, FieldValue, Opts) ->
+    case get_override_env(Schema) of
+        undefined -> maybe_use_default(field_schema(Schema, default), FieldValue, Opts);
         EnvValue -> boxit(Opts, EnvValue, FieldValue)
     end.
 
@@ -412,8 +431,8 @@ put_value(_Opts, _Field, undefined, Conf) ->
 put_value(#{setter := F}, Field, V, Conf) ->
     F(str(Field), V, Conf, value).
 
-get_override_env(TypeFunc) ->
-    case {os:getenv("HOCON_ENV_OVERRIDE_PREFIX"), TypeFunc(override_env)} of
+get_override_env(Type) ->
+    case {os:getenv("HOCON_ENV_OVERRIDE_PREFIX"), field_schema(Type, override_env)} of
         {false, _} -> undefined;
         {_, undefined} -> undefined;
         {Prefix, Key} ->
@@ -425,8 +444,8 @@ get_override_env(TypeFunc) ->
     end.
 
 -spec(apply_converter(typefunc(), term()) -> term()).
-apply_converter(SchemaFun, Value) ->
-    case {SchemaFun(converter), SchemaFun(type)}  of
+apply_converter(Schema, Value) ->
+    case {field_schema(Schema, converter), field_schema(Schema, type)}  of
         {_, Ref} when ?IS_REF(Ref) ->
             Value;
         {undefined, Type} ->
@@ -619,87 +638,4 @@ do_find_error([{error, E} | More], Errors) ->
 do_find_error([_ | More], Errors) ->
     do_find_error(More, Errors).
 
--ifdef(TEST).
 
-deep_get_test_() ->
-    F = fun(Str, Key, Param) -> {ok, M} = hocon:binary(Str, #{format => richmap}),
-                                deep_get(Key, M, Param, undefined) end,
-    [ ?_assertEqual(1, F("a=1", "a", value))
-    , ?_assertMatch(#{line := 1}, F("a=1", "a", metadata))
-    , ?_assertEqual(1, F("a={b=1}", "a.b", value))
-    , ?_assertEqual(1, F("a={b=1}", ["a", "b"], value))
-    , ?_assertEqual(undefined, F("a={b=1}", "a.c", value))
-    ].
-
-deep_put_test_() ->
-    F = fun(Str, Key, Value, Param) -> {ok, M} = hocon:binary(Str, #{format => richmap}),
-                                       NewM = deep_put(Key, Value, M, Param),
-                                       deep_get(Key, NewM, Param, undefined) end,
-    [ ?_assertEqual(2, F("a=1", "a", 2, value))
-    , ?_assertEqual(2, F("a={b=1}", "a.b", 2, value))
-    , ?_assertEqual(#{x => 1}, F("a={b=1}", "a.b", #{x => 1}, value))
-    ].
-
-richmap_to_map_test_() ->
-    F = fun(Str) -> {ok, M} = hocon:binary(Str, #{format => richmap}),
-                    richmap_to_map(M) end,
-    [ ?_assertEqual(#{<<"a">> => #{<<"b">> => 1}}, F("a.b=1"))
-    , ?_assertEqual(#{<<"a">> => #{<<"b">> => [1, 2, 3]}}, F("a.b = [1,2,3]"))
-    , ?_assertEqual(#{<<"a">> =>
-                      #{<<"b">> => [1, 2, #{<<"x">> => <<"foo">>}]}}, F("a.b = [1,2,{x=foo}]"))
-    ].
-
-
-env_test_() ->
-    F = fun (Str, Envs) ->
-                    {ok, M} = hocon:binary(Str, #{format => richmap}),
-                    {Mapped, _} = with_envs(fun map/2, [demo_schema, M],
-                                            Envs ++ [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"}]),
-                    Mapped
-        end,
-    [ ?_assertEqual([{["app_foo", "setting"], "hi"}],
-                    F("foo.setting=hello", [{"EMQX_FOO__SETTING", "hi"}]))
-    , ?_assertEqual([{["app_foo", "setting"], "yo"}],
-                    F("foo.setting=hello", [{"EMQX_MY_OVERRIDE", "yo"}]))
-    , ?_assertEqual([{["app_foo", "numbers"], [4, 5, 6]}],
-                    F("foo.numbers=[1,2,3]", [{"EMQX_FOO__NUMBERS", "[4,5,6]"}]))
-    , ?_assertEqual([{["app_foo", "greet"], "hello"}],
-                    F("", [{"EMQX_FOO__GREET", "hello"}]))
-    ].
-
-translate_test_() ->
-    F = fun (Str) -> {ok, M} = hocon:binary(Str, #{format => richmap}),
-                     {Mapped, Conf} = map(demo_schema, M),
-                     translate(demo_schema, Conf, Mapped) end,
-    [ ?_assertEqual([{["app_foo", "range"], {1, 2}}],
-                    F("foo.min=1, foo.max=2"))
-    , ?_assertEqual([], F("foo.min=2, foo.max=1"))
-    ].
-
-nest_test_() ->
-    [ ?_assertEqual([{a, [{b, {1, 2}}]}],
-                    nest([{["a", "b"], {1, 2}}]))
-    , ?_assertEqual([{a, [{b, 1}, {c, 2}]}],
-                    nest([{["a", "b"], 1}, {["a", "c"], 2}]))
-    , ?_assertEqual([{a, [{b, 1}, {z, 2}]}, {x, [{a, 3}]}],
-                    nest([{["a", "b"], 1}, {["a", "z"], 2}, {["x", "a"], 3}]))
-    ].
-
-with_envs(Fun, Envs) ->
-    with_envs(Fun, [], Envs).
-
-with_envs(Fun, Args, [{_Name, _Value} | _] = Envs) ->
-    set_envs(Envs),
-    try
-        apply(Fun, Args)
-    after
-        unset_envs(Envs)
-    end.
-
-set_envs([{_Name, _Value} | _] = Envs) ->
-    lists:map(fun ({Name, Value}) -> os:putenv(Name, Value) end, Envs).
-
-unset_envs([{_Name, _Value} | _] = Envs) ->
-    lists:map(fun ({Name, _}) -> os:unsetenv(Name) end, Envs).
-
--endif.
