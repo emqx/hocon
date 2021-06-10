@@ -1,3 +1,18 @@
+%%--------------------------------------------------------------------
+%% Copyright (c) 2021 EMQ Technologies Co., Ltd. All Rights Reserved.
+%%
+%% Licensed under the Apache License, Version 2.0 (the "License");
+%% you may not use this file except in compliance with the License.
+%% You may obtain a copy of the License at
+%%
+%%     http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing, software
+%% distributed under the License is distributed on an "AS IS" BASIS,
+%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%% See the License for the specific language governing permissions and
+%% limitations under the License.
+%%--------------------------------------------------------------------
 -module(hocon_schema_tests).
 
 -include_lib("typerefl/include/types.hrl").
@@ -33,7 +48,7 @@ default_value_test() ->
                                    <<"field1">> => "foo"}}, Res).
 
 env_overide_test() ->
-    hocon_schema:with_envs(
+    with_envs(
       fun() ->
               Conf = "{\"bar.field1\": \"foo\"}",
               Res = check(Conf),
@@ -141,3 +156,81 @@ atom_key_test() ->
                  hocon_schema:check(Sc, #{<<"val">> => <<"a">>}), #{atom_key => true}),
     ?assertEqual(#{<<"val">> => <<"a">>},
                  hocon_schema:check(Sc, #{<<"val">> => <<"a">>})).
+
+deep_get_test_() ->
+    F = fun(Str, Key, Param) -> {ok, M} = hocon:binary(Str, #{format => richmap}),
+                                hocon_schema:deep_get(Key, M, Param, undefined) end,
+    [ ?_assertEqual(1, F("a=1", "a", value))
+    , ?_assertMatch(#{line := 1}, F("a=1", "a", metadata))
+    , ?_assertEqual(1, F("a={b=1}", "a.b", value))
+    , ?_assertEqual(1, F("a={b=1}", ["a", "b"], value))
+    , ?_assertEqual(undefined, F("a={b=1}", "a.c", value))
+    ].
+
+deep_put_test_() ->
+    F = fun(Str, Key, Value, Param) -> {ok, M} = hocon:binary(Str, #{format => richmap}),
+                                       NewM = hocon_schema:deep_put(Key, Value, M, Param),
+                                       hocon_schema:deep_get(Key, NewM, Param, undefined) end,
+    [ ?_assertEqual(2, F("a=1", "a", 2, value))
+    , ?_assertEqual(2, F("a={b=1}", "a.b", 2, value))
+    , ?_assertEqual(#{x => 1}, F("a={b=1}", "a.b", #{x => 1}, value))
+    ].
+
+richmap_to_map_test_() ->
+    F = fun(Str) -> {ok, M} = hocon:binary(Str, #{format => richmap}),
+                    hocon_schema:richmap_to_map(M) end,
+    [ ?_assertEqual(#{<<"a">> => #{<<"b">> => 1}}, F("a.b=1"))
+    , ?_assertEqual(#{<<"a">> => #{<<"b">> => [1, 2, 3]}}, F("a.b = [1,2,3]"))
+    , ?_assertEqual(#{<<"a">> =>
+                      #{<<"b">> => [1, 2, #{<<"x">> => <<"foo">>}]}}, F("a.b = [1,2,{x=foo}]"))
+    ].
+
+
+env_test_() ->
+    F = fun (Str, Envs) ->
+                    {ok, M} = hocon:binary(Str, #{format => richmap}),
+                    {Mapped, _} = with_envs(fun hocon_schema:map/2, [demo_schema, M],
+                                            Envs ++ [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"}]),
+                    Mapped
+        end,
+    [ ?_assertEqual([{["app_foo", "setting"], "hi"}],
+                    F("foo.setting=hello", [{"EMQX_FOO__SETTING", "hi"}]))
+    , ?_assertEqual([{["app_foo", "setting"], "yo"}],
+                    F("foo.setting=hello", [{"EMQX_MY_OVERRIDE", "yo"}]))
+    , ?_assertEqual([{["app_foo", "numbers"], [4, 5, 6]}],
+                    F("foo.numbers=[1,2,3]", [{"EMQX_FOO__NUMBERS", "[4,5,6]"}]))
+    , ?_assertEqual([{["app_foo", "greet"], "hello"}],
+                    F("", [{"EMQX_FOO__GREET", "hello"}]))
+    ].
+
+translate_test_() ->
+    F = fun (Str) -> {ok, M} = hocon:binary(Str, #{format => richmap}),
+                     {Mapped, Conf} = hocon_schema:map(demo_schema, M),
+                     hocon_schema:translate(demo_schema, Conf, Mapped) end,
+    [ ?_assertEqual([{["app_foo", "range"], {1, 2}}],
+                    F("foo.min=1, foo.max=2"))
+    , ?_assertEqual([], F("foo.min=2, foo.max=1"))
+    ].
+
+nest_test_() ->
+    [ ?_assertEqual([{a, [{b, {1, 2}}]}],
+                    hocon_schema:nest([{["a", "b"], {1, 2}}]))
+    , ?_assertEqual([{a, [{b, 1}, {c, 2}]}],
+                    hocon_schema:nest([{["a", "b"], 1}, {["a", "c"], 2}]))
+    , ?_assertEqual([{a, [{b, 1}, {z, 2}]}, {x, [{a, 3}]}],
+                    hocon_schema:nest([{["a", "b"], 1}, {["a", "z"], 2}, {["x", "a"], 3}]))
+    ].
+
+with_envs(Fun, Envs) -> hocon_test_lib:with_envs(Fun, Envs).
+with_envs(Fun, Args, Envs) -> hocon_test_lib:with_envs(Fun, Args, Envs).
+
+%% hocon schema provides no enum type
+%% the equivalent is a union of singletons
+union_as_enum_test() ->
+    Sc = #{structs => [''],
+           fields => [{enum, hoconsc:union([a, b, c])}]
+          },
+    ?assertEqual(#{<<"enum">> => a},
+                 hocon_schema:check_plain(Sc, #{<<"enum">> => a})),
+    ?assertThrow([{matched_no_union_member, _}],
+                 hocon_schema:check_plain(Sc, #{<<"enum">> => x})).

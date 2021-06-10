@@ -12,7 +12,7 @@
 
 -export([structs/0, fields/1, translations/0, translation/1]).
 
--define(FIELD(NAME, TYPE), fun(mapping) -> NAME; (type) -> TYPE; (_) -> undefined end).
+-define(FIELD(NAME, TYPE), hoconsc:t(TYPE, #{mapping => NAME})).
 
 structs() -> [foo, "a.b", "b", person, "vm"].
 translations() -> ["app_foo"].
@@ -24,24 +24,23 @@ fields(foo) ->
     , {numbers, fun numbers/1}
     , {ref_x_y, fun ref_x_y/1}
     , {ref_j_k, fun ref_j_k/1}
-    , {min, fun priv_int/1}
-    , {max, fun priv_int/1}
+    , {min, integer()}
+    , {max, integer()}
     ];
 
 fields("a.b") ->
-    [ {"some_int", fun int/1}
+    [ {"some_int", hoconsc:t(integer(), #{mapping => "a.b.some_int"})}
     ];
 
 fields("b") ->
     [ {"u", fun (type) -> {union, ["priv.bool", "priv.int"]};
                 (mapping) -> "app_foo.u";
                 (_) -> undefined end}
-    , {"arr", fun (type) -> {array, "priv.int"};
+    , {"arr", fun (type) -> hoconsc:array("priv.int");
                   (mapping) -> "app_foo.arr";
                   (_) -> undefined end}
-    , {"ua", fun (type) -> {array, {union, ["priv.int", "priv.bool"]}};
-                  (mapping) -> "app_foo.ua";
-                  (_) -> undefined end}
+    , {"ua", hoconsc:t(hoconsc:array(hoconsc:union(["priv.int", "priv.bool"])),
+                       #{mapping => "app_foo.ua"})}
     ];
 
 fields("priv.bool") ->
@@ -49,16 +48,16 @@ fields("priv.bool") ->
     ];
 
 fields("priv.int") ->
-    [ {"val", fun priv_int/1}
+    [ {"val", integer()}
     ];
 
 fields("x.y") ->
-    [ {"some_int", fun priv_int/1}
+    [ {"some_int", integer()}
     , {"some_dur", fun priv_duration/1}
     ];
 
 fields("j.k") ->
-    [ {"some_int", fun priv_int/1}
+    [ {"some_int", integer()}
     ];
 
 fields(person) ->
@@ -101,14 +100,6 @@ greet(_) -> undefined.
 numbers(mapping) -> "app_foo.numbers";
 numbers(type) -> list(integer());
 numbers(_) -> undefined.
-
-
-int(mapping) -> "a.b.some_int";
-int(type) -> integer();
-int(_) -> undefined.
-
-priv_int(type) -> integer();
-priv_int(_) -> undefined.
 
 priv_duration(type) -> duration();
 priv_duration(_) -> undefined.

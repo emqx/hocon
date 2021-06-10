@@ -13,24 +13,23 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 %%--------------------------------------------------------------------
+-module(hocon_test_lib).
 
-%% This header file is inteded for internal use in parser modules.
+-compile(export_all).
 
--ifndef(HOCON_HRL).
--define(HOCON_HRL, true).
+with_envs(Fun, Envs) ->
+    with_envs(Fun, [], Envs).
 
--define(IS_VALUE_LIST(T), (T =:= array orelse T =:= concat orelse T =:= object)).
--define(IS_FIELD(F), (is_tuple(F) andalso size(F) =:= 2)).
+with_envs(Fun, Args, [{_Name, _Value} | _] = Envs) ->
+    set_envs(Envs),
+    try
+        apply(Fun, Args)
+    after
+        unset_envs(Envs)
+    end.
 
--define(SECOND, 1000).
--define(MINUTE, (?SECOND*60)).
--define(HOUR,   (?MINUTE*60)).
--define(DAY,    (?HOUR*24)).
--define(WEEK,      (?DAY*7)).
--define(FORTNIGHT, (?WEEK*2)).
+set_envs([{_Name, _Value} | _] = Envs) ->
+    lists:map(fun ({Name, Value}) -> os:putenv(Name, Value) end, Envs).
 
--define(KILOBYTE, 1024).
--define(MEGABYTE, (?KILOBYTE*1024)). %1048576
--define(GIGABYTE, (?MEGABYTE*1024)). %1073741824
-
--endif.
+unset_envs([{_Name, _Value} | _] = Envs) ->
+    lists:map(fun ({Name, _}) -> os:unsetenv(Name) end, Envs).

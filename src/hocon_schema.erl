@@ -30,6 +30,12 @@
 -export([deep_get/2, deep_get/3, deep_get/4, deep_put/4, plain_put/4, plain_get/2]).
 -export([richmap_to_map/1]).
 
+-include("hoconsc.hrl").
+
+-ifdef(TEST).
+-export([nest/1]).
+-endif.
+
 -export_type([ name/0
              , typefunc/0
              , translationfunc/0
@@ -38,9 +44,26 @@
              ]).
 
 -type name() :: atom() | string().
+-type type() :: typerefl:type() %% primitive (or complex, but terminal) type
+              | name() %% reference to another struct
+              | ?ARRAY(type()) %% array of
+              | ?UNION([type()]) %% one-of
+              .
+
 -type typefunc() :: fun((_) -> _).
 -type translationfunc() :: fun((hocon:config()) -> hocon:config()).
--type field() :: {name(), typefunc()}.
+-type field_schema() :: typerefl:type()
+                      | ?UNION([type()])
+                      | ?ARRAY(type())
+                      | #{ type := type()
+                         , default => term()
+                         , mapping => string()
+                         , converter => function()
+                         , validator => function()
+                         , override_env => string()
+                         }.
+
+-type field() :: {name(), typefunc() | field_schema()}.
 -type translation() :: {name(), translationfunc()}.
 -type schema() :: module()
                 | #{ structs := [name()]
@@ -68,15 +91,7 @@
 
 -optional_callbacks([translations/0, translation/1]).
 
--ifdef(TEST).
--export([with_envs/2, with_envs/3]).
--include_lib("eunit/include/eunit.hrl").
--endif.
-
--define(IS_REF(Type), is_list(Type)
-               orelse element(1, Type) =:= union
-               orelse element(1, Type) =:= array).
-
+-define(VIRTUAL_ROOT, '').
 -define(ERR(Code, Context), {Code, Context}).
 -define(ERRS(Code, Context), [?ERR(Code, Context)]).
 
@@ -89,7 +104,8 @@ structs(#{structs := Names}) -> Names.
 
 -spec fields(schema(), name()) -> [field()].
 fields(Mod, Name) when is_atom(Mod) -> Mod:fields(Name);
-fields(#{fields := F}, Name) -> F(Name).
+fields(#{fields := Fields}, ?VIRTUAL_ROOT) -> Fields;
+fields(#{fields := Fields}, Name) -> maps:get(Name, Fields).
 
 -spec translations(schema()) -> [name()].
 translations(Mod) when is_atom(Mod) ->
@@ -248,14 +264,14 @@ str(A) when is_atom(A) -> atom_to_list(A);
 str(B) when is_binary(B) -> binary_to_list(B);
 str(S) when is_list(S) -> S.
 
-do_map([{[$$ | _] = _Wildcard, _SchemaFun}], undefined, Acc, _Opts) ->
+do_map([{[$$ | _] = _Wildcard, _Schema}], undefined, Acc, _Opts) ->
     {Acc, undefined};
-do_map([{[$$ | _] = _Wildcard, SchemaFun}], Conf, Acc, Opts) ->
+do_map([{[$$ | _] = _Wildcard, Schema}], Conf, Acc, Opts) ->
     %% wildcard, this 'virtual' boxing only exists in schema but not in data
     Keys = maps:keys(unbox(Opts, Conf)),
     FieldNames = [str(K) || K <- Keys],
     % All objects in this map should share the same schema.
-    Fields = [{FieldName, SchemaFun} || FieldName <- FieldNames],
+    Fields = [{FieldName, Schema} || FieldName <- FieldNames],
     map_fields(Fields, Conf, Acc, Opts);
 do_map(Fields, Conf, Acc, Opts) ->
     map_fields(Fields, Conf, Acc, Opts).
@@ -263,7 +279,7 @@ do_map(Fields, Conf, Acc, Opts) ->
 map_fields([], Conf, Mapped, _Opts) ->
     {Mapped, Conf};
 map_fields([{FieldName, FieldSchema} | Fields], Conf0, Acc, Opts) ->
-    FieldType = FieldSchema(type),
+    FieldType = field_schema(FieldSchema, type),
     FieldValue0 = get_field(Opts, FieldName, Conf0),
     FieldValue = resolve_field_value(FieldSchema, FieldValue0, Opts),
     NewOpts = push_stack(Opts, FieldName),
@@ -282,27 +298,28 @@ map_one_field(FieldType, FieldSchema, FieldValue, Opts) ->
                       end,
     case find_errors(Acc) of
         ok ->
-            Mapped = maybe_mapping(FieldSchema(mapping), plain_value(NewValue, Opts)),
+            Mapped = maybe_mapping(field_schema(FieldSchema, mapping),
+                                   plain_value(NewValue, Opts)),
             {Mapped ++ Acc, NewValue};
         _ ->
             {Acc, FieldValue}
     end.
 
-map_field({union, Types}, SchemaFunc, Value, Opts) ->
+map_field(?UNION(Types), Schema, Value, Opts) ->
     %% union is not a boxed value
-    F = fun(Type) -> map_field(Type, SchemaFunc, Value, Opts) end,
+    F = fun(Type) -> map_field(Type, Schema, Value, Opts) end,
     case do_map_union(Types, F, #{}) of
         {ok, {Mapped, NewValue}} -> {Mapped, NewValue};
         {error, Reasons} -> {[{error, Reasons}], Value}
     end;
-map_field(Ref, _SchemaFunc, Value,
+map_field(Ref, _Schema, Value,
           #{schema_mod := SchemaModule} = Opts) when is_list(Ref) ->
     Fields = fields(SchemaModule, Ref),
     do_map(Fields, Value, [], Opts);
-map_field({array, Type}, SchemaFunc, Value0, Opts) ->
+map_field(?ARRAY(Type), Schema, Value0, Opts) ->
     %% array needs an unbox
     Array = unbox(Opts, Value0),
-    F= fun(Elem) -> map_field(Type, SchemaFunc, Elem, Opts) end,
+    F= fun(Elem) -> map_field(Type, Schema, Elem, Opts) end,
     case is_list(Array) of
         true ->
             case do_map_array(F, Array) of
@@ -321,14 +338,25 @@ map_field({array, Type}, SchemaFunc, Value0, Opts) ->
                               value => Value0 %% Value0 because it has metadata (when richmap)
                              })}], Value0}
     end;
-map_field(Type, SchemaFunc, Value0, Opts) ->
+map_field(Type, Schema, Value0, Opts) ->
     %% primitive type
     Value = unbox(Opts, Value0),
     PlainValue = plain_value(Value, Opts),
-    ConvertedValue = apply_converter(SchemaFunc, PlainValue),
-    Validators = add_default_validator(SchemaFunc(validator), Type),
+    ConvertedValue = apply_converter(Schema, PlainValue),
+    Validators = add_default_validator(field_schema(Schema, validator), Type),
     ValidationResult = validate(ConvertedValue, Validators, Opts),
     {ValidationResult, boxit(Opts, ConvertedValue, Value0)}.
+
+field_schema(Type, SchemaKey) when ?IS_TYPEREFL(Type) ->
+    field_schema(hoconsc:t(Type), SchemaKey);
+field_schema(?ARRAY(_) = Array, SchemaKey) ->
+    field_schema(hoconsc:t(Array), SchemaKey);
+field_schema(?UNION(_) = Union, SchemaKey) ->
+    field_schema(hoconsc:t(Union), SchemaKey);
+field_schema(FieldSchema, SchemaKey) when is_function(FieldSchema, 1) ->
+    FieldSchema(SchemaKey);
+field_schema(FieldSchema, SchemaKey) when is_map(FieldSchema) ->
+    maps:get(SchemaKey, FieldSchema, undefined).
 
 maybe_mapping(undefined, _) -> []; % no mapping defined for this field
 maybe_mapping(_, undefined) -> []; % no value retrieved fro this field
@@ -367,9 +395,9 @@ do_map_array2(F, [Elem | Rest], Mapped0, Res) ->
     {Mapped, NewElem} = F(Elem),
     do_map_array2(F, Rest, Mapped ++ Mapped0, [NewElem | Res]).
 
-resolve_field_value(SchemaFunc, FieldValue, Opts) ->
-    case get_override_env(SchemaFunc) of
-        undefined -> maybe_use_default(SchemaFunc(default), FieldValue, Opts);
+resolve_field_value(Schema, FieldValue, Opts) ->
+    case get_override_env(Schema) of
+        undefined -> maybe_use_default(field_schema(Schema, default), FieldValue, Opts);
         EnvValue -> boxit(Opts, EnvValue, FieldValue)
     end.
 
@@ -409,6 +437,8 @@ boxit(#{is_richmap := false}, Value, _OldValue) -> Value;
 boxit(#{is_richmap := true}, Value, undefined) -> #{value => Value};
 boxit(#{is_richmap := true}, Value, Box) -> Box#{value => Value}.
 
+get_field(_Opts, ?VIRTUAL_ROOT, Value) ->
+    Value;
 get_field(_Opts, _Path, undefined) ->
     undefined;
 get_field(#{getter := G}, Path, MaybeBoxedValue) ->
@@ -419,8 +449,8 @@ put_value(_Opts, _Field, undefined, Conf) ->
 put_value(#{setter := F}, Field, V, Conf) ->
     F(str(Field), V, Conf, value).
 
-get_override_env(TypeFunc) ->
-    case {os:getenv("HOCON_ENV_OVERRIDE_PREFIX"), TypeFunc(override_env)} of
+get_override_env(Type) ->
+    case {os:getenv("HOCON_ENV_OVERRIDE_PREFIX"), field_schema(Type, override_env)} of
         {false, _} -> undefined;
         {_, undefined} -> undefined;
         {Prefix, Key} ->
@@ -432,10 +462,8 @@ get_override_env(TypeFunc) ->
     end.
 
 -spec(apply_converter(typefunc(), term()) -> term()).
-apply_converter(SchemaFun, Value) ->
-    case {SchemaFun(converter), SchemaFun(type)}  of
-        {_, Ref} when ?IS_REF(Ref) ->
-            Value;
+apply_converter(Schema, Value) ->
+    case {field_schema(Schema, converter), field_schema(Schema, type)}  of
         {undefined, Type} ->
             hocon_schema_builtin:convert(Value, Type);
         {Converter, _} ->
@@ -446,8 +474,6 @@ add_default_validator(undefined, Type) ->
     add_default_validator([], Type);
 add_default_validator(Validator, Type) when is_function(Validator) ->
     add_default_validator([Validator], Type);
-add_default_validator(Validators, Ref) when ?IS_REF(Ref) ->
-    Validators;
 add_default_validator(Validators, Type) ->
     TypeChecker = fun (Value) -> typerefl:typecheck(Type, Value) end,
     [TypeChecker | Validators].
