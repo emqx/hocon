@@ -84,6 +84,7 @@
                  , is_richmap => boolean()
                  , logger => loggerfunc()
                  , stack => [name()]
+                 , atom_key => boolean()
                  }.
 
 -callback structs() -> [name()].
