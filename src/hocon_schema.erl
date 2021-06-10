@@ -53,6 +53,8 @@
 -type typefunc() :: fun((_) -> _).
 -type translationfunc() :: fun((hocon:config()) -> hocon:config()).
 -type field_schema() :: typerefl:type()
+                      | ?UNION([type()])
+                      | ?ARRAY(type())
                       | #{ type := type()
                          , default => term()
                          , mapping => string()
@@ -89,10 +91,7 @@
 
 -optional_callbacks([translations/0, translation/1]).
 
--define(IS_REF(Type), is_list(Type)
-               orelse element(1, Type) =:= union
-               orelse element(1, Type) =:= array).
-
+-define(VIRTUAL_ROOT, '').
 -define(ERR(Code, Context), {Code, Context}).
 -define(ERRS(Code, Context), [?ERR(Code, Context)]).
 
@@ -105,7 +104,8 @@ structs(#{structs := Names}) -> Names.
 
 -spec fields(schema(), name()) -> [field()].
 fields(Mod, Name) when is_atom(Mod) -> Mod:fields(Name);
-fields(#{fields := F}, Name) -> F(Name).
+fields(#{fields := Fields}, ?VIRTUAL_ROOT) -> Fields;
+fields(#{fields := Fields}, Name) -> maps:get(Name, Fields).
 
 -spec translations(schema()) -> [name()].
 translations(Mod) when is_atom(Mod) ->
@@ -342,6 +342,10 @@ map_field(Type, Schema, Value0, Opts) ->
 
 field_schema(Type, SchemaKey) when ?IS_TYPEREFL(Type) ->
     field_schema(hoconsc:t(Type), SchemaKey);
+field_schema(?ARRAY(_) = Array, SchemaKey) ->
+    field_schema(hoconsc:t(Array), SchemaKey);
+field_schema(?UNION(_) = Union, SchemaKey) ->
+    field_schema(hoconsc:t(Union), SchemaKey);
 field_schema(FieldSchema, SchemaKey) when is_function(FieldSchema, 1) ->
     FieldSchema(SchemaKey);
 field_schema(FieldSchema, SchemaKey) when is_map(FieldSchema) ->
@@ -426,6 +430,8 @@ boxit(#{is_richmap := false}, Value, _OldValue) -> Value;
 boxit(#{is_richmap := true}, Value, undefined) -> #{value => Value};
 boxit(#{is_richmap := true}, Value, Box) -> Box#{value => Value}.
 
+get_field(_Opts, ?VIRTUAL_ROOT, Value) ->
+    Value;
 get_field(_Opts, _Path, undefined) ->
     undefined;
 get_field(#{getter := G}, Path, MaybeBoxedValue) ->
@@ -451,8 +457,6 @@ get_override_env(Type) ->
 -spec(apply_converter(typefunc(), term()) -> term()).
 apply_converter(Schema, Value) ->
     case {field_schema(Schema, converter), field_schema(Schema, type)}  of
-        {_, Ref} when ?IS_REF(Ref) ->
-            Value;
         {undefined, Type} ->
             hocon_schema_builtin:convert(Value, Type);
         {Converter, _} ->
@@ -463,8 +467,6 @@ add_default_validator(undefined, Type) ->
     add_default_validator([], Type);
 add_default_validator(Validator, Type) when is_function(Validator) ->
     add_default_validator([Validator], Type);
-add_default_validator(Validators, Ref) when ?IS_REF(Ref) ->
-    Validators;
 add_default_validator(Validators, Type) ->
     TypeChecker = fun (Value) -> typerefl:typecheck(Type, Value) end,
     [TypeChecker | Validators].

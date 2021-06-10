@@ -214,3 +214,14 @@ nest_test_() ->
 
 with_envs(Fun, Envs) -> hocon_test_lib:with_envs(Fun, Envs).
 with_envs(Fun, Args, Envs) -> hocon_test_lib:with_envs(Fun, Args, Envs).
+
+%% hocon schema provides no enum type
+%% the equivalent is a union of singletons
+union_as_enum_test() ->
+    Sc = #{structs => [''],
+           fields => [{enum, hoconsc:union([a, b, c])}]
+          },
+    ?assertEqual(#{<<"enum">> => a},
+                 hocon_schema:check_plain(Sc, #{<<"enum">> => a})),
+    ?assertThrow([{matched_no_union_member, _}],
+                 hocon_schema:check_plain(Sc, #{<<"enum">> => x})).
