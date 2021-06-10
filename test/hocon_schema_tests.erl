@@ -235,3 +235,12 @@ real_enum_test() ->
     ?assertThrow([{validation_error, #{reason := unable_to_convert_to_enum_symbol,
                                        value := {"badvalue"}}}],
                  hocon_schema:check_plain(Sc, #{<<"val">> => {"badvalue"}})).
+
+atom_key_test() ->
+    Sc = #{structs => [''],
+           fields => [{val, binary()}]
+          },
+    ?assertEqual(#{val => <<"a">>},
+                 hocon_schema:check(Sc, #{<<"val">> => <<"a">>}), #{atom_key => true}),
+    ?assertEqual(#{<<"val">> => <<"a">>},
+                 hocon_schema:check(Sc, #{<<"val">> => <<"a">>})).
