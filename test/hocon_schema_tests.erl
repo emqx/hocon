@@ -235,3 +235,20 @@ real_enum_test() ->
     ?assertThrow([{validation_error, #{reason := unable_to_convert_to_enum_symbol,
                                        value := {"badvalue"}}}],
                  hocon_schema:check_plain(Sc, #{<<"val">> => {"badvalue"}})).
+
+validator_test() ->
+    Sc = #{structs => [''],
+           fields => [{f1, hoconsc:t(integer(), #{validator => fun(X) -> X < 10 end})}]
+          },
+    ?assertEqual(#{<<"f1">> => 1}, hocon_schema:check_plain(Sc, #{<<"f1">> => 1})),
+    ?assertThrow([{validation_error, _}],
+                 hocon_schema:check_plain(Sc, #{<<"f1">> => 11})),
+    ok.
+
+validator_crash_test() ->
+    Sc = #{structs => [''],
+           fields => [{f1, hoconsc:t(integer(), #{validator => [fun(_) -> error(always) end]})}]
+          },
+    ?assertThrow([{validation_error, #{reason := #{exception := {error, always}}}}],
+                 hocon_schema:check_plain(Sc, #{<<"f1">> => 11})),
+    ok.

@@ -470,7 +470,10 @@ apply_converter(Schema, Value) ->
 add_default_validator(undefined, Type) ->
     do_add_default_validator([], Type);
 add_default_validator(Validator, Type) when is_function(Validator) ->
-    do_add_default_validator([Validator], Type).
+    add_default_validator([Validator], Type);
+add_default_validator(Validators, Type) ->
+    true = lists:all(fun(F) -> is_function(F, 1) end, Validators), %% assert
+    do_add_default_validator(Validators, Type).
 
 do_add_default_validator(Validators, ?ENUM(Symbols)) ->
     [fun(Value) -> check_enum_sybol(Value, Symbols) end | Validators];
@@ -491,16 +494,26 @@ validate(undefined, _Validators, _Opts) ->
 validate(_Value, [], _Opts) ->
     [];
 validate(Value, [H | T], Opts) ->
-    case H(Value) of
-        ok ->
+    try H(Value) of
+        OK when OK =:= ok orelse OK =:= true ->
             validate(Value, T, Opts);
+        false ->
+            validation_err(Opts, returned_false, Value);
         {error, Reason} ->
-            [{error, ?ERRS(validation_error,
-                           #{reason => Reason,
-                             stack => stack(Opts),
-                             value => Value
-                            })}]
+            validation_err(Opts, Reason, Value)
+    catch
+        C : E : St ->
+            validation_err(Opts, #{exception => {C, E},
+                                   stacktrace => St
+                                  }, Value)
     end.
+
+validation_err(Opts, Reason, Value) ->
+    [{error, ?ERRS(validation_error,
+                   #{reason => Reason,
+                     stack => stack(Opts),
+                     value => Value
+                    })}].
 
 plain_value(Value, #{is_richmap := false}) -> Value;
 plain_value(Value, #{is_richmap := true}) -> richmap_to_map(Value).
