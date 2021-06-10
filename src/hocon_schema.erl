@@ -48,6 +48,7 @@
               | name() %% reference to another struct
               | ?ARRAY(type()) %% array of
               | ?UNION([type()]) %% one-of
+              | ?ENUM([atom()]) %% one-of atoms, data is allowed to be binary()
               .
 
 -type typefunc() :: fun((_) -> _).
@@ -55,6 +56,7 @@
 -type field_schema() :: typerefl:type()
                       | ?UNION([type()])
                       | ?ARRAY(type())
+                      | ?ENUM(type())
                       | #{ type := type()
                          , default => term()
                          , mapping => string()
@@ -346,6 +348,8 @@ field_schema(?ARRAY(_) = Array, SchemaKey) ->
     field_schema(hoconsc:t(Array), SchemaKey);
 field_schema(?UNION(_) = Union, SchemaKey) ->
     field_schema(hoconsc:t(Union), SchemaKey);
+field_schema(?ENUM(_) = Enum, SchemaKey) ->
+    field_schema(hoconsc:t(Enum), SchemaKey);
 field_schema(FieldSchema, SchemaKey) when is_function(FieldSchema, 1) ->
     FieldSchema(SchemaKey);
 field_schema(FieldSchema, SchemaKey) when is_map(FieldSchema) ->
@@ -464,12 +468,23 @@ apply_converter(Schema, Value) ->
     end.
 
 add_default_validator(undefined, Type) ->
-    add_default_validator([], Type);
+    do_add_default_validator([], Type);
 add_default_validator(Validator, Type) when is_function(Validator) ->
-    add_default_validator([Validator], Type);
-add_default_validator(Validators, Type) ->
+    do_add_default_validator([Validator], Type).
+
+do_add_default_validator(Validators, ?ENUM(Symbols)) ->
+    [fun(Value) -> check_enum_sybol(Value, Symbols) end | Validators];
+do_add_default_validator(Validators, Type) ->
     TypeChecker = fun (Value) -> typerefl:typecheck(Type, Value) end,
     [TypeChecker | Validators].
+
+check_enum_sybol(Value, Symbols) when is_atom(Value) ->
+    case lists:member(Value, Symbols) of
+        true -> ok;
+        false -> {error, not_a_enum_symbol}
+    end;
+check_enum_sybol(_Value, _Symbols) ->
+    {error, unable_to_convert_to_enum_symbol}.
 
 validate(undefined, _Validators, _Opts) ->
     []; % do not validate if no value is set
@@ -482,7 +497,8 @@ validate(Value, [H | T], Opts) ->
         {error, Reason} ->
             [{error, ?ERRS(validation_error,
                            #{reason => Reason,
-                             stack => stack(Opts)
+                             stack => stack(Opts),
+                             value => Value
                             })}]
     end.
 

@@ -21,6 +21,7 @@
 
 -define(ARRAY(OfTYpe), {array, OfTYpe}).
 -define(UNION(OfTypes), {union, OfTypes}).
+-define(ENUM(OfSymbols), {enum, OfSymbols}).
 -define(IS_TYPEREFL(X), (is_tuple(X) andalso element(1, Type) =:= '$type_refl')).
 
 -endif.

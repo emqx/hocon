@@ -215,8 +215,6 @@ nest_test_() ->
 with_envs(Fun, Envs) -> hocon_test_lib:with_envs(Fun, Envs).
 with_envs(Fun, Args, Envs) -> hocon_test_lib:with_envs(Fun, Args, Envs).
 
-%% hocon schema provides no enum type
-%% the equivalent is a union of singletons
 union_as_enum_test() ->
     Sc = #{structs => [''],
            fields => [{enum, hoconsc:union([a, b, c])}]
@@ -225,3 +223,15 @@ union_as_enum_test() ->
                  hocon_schema:check_plain(Sc, #{<<"enum">> => a})),
     ?assertThrow([{matched_no_union_member, _}],
                  hocon_schema:check_plain(Sc, #{<<"enum">> => x})).
+
+real_enum_test() ->
+    Sc = #{structs => [''],
+           fields => [{val, hoconsc:enum([a, b, c])}]
+          },
+    ?assertEqual(#{<<"val">> => a},
+                 hocon_schema:check_plain(Sc, #{<<"val">> => <<"a">>})),
+    ?assertThrow([{validation_error, #{reason := not_a_enum_symbol, value := x}}],
+                 hocon_schema:check_plain(Sc, #{<<"val">> => <<"x">>})),
+    ?assertThrow([{validation_error, #{reason := unable_to_convert_to_enum_symbol,
+                                       value := {"badvalue"}}}],
+                 hocon_schema:check_plain(Sc, #{<<"val">> => {"badvalue"}})).
