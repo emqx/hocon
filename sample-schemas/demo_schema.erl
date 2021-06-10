@@ -12,7 +12,7 @@
 
 -export([structs/0, fields/1, translations/0, translation/1]).
 
--define(FIELD(NAME, TYPE), fun(mapping) -> NAME; (type) -> TYPE; (_) -> undefined end).
+-define(FIELD(NAME, TYPE), #{mapping => NAME, type => TYPE}).
 
 structs() -> [foo, "a.b", "b", person, "vm"].
 translations() -> ["app_foo"].
