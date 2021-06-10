@@ -91,10 +91,6 @@
 
 -optional_callbacks([translations/0, translation/1]).
 
--define(IS_REF(Type), is_list(Type)
-               orelse element(1, Type) =:= union
-               orelse element(1, Type) =:= array).
-
 -define(VIRTUAL_ROOT, '').
 -define(ERR(Code, Context), {Code, Context}).
 -define(ERRS(Code, Context), [?ERR(Code, Context)]).
@@ -461,8 +457,6 @@ get_override_env(Type) ->
 -spec(apply_converter(typefunc(), term()) -> term()).
 apply_converter(Schema, Value) ->
     case {field_schema(Schema, converter), field_schema(Schema, type)}  of
-        {_, Ref} when ?IS_REF(Ref) ->
-            Value;
         {undefined, Type} ->
             hocon_schema_builtin:convert(Value, Type);
         {Converter, _} ->
@@ -473,8 +467,6 @@ add_default_validator(undefined, Type) ->
     add_default_validator([], Type);
 add_default_validator(Validator, Type) when is_function(Validator) ->
     add_default_validator([Validator], Type);
-add_default_validator(Validators, Ref) when ?IS_REF(Ref) ->
-    Validators;
 add_default_validator(Validators, Type) ->
     TypeChecker = fun (Value) -> typerefl:typecheck(Type, Value) end,
     [TypeChecker | Validators].
