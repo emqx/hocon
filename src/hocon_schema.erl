@@ -63,6 +63,9 @@
                          , converter => function()
                          , validator => function()
                          , override_env => string()
+                           %% set true if not to allow missing or `undefined`
+                           %% NOTE: has no point settint to `true` if field has a default value
+                         , nullable => boolean() % default = true
                          }.
 
 -type field() :: {name(), typefunc() | field_schema()}.
@@ -85,6 +88,11 @@
                  , logger => loggerfunc()
                  , stack => [name()]
                  , atom_key => boolean()
+                   %% By default allow all fields to be undefined.
+                   %% if `nullable` is set to `false`
+                   %% map or check APIs fail with validation_error.
+                   %% NOTE: this option serves as default value for field's `nullable` spec
+                 , nullable => boolean() %% default = true
                  }.
 
 -callback structs() -> [name()].
@@ -97,6 +105,8 @@
 -define(VIRTUAL_ROOT, '').
 -define(ERR(Code, Context), {Code, Context}).
 -define(ERRS(Code, Context), [?ERR(Code, Context)]).
+
+-define(DEFAULT_NULLABLE, true).
 
 -define(EMPTY_BOX, #{}).
 
@@ -251,7 +261,8 @@ map(Schema, Conf0, RootNames, Opts0) ->
         fun (RootName, {MappedAcc, ConfAcc}) ->
                 RootValue = get_field(Opts, RootName, ConfAcc),
                 {Mapped, NewRootValue} =
-                    do_map(fields(Schema, RootName), RootValue, [], Opts#{stack => [RootName]}),
+                    do_map(fields(Schema, RootName), RootValue, [],
+                           Opts#{stack => [RootName || RootName =/= ?VIRTUAL_ROOT]}),
                 NewConfAcc =
                     case NewRootValue of
                         undefined -> ConfAcc;
@@ -346,9 +357,16 @@ map_field(Type, Schema, Value0, Opts) ->
     Value = unbox(Opts, Value0),
     PlainValue = plain_value(Value, Opts),
     ConvertedValue = apply_converter(Schema, PlainValue),
+    IsNullable = is_nullable(Opts, Schema),
     Validators = add_default_validator(field_schema(Schema, validator), Type),
-    ValidationResult = validate(ConvertedValue, Validators, Opts),
+    ValidationResult = validate(ConvertedValue, IsNullable, Validators, Opts),
     {ValidationResult, boxit(Opts, ConvertedValue, Value0)}.
+
+is_nullable(Opts, Schema) ->
+    case field_schema(Schema, nullable) of
+        undefined -> maps:get(nullable, Opts, ?DEFAULT_NULLABLE);
+        Bool when is_boolean(Bool) -> Bool
+    end.
 
 field_schema(Type, SchemaKey) when ?IS_TYPEREFL(Type) ->
     field_schema(hoconsc:t(Type), SchemaKey);
@@ -436,7 +454,7 @@ maybe_log(_Opts, _, _) ->
 
 unbox(_, undefined) -> undefined;
 unbox(#{is_richmap := false}, Value) -> Value;
-unbox(#{is_richmap := true}, Boxed) -> maps:get(value, Boxed, undefined).
+unbox(#{is_richmap := true}, Boxed) -> maps:get(value, Boxed).
 
 boxit(#{is_richmap := false}, Value, _OldValue) -> Value;
 boxit(#{is_richmap := true}, Value, undefined) -> #{value => Value};
@@ -497,14 +515,19 @@ check_enum_sybol(Value, Symbols) when is_atom(Value) ->
 check_enum_sybol(_Value, _Symbols) ->
     {error, unable_to_convert_to_enum_symbol}.
 
-validate(undefined, _Validators, _Opts) ->
+validate(undefined, true, _Validators, _Opts) ->
     []; % do not validate if no value is set
-validate(_Value, [], _Opts) ->
-    [];
-validate(Value, [H | T], Opts) ->
+validate(undefined, false, _Validators, Opts) ->
+    validation_err(Opts, not_nullable, undefined);
+validate(Value, _, Validators, Opts) ->
+    do_validate(Value, Validators, Opts).
+
+%% returns on the first failure
+do_validate(_Value, [], _Opts) -> [];
+do_validate(Value, [H | T], Opts) ->
     try H(Value) of
         OK when OK =:= ok orelse OK =:= true ->
-            validate(Value, T, Opts);
+            do_validate(Value, T, Opts);
         false ->
             validation_err(Opts, returned_false, Value);
         {error, Reason} ->
@@ -556,7 +579,9 @@ deep_get([], Value) ->
 deep_get([H | T], EnclosingMap) when is_list(H) ->
     %% deep value, get by path
     {NewH, NewT} = retokenize(H, T),
-    Value = maps:get(value, EnclosingMap, undefined),
+    %% `value` must exist, must be a richmap otherwise
+    %% a bug in in the caller
+    Value = maps:get(value, EnclosingMap),
     case is_map(Value) of
         true ->
             case maps:get(NewH, Value, undefined) of

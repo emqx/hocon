@@ -266,3 +266,16 @@ validator_crash_test() ->
                  hocon_schema:check_plain(Sc, #{<<"f1">> => 11})),
     ok.
 
+nullable_test() ->
+    Sc = #{structs => [''],
+           fields => [{f1, hoconsc:t(integer())},
+                      {f2, hoconsc:t(string())},
+                      {f3, hoconsc:t(integer(), #{default => 0})}
+                     ]
+          },
+    ?assertEqual(#{<<"f2">> => "string", <<"f3">> => 0},
+                 hocon_schema:check_plain(Sc, #{<<"f2">> => <<"string">>})),
+    ?assertThrow([{validation_error, #{reason := not_nullable, stack := [f1]}}],
+                 hocon_schema:check_plain(Sc, #{<<"f2">> => <<"string">>},
+                                          #{nullable => false})),
+    ok.
