@@ -70,7 +70,9 @@ fields("mcast") ->
     ];
 
 fields("dns") ->
-    [ {"app", t(string())}];
+    [ {"app", t(string())}
+    , {"name", t(string())}
+    ];
 
 fields("etcd") ->
     [ {"server", t(comma_separated_list())}
@@ -309,11 +311,13 @@ fields("listener_settings") ->
 fields("tcp_listener_settings") ->
     [ {"peer_cert_as_username", t(cn)}
     , {"peer_cert_as_clientid", t(cn)}
+    , {"key_password", t(string())}
     ] ++ fields("listener_settings");
 
 fields("ssl_listener_settings") ->
     [ {"peer_cert_as_username", t(union([cn, dn, crt, pem, md5]))}
     , {"peer_cert_as_clientid", t(union([cn, dn, crt, pem, md5]))}
+    , {"key_password", t(string())}
     ] ++
     ssl(undefined, #{handshake_timeout => "15s"
                    , depth => 10

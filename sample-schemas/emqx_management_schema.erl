@@ -46,7 +46,7 @@ fields("http") ->
     , {"tune_buffer", emqx_schema:t(emqx_schema:flag(), undefined, undefined)}
     , {"nodelay", emqx_schema:t(boolean(), undefined, true)}
     , {"inet6", emqx_schema:t(boolean(), undefined, false)}
-    , {"inet6_v6only", emqx_schema:t(boolean(), undefined, false)}
+    , {"ipv6_v6only", emqx_schema:t(boolean(), undefined, false)}
     ];
 
 fields("https") ->

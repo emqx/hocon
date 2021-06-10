@@ -92,7 +92,7 @@
                    %% if `nullable` is set to `false`
                    %% map or check APIs fail with validation_error.
                    %% NOTE: this option serves as default value for field's `nullable` spec
-                 , nullable => boolean() %% default = true
+                 , nullable => boolean() %% default: true for map, false for check
                  }.
 
 -callback structs() -> [name()].
@@ -224,7 +224,8 @@ check_plain(Schema, Conf, Opts0) ->
                        }, Opts0),
     do_check(Schema, Conf, Opts).
 
-do_check(Schema, Conf, Opts) ->
+do_check(Schema, Conf, Opts0) ->
+    Opts = maps:merge(#{nullable => false}, Opts0),
     case map(Schema, Conf, structs(Schema), Opts) of
         {[], NewConf} ->
             case maps:get(atom_key, Opts) of
@@ -261,7 +262,7 @@ map(Schema, Conf0, RootNames, Opts0) ->
         fun (RootName, {MappedAcc, ConfAcc}) ->
                 RootValue = get_field(Opts, RootName, ConfAcc),
                 {Mapped, NewRootValue} =
-                    do_map(fields(Schema, RootName), RootValue, [],
+                    do_map(fields(Schema, RootName), RootValue,
                            Opts#{stack => [RootName || RootName =/= ?VIRTUAL_ROOT]}),
                 NewConfAcc =
                     case NewRootValue of
@@ -278,17 +279,52 @@ str(A) when is_atom(A) -> atom_to_list(A);
 str(B) when is_binary(B) -> binary_to_list(B);
 str(S) when is_list(S) -> S.
 
-do_map([{[$$ | _] = _Wildcard, _Schema}], undefined, Acc, _Opts) ->
-    {Acc, undefined};
-do_map([{[$$ | _] = _Wildcard, Schema}], Conf, Acc, Opts) ->
-    %% wildcard, this 'virtual' boxing only exists in schema but not in data
-    Keys = maps:keys(unbox(Opts, Conf)),
+bin(A) when is_atom(A) -> atom_to_binary(A, utf8);
+bin(S) when is_list(S) -> iolist_to_binary(S).
+
+do_map(Fields, Value, Opts) ->
+    case unbox(Opts, Value) of
+        undefined ->
+            case maps:get(nullable, Opts, ?DEFAULT_NULLABLE) of
+                true -> do_map2(Fields, boxit(Opts, undefined, ?EMPTY_BOX), Opts);
+                false -> {validation_err(Opts, not_nullable, undefined), undefined}
+            end;
+        V when is_map(V) ->
+            do_map2(Fields, Value, Opts);
+        _ ->
+            {validation_err(Opts, not_map, Value), Value}
+    end.
+
+%% Conf must be a map from here on
+do_map2([{[$$ | _] = _Wildcard, Schema}], Conf, Opts) ->
+    %% wildcard: support dynamic filed names.
+    %% e.g. in this config:
+    %%     #{config => #{internal => #{val => 1},
+    %%                   external => #{val => 2}}
+    %% `foo` and `bar` share the same schema, which is_map
+    %%     [{"val", #{type => integer()}}]
+    %%
+    %% If there is no wildcard, the enclosing schema should be:
+    %%     [{"internal", #{type => "val"}}
+    %%      {"external", #{type => "val"}}]
+    %%
+    %% This will not allow us to add more fields without changing
+    %% the schema (source code). So, wildcard is for the rescue:
+    %% The enclosing field name can be defined with a leading $
+    %% e.g.
+    %%     [{"$name", #{type => "val"}}].
+    Keys = maps_keys(unbox(Opts, Conf)),
     FieldNames = [str(K) || K <- Keys],
     % All objects in this map should share the same schema.
     Fields = [{FieldName, Schema} || FieldName <- FieldNames],
-    map_fields(Fields, Conf, Acc, Opts);
-do_map(Fields, Conf, Acc, Opts) ->
-    map_fields(Fields, Conf, Acc, Opts).
+    do_map(Fields, Conf, Opts); %% start over
+do_map2(Fields, Value, Opts) ->
+    SchemaFieldNames = [N || {N, _Schema} <- Fields],
+    DataFieldNames = maps_keys(unbox(Opts, Value)),
+    case check_unkown_fields(Opts, SchemaFieldNames, DataFieldNames) of
+        ok -> map_fields(Fields, Value, [], Opts);
+        Errs -> {Errs, Value}
+    end.
 
 map_fields([], Conf, Mapped, _Opts) ->
     {Mapped, Conf};
@@ -329,7 +365,7 @@ map_field(?UNION(Types), Schema, Value, Opts) ->
 map_field(Ref, _Schema, Value,
           #{schema_mod := SchemaModule} = Opts) when is_list(Ref) ->
     Fields = fields(SchemaModule, Ref),
-    do_map(Fields, Value, [], Opts);
+    do_map(Fields, Value, Opts);
 map_field(?ARRAY(Type), Schema, Value0, Opts) ->
     %% array needs an unbox
     Array = unbox(Opts, Value0),
@@ -361,6 +397,20 @@ map_field(Type, Schema, Value0, Opts) ->
     Validators = add_default_validator(field_schema(Schema, validator), Type),
     ValidationResult = validate(ConvertedValue, IsNullable, Validators, Opts),
     {ValidationResult, boxit(Opts, ConvertedValue, Value0)}.
+
+maps_keys(undefined) -> [];
+maps_keys(Map) -> maps:keys(Map).
+
+check_unkown_fields(Opts, SchemaFieldNames0, DataFieldNames) ->
+    SchemaFieldNames = lists:map(fun bin/1, SchemaFieldNames0),
+    case DataFieldNames -- SchemaFieldNames of
+        [] ->
+            ok;
+        UnknownFileds ->
+            {error, ?ERRS(unknown_fields, #{stack => stack(Opts),
+                                            unkonwn=> UnknownFileds,
+                                           expected => SchemaFieldNames})}
+    end.
 
 is_nullable(Opts, Schema) ->
     case field_schema(Schema, nullable) of

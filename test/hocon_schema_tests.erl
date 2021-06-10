@@ -73,8 +73,7 @@ mapping_test_() ->
     F = fun (Str) -> {ok, M} = hocon:binary(Str, #{format => richmap}),
                      {Mapped, _} = hocon_schema:map(demo_schema, M),
                      Mapped end,
-    [ ?_assertEqual([{["person", "id"], 123}], F("person.id=123")) %% TODO: this test should fail
-    , ?_assertEqual([{["app_foo", "setting"], "hello"}], F("foo.setting=hello"))
+    [ ?_assertEqual([{["app_foo", "setting"], "hello"}], F("foo.setting=hello"))
     , ?_assertEqual([{["app_foo", "setting"], "1"}], F("foo.setting=1"))
     , ?_assertThrow([{validation_error, _}], F("foo.setting=[a,b,c]"))
     , ?_assertEqual([{["app_foo", "endpoint"], {127, 0, 0, 1}}], F("foo.endpoint=\"127.0.0.1\""))
@@ -93,8 +92,7 @@ mapping_test_() ->
     , ?_assertEqual([{["app_foo", "u"], #{<<"val">> => 1}}], F("b.u.val=1"))
     , ?_assertEqual([{["app_foo", "u"], #{<<"val">> => true}}], F("b.u.val=true"))
     , ?_assertThrow([{matched_no_union_member, _}], F("b.u.val=aaa"))
-    , ?_assertEqual([{["app_foo", "u"], #{<<"a">> => <<"aaa">>}}],
-                    F("b.u.a=aaa")) % additional field is not validated
+    , ?_assertEqual([{["app_foo", "u"], #{<<"val">> => 44}}], F("b.u.val=44"))
     , ?_assertEqual([{["app_foo", "arr"], [#{<<"val">> => 1}, #{<<"val">> => 2}]}],
                     F("b.arr=[{val=1},{val=2}]"))
     , ?_assertThrow([{validation_error, _}], F("b.arr=[{val=1},{val=2},{val=a}]"))
@@ -274,8 +272,34 @@ nullable_test() ->
                      ]
           },
     ?assertEqual(#{<<"f2">> => "string", <<"f3">> => 0},
-                 hocon_schema:check_plain(Sc, #{<<"f2">> => <<"string">>})),
+                 hocon_schema:check_plain(Sc, #{<<"f2">> => <<"string">>},
+                                          #{nullable => true})),
     ?assertThrow([{validation_error, #{reason := not_nullable, stack := [f1]}}],
                  hocon_schema:check_plain(Sc, #{<<"f2">> => <<"string">>},
                                           #{nullable => false})),
     ok.
+
+bad_value_test() ->
+    Conf = "person.id=123",
+    {ok, M} = hocon:binary(Conf, #{format => richmap}),
+    ?assertThrow([{validation_error, #{reason := not_map}}],
+                 begin
+                     {Mapped, _} = hocon_schema:map(demo_schema, M),
+                     Mapped
+                 end).
+
+% nullable_check_for_correct_union_member_test() ->
+%     Sc = #{structs => ['', "obj1", "obj2"],
+%            fields => fun nullable_check_for_correct_union_member_test_fields/1
+%           },
+
+% nullable_check_for_correct_union_member_test_fields('') ->
+%     [{root, hoconsc:union(["obj1", "obj2"])}
+%     ];
+% nullable_check_for_correct_union_member_test_fields("obj1") ->
+%     [{f1, integer()}];
+% nullable_check_for_correct_union_member_test_fields("obj2") ->
+%     [{f1, integer()},
+%      {f2, integer()}
+%     ].
+
