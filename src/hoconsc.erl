@@ -30,7 +30,7 @@ t(Type, Opts) ->
 %% @doc make an array type
 array(OfType) -> ?ARRAY(OfType).
 
-%% @dock make a union type.
+%% @doc make a union type.
 union(OfTypes) when is_list(OfTypes) -> ?UNION(OfTypes).
 
 %% @doc make a enum type.

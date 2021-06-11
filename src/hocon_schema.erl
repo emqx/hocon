@@ -64,7 +64,7 @@
                          , validator => function()
                          , override_env => string()
                            %% set true if not to allow missing or `undefined`
-                           %% NOTE: has no point settint to `true` if field has a default value
+                           %% NOTE: has no point setting it to `true` if field has a default value
                          , nullable => boolean() % default = true
                          }.
 
