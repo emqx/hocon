@@ -105,6 +105,8 @@
 -define(VIRTUAL_ROOT, '').
 -define(ERR(Code, Context), {Code, Context}).
 -define(ERRS(Code, Context), [?ERR(Code, Context)]).
+-define(VALIDATION_ERRS(Context), ?ERRS(validation_error, Context)).
+-define(TRANSLATION_ERRS(Context), ?ERRS(translation_error, Context)).
 
 -define(DEFAULT_NULLABLE, true).
 
@@ -181,12 +183,11 @@ do_translate([{MappedField, Translator} | More], Namespace, Conf, Acc) ->
             do_translate(More, Namespace, Conf, [{string:tokens(MappedField0, "."), Value} | Acc])
     catch
         Exception : Reason : St ->
-            Error = {error, ?ERRS(translation_error,
-                                  #{reason => Reason,
-                                    stacktrace => St,
-                                    value_path => MappedField0,
-                                    exception => Exception
-                                   })},
+            Error = {error, ?TRANSLATION_ERRS(#{reason => Reason,
+                                                stacktrace => St,
+                                                value_path => MappedField0,
+                                                exception => Exception
+                                               })},
             do_translate(More, Namespace, Conf, [Error | Acc])
     end.
 
@@ -285,12 +286,12 @@ do_map(Fields, Value, Opts) ->
         undefined ->
             case maps:get(nullable, Opts, ?DEFAULT_NULLABLE) of
                 true -> do_map2(Fields, boxit(Opts, undefined, ?EMPTY_BOX), Opts);
-                false -> {validation_err(Opts, not_nullable, undefined), undefined}
+                false -> {validation_errs(Opts, not_nullable, undefined), undefined}
             end;
         V when is_map(V) ->
             do_map2(Fields, Value, Opts);
         _ ->
-            {validation_err(Opts, bad_value_for_struct, Value), Value}
+            {validation_errs(Opts, bad_value_for_struct, Value), Value}
     end.
 
 %% Conf must be a map from here on
@@ -321,7 +322,7 @@ do_map2(Fields, Value, Opts) ->
     DataFieldNames = maps_keys(unbox(Opts, Value)),
     case check_unknown_fields(Opts, SchemaFieldNames, DataFieldNames) of
         ok -> map_fields(Fields, Value, [], Opts);
-        Errs -> {[{error, Errs}], Value}
+        Errors -> {Errors, Value}
     end.
 
 map_fields([], Conf, Mapped, _Opts) ->
@@ -349,9 +350,9 @@ map_one_field(FieldType, FieldSchema, FieldValue, Opts) ->
 map_field(?UNION(Types), Schema, Value, Opts) ->
     %% union is not a boxed value
     F = fun(Type) -> map_field(Type, Schema, Value, Opts) end,
-    case do_map_union(Types, F, #{}) of
+    case do_map_union(Types, F, #{}, Opts) of
         {ok, {Mapped, NewValue}} -> {Mapped, NewValue};
-        {error, Reasons} -> {[{error, Reasons}], Value}
+        Error -> {Error, Value}
     end;
 map_field(Ref, _Schema, Value,
           #{schema_mod := SchemaModule} = Opts) when is_list(Ref) ->
@@ -374,20 +375,25 @@ map_field(?ARRAY(Type), _Schema, Value0, Opts) ->
         false when Array =:= undefined ->
             {[], undefined};
         false ->
-            {[{error, ?ERRS(not_array,
-                            #{path => path(Opts),
-                              value => Value0 %% Value0 because it has metadata (when richmap)
-                             })}], Value0}
+            {validation_errs(Opts, not_array, Value0), Value0}
     end;
 map_field(Type, Schema, Value0, Opts) ->
     %% primitive type
     Value = unbox(Opts, Value0),
     PlainValue = plain_value(Value, Opts),
-    ConvertedValue = apply_converter(Schema, PlainValue),
-    IsNullable = is_nullable(Opts, Schema),
-    Validators = add_default_validator(field_schema(Schema, validator), Type),
-    ValidationResult = validate(ConvertedValue, IsNullable, Validators, Opts),
-    {ValidationResult, boxit(Opts, ConvertedValue, Value0)}.
+    try apply_converter(Schema, PlainValue) of
+        ConvertedValue ->
+            IsNullable = is_nullable(Opts, Schema),
+            Validators = add_default_validator(field_schema(Schema, validator), Type),
+            ValidationResult = validate(ConvertedValue, IsNullable, Validators, Opts),
+            {ValidationResult, boxit(Opts, ConvertedValue, Value0)}
+    catch
+        C : E : St ->
+            {validation_errs(Opts, #{reason => converter_crashed,
+                                     exception => {C, E},
+                                     stacktrace => St
+                                     }), Value0}
+    end.
 
 maps_keys(undefined) -> [];
 maps_keys(Map) -> maps:keys(Map).
@@ -398,7 +404,8 @@ check_unknown_fields(Opts, SchemaFieldNames0, DataFieldNames) ->
         [] ->
             ok;
         UnknownFileds ->
-            ?ERRS(unknown_fields, #{path => path(Opts),
+            validation_errs(Opts, #{reason => unknown_fields,
+                                    path => path(Opts),
                                     unknown=> UnknownFileds,
                                     expected => SchemaFieldNames})
     end.
@@ -433,15 +440,16 @@ push_stack(#{stack := Stack} = X, New) ->
 %% get type validation stack.
 path(#{stack := Stack}) -> string:join(lists:reverse(lists:map(fun str/1, Stack)), ".").
 
-do_map_union([], _TypeCheck, PerTypeResult) ->
-    {error, ?ERRS(matched_no_union_member, #{mismatches => PerTypeResult})};
-do_map_union([Type | Types], TypeCheck, PerTypeResult) ->
+do_map_union([], _TypeCheck, PerTypeResult, Opts) ->
+    validation_errs(Opts, #{reason => matched_no_union_member,
+                            mismatches => PerTypeResult});
+do_map_union([Type | Types], TypeCheck, PerTypeResult, Opts) ->
     {Mapped, Value} = TypeCheck(Type),
     case find_errors(Mapped) of
         ok ->
             {ok, {Mapped, Value}};
         {error, Reasons} ->
-            do_map_union(Types, TypeCheck, PerTypeResult#{Type => Reasons})
+            do_map_union(Types, TypeCheck, PerTypeResult#{Type => Reasons}, Opts)
     end.
 
 do_map_array(_F, [], Elems, _Index) ->
@@ -453,8 +461,13 @@ do_map_array(F, [Elem | Rest], Res, Index) ->
     %% if there is such a need, use wildcard instead
     case find_errors(Mapped) of
         ok -> do_map_array(F, Rest, [NewElem | Res], Index + 1);
-        {error, Reasons} -> {error, [{bad_array_element, Index} | Reasons]}
+        {error, Reasons} -> {error, add_index_to_error_context(Reasons, Index)}
     end.
+
+add_index_to_error_context([], _) -> [];
+add_index_to_error_context([{validation_error, Context} | More], Index) ->
+    [{validation_error, Context#{array_index => Index}}
+     |add_index_to_error_context(More, Index)].
 
 resolve_field_value(Schema, FieldValue, Opts) ->
     case get_override_env(Schema, Opts) of
@@ -560,7 +573,7 @@ check_enum_sybol(_Value, _Symbols) ->
 validate(undefined, true, _Validators, _Opts) ->
     []; % do not validate if no value is set
 validate(undefined, false, _Validators, Opts) ->
-    validation_err(Opts, not_nullable, undefined);
+    validation_errs(Opts, not_nullable, undefined);
 validate(Value, _, Validators, Opts) ->
     do_validate(Value, Validators, Opts).
 
@@ -571,22 +584,21 @@ do_validate(Value, [H | T], Opts) ->
         OK when OK =:= ok orelse OK =:= true ->
             do_validate(Value, T, Opts);
         false ->
-            validation_err(Opts, returned_false, Value);
+            validation_errs(Opts, returned_false, Value);
         {error, Reason} ->
-            validation_err(Opts, Reason, Value)
+            validation_errs(Opts, Reason, Value)
     catch
         C : E : St ->
-            validation_err(Opts, #{exception => {C, E},
-                                   stacktrace => St
-                                  }, Value)
+            validation_errs(Opts, #{exception => {C, E},
+                                    stacktrace => St
+                                   }, Value)
     end.
 
-validation_err(Opts, Reason, Value) ->
-    [{error, ?ERRS(validation_error,
-                   #{reason => Reason,
-                     path => path(Opts),
-                     value => Value
-                    })}].
+validation_errs(Opts, Reason, Value) ->
+    validation_errs(Opts, #{reason => Reason, value => Value}).
+
+validation_errs(Opts, Context) ->
+    [{error, ?VALIDATION_ERRS(Context#{path => path(Opts)})}].
 
 plain_value(Value, #{is_richmap := false}) -> Value;
 plain_value(Value, #{is_richmap := true}) -> richmap_to_map(Value).

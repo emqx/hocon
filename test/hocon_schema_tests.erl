@@ -70,8 +70,8 @@ check_plain(Str) ->
     check_plain(Str, #{}) .
 
 check_plain(Str, Opts) ->
-    {ok, Map} = hocon:binary(Str, Opts),
-    hocon_schema:check_plain(?MODULE, Map).
+    {ok, Map} = hocon:binary(Str, #{}),
+    hocon_schema:check_plain(?MODULE, Map, Opts).
 
 mapping_test_() ->
     F = fun (Str) -> {ok, M} = hocon:binary(Str, #{format => richmap}),
@@ -95,14 +95,15 @@ mapping_test_() ->
                      {validation_error, _}], F("foo.greet=foo\n foo.endpoint=hi"))
     , ?_assertEqual([{["app_foo", "u"], #{<<"val">> => 1}}], F("b.u.val=1"))
     , ?_assertEqual([{["app_foo", "u"], #{<<"val">> => true}}], F("b.u.val=true"))
-    , ?_assertThrow([{matched_no_union_member, _}], F("b.u.val=aaa"))
+    , ?_assertThrow([{validation_error, #{reason := matched_no_union_member}}], F("b.u.val=aaa"))
     , ?_assertEqual([{["app_foo", "u"], #{<<"val">> => 44}}], F("b.u.val=44"))
     , ?_assertEqual([{["app_foo", "arr"], [#{<<"val">> => 1}, #{<<"val">> => 2}]}],
                     F("b.arr=[{val=1},{val=2}]"))
-    , ?_assertThrow([{bad_array_element, 3}, {validation_error, _}],
+    , ?_assertThrow([{validation_error, #{array_index := 3}}],
                     F("b.arr=[{val=1},{val=2},{val=a}]"))
 
-    , ?_assertThrow([{bad_array_element, 2}, {matched_no_union_member, _}],
+    , ?_assertThrow([{validation_error, #{array_index := 2,
+                                          reason := matched_no_union_member}}],
                     F("b.ua=[{val=1},{val=a},{val=true}]"))
     , ?_assertEqual([{["app_foo", "ua"], [#{<<"val">> => 1}, #{<<"val">> => true}]}],
                     F("b.ua=[{val=1},{val=true}]"))
@@ -221,7 +222,7 @@ union_as_enum_test() ->
           },
     ?assertEqual(#{<<"enum">> => a},
                  hocon_schema:check_plain(Sc, #{<<"enum">> => a})),
-    ?assertThrow([{matched_no_union_member, _}],
+    ?assertThrow([{validation_error, #{reason := matched_no_union_member}}],
                  hocon_schema:check_plain(Sc, #{<<"enum">> => x})).
 
 real_enum_test() ->
@@ -366,7 +367,8 @@ validation_error_if_not_nullable_test() ->
 unknown_fields_test() ->
     Conf = "person.id.num=123,person.name=mike",
     {ok, M} = hocon:binary(Conf, #{format => richmap}),
-    ?assertThrow([{unknown_fields, #{unknown := [<<"name">>]}}],
+    ?assertThrow([{validation_error, #{reason := unknown_fields,
+                                       unknown := [<<"name">>]}}],
                  begin
                      {Mapped, _} = hocon_schema:map(demo_schema, M),
                      Mapped
@@ -386,6 +388,22 @@ bad_input_test() ->
     Sc = #{structs => [''],
            fields => [{f1, integer()}]
           },
-    %% NOTE: this is not a valid richmap, to test a crash
+    %% NOTE: this is not a valid richmap, intended to test a crash
     BadInput = #{value => #{<<"f1">> => 1}},
     ?assertError({bad_richmap, 1}, hocon_schema:map(Sc, BadInput)).
+
+not_array_test() ->
+    Sc = #{structs => [''],
+           fields => [{f1, hoconsc:array(integer())}]
+          },
+    BadInput = #{<<"f1">> => 1},
+    ?assertThrow([{validation_error, #{reason := not_array}}],
+                 hocon_schema:check_plain(Sc, BadInput)).
+
+converter_test() ->
+    Sc = #{structs => [''],
+           fields => [{f1, hoconsc:t(integer(),
+                                     #{converter => fun(<<"one">>) -> 1 end})}]
+          },
+    Input = #{<<"f1">> => <<"one">>},
+    ?assertEqual(#{<<"f1">> => 1}, hocon_schema:check_plain(Sc, Input)).
