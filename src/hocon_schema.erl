@@ -117,7 +117,7 @@ structs(#{structs := Names}) -> Names.
 
 -spec fields(schema(), name()) -> [field()].
 fields(Mod, Name) when is_atom(Mod) -> Mod:fields(Name);
-fields(#{fields := Fields}, ?VIRTUAL_ROOT) -> Fields;
+fields(#{fields := Fields}, ?VIRTUAL_ROOT) when is_list(Fields) -> Fields;
 fields(#{fields := Fields}, Name) -> maps:get(Name, Fields).
 
 -spec translations(schema()) -> [name()].
@@ -696,11 +696,6 @@ retokenize(H, T) ->
             {iolist_to_binary(Token), More ++ T}
     end.
 
-resolve_array(ArrayOfRichMap) when is_list(ArrayOfRichMap) ->
-    [richmap_to_map(R) || R <- ArrayOfRichMap];
-resolve_array(Other) ->
-    Other.
-
 %% @doc Convert richmap to plain-map.
 richmap_to_map(RichMap) when is_map(RichMap) ->
     richmap_to_map(maps:iterator(RichMap), #{});
@@ -718,7 +713,7 @@ richmap_to_map(Iter, Map) ->
         {value, M, _} when is_map(M) ->
             richmap_to_map(maps:iterator(M), #{});
         {value, A, _} when is_list(A) ->
-            resolve_array(A);
+            [richmap_to_map(R) || R <- A];
         {value, V, _} ->
             V;
         {K, V, I} ->
@@ -751,9 +746,8 @@ atom_key_map(BinKeyMap) when is_map(BinKeyMap) ->
     maps:fold(
         fun(K, V, Acc) when is_binary(K) ->
               Acc#{binary_to_existing_atom(K, utf8) => atom_key_map(V)};
-           (K, V, Acc) when is_list(K) ->
-              Acc#{list_to_existing_atom(K) => atom_key_map(V)};
            (K, V, Acc) when is_atom(K) ->
+              %% richmap keys
               Acc#{K => atom_key_map(V)}
         end, #{}, BinKeyMap);
 atom_key_map(ListV) when is_list(ListV) ->

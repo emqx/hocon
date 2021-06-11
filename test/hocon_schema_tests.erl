@@ -258,6 +258,17 @@ atom_key_test() ->
     ?assertEqual(#{val => <<"a">>},
                  hocon_schema:richmap_to_map(hocon_schema:check(Sc, RichMap, #{atom_key => true}))).
 
+atom_key_array_test() ->
+   Sc = #{structs => [''],
+           fields => #{'' => [{arr,hoconsc:array("sub")}],
+                       "sub" => [{id, integer()}]
+                      }
+          },
+    Conf = "arr = [{id = 1}, {id = 2}]",
+    {ok, PlainMap} = hocon:binary(Conf, #{}),
+    ?assertEqual(#{arr => [#{id => 1}, #{id => 2}]},
+                 hocon_schema:check_plain(Sc, PlainMap, #{atom_key => true})).
+
 validator_test() ->
     Sc = #{structs => [''],
            fields => [{f1, hoconsc:t(integer(), #{validator => fun(X) -> X < 10 end})}]
