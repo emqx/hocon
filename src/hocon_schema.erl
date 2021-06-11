@@ -336,14 +336,7 @@ map_fields([{FieldName, FieldSchema} | Fields], Conf0, Acc, Opts) ->
     map_fields(Fields, Conf, FAcc ++ Acc, Opts).
 
 map_one_field(FieldType, FieldSchema, FieldValue, Opts) ->
-    {Acc, NewValue} = try map_field(FieldType, FieldSchema, FieldValue, Opts)
-                      catch C : E : St ->
-                                NewE = #{ path => path(Opts)
-                                        , bad_value => FieldValue
-                                        , error => E
-                                        },
-                                erlang:raise(C, NewE, St)
-                      end,
+    {Acc, NewValue} = map_field(FieldType, FieldSchema, FieldValue, Opts),
     case find_errors(Acc) of
         ok ->
             Mapped = maybe_mapping(field_schema(FieldSchema, mapping),
@@ -497,7 +490,11 @@ log(_Opts, Level, Msg) ->
 
 unbox(_, undefined) -> undefined;
 unbox(#{is_richmap := false}, Value) -> Value;
-unbox(#{is_richmap := true}, Boxed) -> maps:get(value, Boxed).
+unbox(#{is_richmap := true}, Boxed) ->
+    case is_map(Boxed) andalso maps:is_key(value, Boxed) of
+        true -> maps:get(value, Boxed);
+        false -> error({bad_richmap, Boxed})
+    end.
 
 boxit(#{is_richmap := false}, Value, _OldValue) -> Value;
 boxit(#{is_richmap := true}, Value, undefined) -> #{value => Value};

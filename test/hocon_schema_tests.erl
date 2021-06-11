@@ -382,3 +382,10 @@ nullable_field_test() ->
                  hocon_schema:check_plain(Sc, #{})),
     ok.
 
+bad_input_test() ->
+    Sc = #{structs => [''],
+           fields => [{f1, integer()}]
+          },
+    %% NOTE: this is not a valid richmap, to test a crash
+    BadInput = #{value => #{<<"f1">> => 1}},
+    ?assertError({bad_richmap, 1}, hocon_schema:map(Sc, BadInput)).
