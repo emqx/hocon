@@ -372,3 +372,13 @@ unknown_fields_test() ->
                      Mapped
                  end).
 
+nullable_field_test() ->
+    Sc = #{structs => [''],
+           fields => [{f1, hoconsc:t(integer(), #{nullable => false})}]
+          },
+    ?assertThrow([{validation_error,
+                   #{reason := not_nullable,
+                     path := "f1"}}],
+                 hocon_schema:check_plain(Sc, #{})),
+    ok.
+
