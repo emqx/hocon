@@ -244,3 +244,20 @@ atom_key_test() ->
                  hocon_schema:check(Sc, #{<<"val">> => <<"a">>}), #{atom_key => true}),
     ?assertEqual(#{<<"val">> => <<"a">>},
                  hocon_schema:check(Sc, #{<<"val">> => <<"a">>})).
+
+validator_test() ->
+    Sc = #{structs => [''],
+           fields => [{f1, hoconsc:t(integer(), #{validator => fun(X) -> X < 10 end})}]
+          },
+    ?assertEqual(#{<<"f1">> => 1}, hocon_schema:check_plain(Sc, #{<<"f1">> => 1})),
+    ?assertThrow([{validation_error, _}],
+                 hocon_schema:check_plain(Sc, #{<<"f1">> => 11})),
+    ok.
+
+validator_crash_test() ->
+    Sc = #{structs => [''],
+           fields => [{f1, hoconsc:t(integer(), #{validator => [fun(_) -> error(always) end]})}]
+          },
+    ?assertThrow([{validation_error, #{reason := #{exception := {error, always}}}}],
+                 hocon_schema:check_plain(Sc, #{<<"f1">> => 11})),
+    ok.
