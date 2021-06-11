@@ -292,7 +292,7 @@ do_map(Fields, Value, Opts) ->
         V when is_map(V) ->
             do_map2(Fields, Value, Opts);
         _ ->
-            {validation_err(Opts, not_map, Value), Value}
+            {validation_err(Opts, bad_value_for_struct, Value), Value}
     end.
 
 %% Conf must be a map from here on
@@ -366,17 +366,17 @@ map_field(Ref, _Schema, Value,
           #{schema_mod := SchemaModule} = Opts) when is_list(Ref) ->
     Fields = fields(SchemaModule, Ref),
     do_map(Fields, Value, Opts);
-map_field(?ARRAY(Type), Schema, Value0, Opts) ->
+map_field(?ARRAY(Type), _Schema, Value0, Opts) ->
     %% array needs an unbox
     Array = unbox(Opts, Value0),
-    F= fun(Elem) -> map_field(Type, Schema, Elem, Opts) end,
+    F= fun(Elem) -> map_field(Type, Type, Elem, Opts) end,
     case is_list(Array) of
         true ->
-            case do_map_array(F, Array) of
-                {ok, {Mapped, NewArray}} ->
+            case do_map_array(F, Array, [], 1) of
+                {ok, NewArray} ->
                     true = is_list(NewArray), %% assert
                     %% and we need to box it back
-                    {Mapped, boxit(Opts, Array, Value0)};
+                    {[], boxit(Opts, NewArray, Value0)};
                 {error, Reasons} ->
                     {[{error, Reasons}], Value0}
             end;
@@ -453,20 +453,17 @@ do_map_union([Type | Types], TypeCheck, PerTypeResult) ->
             do_map_union(Types, TypeCheck, PerTypeResult#{Type => Reasons})
     end.
 
-do_map_array(F, Array) when is_list(Array) ->
-    {Mapped, NewArray} = do_map_array2(F, Array, _Mapped = [], _ResElems = []),
-    case find_errors(Mapped) of
-        ok ->
-            {ok, {Mapped, NewArray}};
-        {error, Reasons} ->
-            {error, Reasons}
-    end.
-
-do_map_array2(_F, [], Mapped, Elems) ->
-    {Mapped, lists:reverse(Elems)};
-do_map_array2(F, [Elem | Rest], Mapped0, Res) ->
+do_map_array(_F, [], Elems, _Index) ->
+    {ok, lists:reverse(Elems)};
+do_map_array(F, [Elem | Rest], Res, Index) ->
     {Mapped, NewElem} = F(Elem),
-    do_map_array2(F, Rest, Mapped ++ Mapped0, [NewElem | Res]).
+    %% Mapped is only used to collect errors of array element checks,
+    %% as it is impossible to apply mappings for array elements
+    %% if there is such a need, use wildcard instead
+    case find_errors(Mapped) of
+        ok -> do_map_array(F, Rest, [NewElem | Res], Index + 1);
+        {error, Reasons} -> {error, [{bad_array_element, Index} | Reasons]}
+    end.
 
 resolve_field_value(Schema, FieldValue, Opts) ->
     case get_override_env(Schema) of

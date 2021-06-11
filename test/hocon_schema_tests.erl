@@ -95,13 +95,11 @@ mapping_test_() ->
     , ?_assertEqual([{["app_foo", "u"], #{<<"val">> => 44}}], F("b.u.val=44"))
     , ?_assertEqual([{["app_foo", "arr"], [#{<<"val">> => 1}, #{<<"val">> => 2}]}],
                     F("b.arr=[{val=1},{val=2}]"))
-    , ?_assertThrow([{validation_error, _}], F("b.arr=[{val=1},{val=2},{val=a}]"))
+    , ?_assertThrow([{bad_array_element, 3}, {validation_error, _}],
+                    F("b.arr=[{val=1},{val=2},{val=a}]"))
 
-    , ?_assertThrow([{matched_no_union_member, _}],
+    , ?_assertThrow([{bad_array_element, 2}, {matched_no_union_member, _}],
                     F("b.ua=[{val=1},{val=a},{val=true}]"))
-
-    , ?_assertThrow([{matched_no_union_member, _}],
-                    F("b.ua=[{val=1},{val=a9999999999999},{val=true}]"))
     , ?_assertEqual([{["app_foo", "ua"], [#{<<"val">> => 1}, #{<<"val">> => true}]}],
                     F("b.ua=[{val=1},{val=true}]"))
     ].
@@ -228,11 +226,21 @@ real_enum_test() ->
           },
     ?assertEqual(#{<<"val">> => a},
                  hocon_schema:check_plain(Sc, #{<<"val">> => <<"a">>})),
+    ?assertEqual(#{val => a},
+                 hocon_schema:check_plain(Sc, #{<<"val">> => <<"a">>}, #{atom_key => true})),
     ?assertThrow([{validation_error, #{reason := not_a_enum_symbol, value := x}}],
                  hocon_schema:check_plain(Sc, #{<<"val">> => <<"x">>})),
     ?assertThrow([{validation_error, #{reason := unable_to_convert_to_enum_symbol,
                                        value := {"badvalue"}}}],
                  hocon_schema:check_plain(Sc, #{<<"val">> => {"badvalue"}})).
+
+array_of_enum_test() ->
+    Sc = #{structs => [''],
+           fields => [{val, hoconsc:array(hoconsc:enum([a, b, c]))}]
+          },
+    Conf = "val = [a,b]",
+    {ok, PlainMap} = hocon:binary(Conf, #{}),
+    ?assertEqual(#{<<"val">> => [a, b]}, hocon_schema:check_plain(Sc, PlainMap)).
 
 atom_key_test() ->
     Sc = #{structs => [''],
@@ -285,24 +293,8 @@ nullable_test() ->
 bad_value_test() ->
     Conf = "person.id=123",
     {ok, M} = hocon:binary(Conf, #{format => richmap}),
-    ?assertThrow([{validation_error, #{reason := not_map}}],
+    ?assertThrow([{validation_error, #{reason := bad_value_for_struct}}],
                  begin
                      {Mapped, _} = hocon_schema:map(demo_schema, M),
                      Mapped
                  end).
-
-% nullable_check_for_correct_union_member_test() ->
-%     Sc = #{structs => ['', "obj1", "obj2"],
-%            fields => fun nullable_check_for_correct_union_member_test_fields/1
-%           },
-
-% nullable_check_for_correct_union_member_test_fields('') ->
-%     [{root, hoconsc:union(["obj1", "obj2"])}
-%     ];
-% nullable_check_for_correct_union_member_test_fields("obj1") ->
-%     [{f1, integer()}];
-% nullable_check_for_correct_union_member_test_fields("obj2") ->
-%     [{f1, integer()},
-%      {f2, integer()}
-%     ].
-
