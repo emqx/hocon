@@ -126,15 +126,11 @@ translations(Mod) when is_atom(Mod) ->
         false -> [];
         true -> Mod:translations()
     end;
-translations(#{translations := Trs}) -> Trs.
+translations(#{translations := Trs}) -> maps:keys(Trs).
 
 -spec translation(schema(), name()) -> [translation()].
-translation(Mod, Name) when is_atom(Mod) ->
-    case erlang:function_exported(Mod, translation, 1) of
-        false -> [];
-        true -> Mod:translation(Name)
-    end;
-translation(#{translation := Tr}, Name) -> Tr(Name).
+translation(Mod, Name) when is_atom(Mod) -> Mod:translation(Name);
+translation(#{translations := Trs}, Name) -> maps:get(Name, Trs).
 
 %% @doc generates application env from a parsed .conf and a schema module.
 %% For example, one can set the output values by
@@ -184,11 +180,12 @@ do_translate([{MappedField, Translator} | More], Namespace, Conf, Acc) ->
         Value ->
             do_translate(More, Namespace, Conf, [{string:tokens(MappedField0, "."), Value} | Acc])
     catch
-        _:Reason:St ->
+        Exception : Reason : St ->
             Error = {error, ?ERRS(translation_error,
                                   #{reason => Reason,
                                     stacktrace => St,
-                                    field => MappedField0
+                                    value_path => MappedField0,
+                                    exception => Exception
                                    })},
             do_translate(More, Namespace, Conf, [Error | Acc])
     end.
@@ -226,17 +223,13 @@ check_plain(Schema, Conf, Opts0) ->
 
 do_check(Schema, Conf, Opts0) ->
     Opts = maps:merge(#{nullable => false}, Opts0),
-    case map(Schema, Conf, structs(Schema), Opts) of
-        {[], NewConf} ->
-            case maps:get(atom_key, Opts) of
-                true ->
-                    atom_key_map(NewConf);
-                false ->
-                    NewConf
-            end;
-        {_Mapped, _} ->
-            %% should call map/2 instead
-            error({schema_supports_mapping, Schema})
+    %% discard mappings for check APIs
+    {_DiscardMappings, NewConf} = map(Schema, Conf, structs(Schema), Opts),
+    case maps:get(atom_key, Opts) of
+        true ->
+            atom_key_map(NewConf);
+        false ->
+            NewConf
     end.
 
 -spec map(schema(), hocon:config()) -> {[proplists:property()], hocon:config()}.

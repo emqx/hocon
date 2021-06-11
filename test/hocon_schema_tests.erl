@@ -298,3 +298,52 @@ bad_value_test() ->
                      {Mapped, _} = hocon_schema:map(demo_schema, M),
                      Mapped
                  end).
+
+multiple_structs_test() ->
+    Sc = #{structs => [root],
+           fields => #{root => [{f1, hoconsc:t(integer())},
+                                {f2, hoconsc:t(string())}
+                               ]}
+          },
+    Data = #{<<"root">> => #{<<"f2">> => <<"string">>, <<"f1">> => 1}},
+    ?assertEqual(#{<<"root">> => #{<<"f2">> => "string", <<"f1">> => 1}},
+                 hocon_schema:check_plain(Sc, Data, #{nullable => false})).
+
+no_translation_test() ->
+    ConfIn = "field1=w",
+    {ok, M} = hocon:binary(ConfIn, #{format => richmap}),
+    {Mapped, Conf} = hocon_schema:map(?MODULE, M),
+    ?assertEqual(Mapped, hocon_schema:translate(?MODULE, Conf, Mapped)).
+
+translation_crash_test() ->
+    Sc = #{structs => [''],
+           fields => [{f1, hoconsc:t(integer())},
+                      {f2, hoconsc:t(string())}
+                     ],
+           translations => #{"tr1" => [{"f3", fun(_Conf) -> error(always) end}]}
+          },
+    {ok, Data} = hocon:binary("f1=12,f2=foo", #{format => richmap}),
+    {Mapped, Conf} = hocon_schema:map(?MODULE, Data),
+    ?assertThrow([{translation_error, #{reason := always, exception := error}}],
+                 hocon_schema:translate(Sc, Conf, Mapped)).
+
+map_just_one_root_test() ->
+    Sc = #{structs => [root],
+           fields => #{root => [{f1, hoconsc:t(integer())},
+                                {f2, hoconsc:t(string())}
+                               ]}
+          },
+    {ok, Data} = hocon:binary("root={f1=1,f2=bar}", #{format => richmap}),
+    {[], NewData} = hocon_schema:map(Sc, Data, [root]),
+    ?assertEqual(#{<<"root">> => #{<<"f2">> => "bar", <<"f1">> => 1}},
+                 hocon_schema:richmap_to_map(NewData)).
+
+validation_error_if_not_nullable_test() ->
+  Sc = #{structs => [root],
+           fields => #{root => [{f1, hoconsc:t(integer())},
+                                {f2, hoconsc:t(string())}
+                               ]}
+        },
+    Data = #{},
+    ?assertThrow([{validation_error, #{reason := not_nullable}}],
+                 hocon_schema:check_plain(Sc, Data, #{nullable => false})).
