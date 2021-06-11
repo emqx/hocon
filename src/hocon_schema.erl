@@ -27,7 +27,7 @@
 -export([translate/3]).
 -export([generate/2]).
 -export([check/2, check/3, check_plain/2, check_plain/3]).
--export([deep_get/2, deep_get/3, deep_get/4, deep_put/4, plain_put/4, plain_get/2]).
+-export([deep_get/2, deep_get/3, deep_get/4, deep_put/3]).
 -export([richmap_to_map/1]).
 
 -include("hoconsc.hrl").
@@ -78,13 +78,8 @@
                    }.
 
 -define(IS_NON_EMPTY_STRING(X), (is_list(X) andalso X =/= [] andalso is_integer(hd(X)))).
--type raw_name() :: string() | [string()].
--type getter() :: fun((raw_name(), hocon:config()) -> term()).
--type setter() :: fun((raw_name(), term(), hocon:config()) -> term()).
 -type loggerfunc() :: fun((atom(), map()) -> ok).
--type opts() :: #{ getter => getter()
-                 , setter => setter()
-                 , is_richmap => boolean()
+-type opts() :: #{ is_richmap => boolean()
                  , logger => loggerfunc()
                  , stack => [name()]
                  , atom_key => boolean()
@@ -102,7 +97,7 @@
 
 -optional_callbacks([translations/0, translation/1]).
 
--define(VIRTUAL_ROOT, '').
+-define(VIRTUAL_ROOT, "").
 -define(ERR(Code, Context), {Code, Context}).
 -define(ERRS(Code, Context), [?ERR(Code, Context)]).
 -define(VALIDATION_ERRS(Context), ?ERRS(validation_error, Context)).
@@ -200,10 +195,7 @@ check(Schema, Conf) ->
     check(Schema, Conf, #{}).
 
 check(Schema, Conf, Opts0) ->
-    Opts = maps:merge(#{getter => fun deep_get/2,
-                        setter => fun deep_put/4,
-                        atom_key => false
-                        }, Opts0),
+    Opts = maps:merge(#{atom_key => false}, Opts0),
     do_check(Schema, Conf, Opts).
 
 %% @doc Check plain-map input against schema.
@@ -215,9 +207,7 @@ check_plain(Schema, Conf) ->
     check_plain(Schema, Conf, #{}).
 
 check_plain(Schema, Conf, Opts0) ->
-    Opts = maps:merge(#{getter => fun plain_get/2,
-                        setter => fun plain_put/4,
-                        is_richmap => false,
+    Opts = maps:merge(#{is_richmap => false,
                         atom_key => false
                        }, Opts0),
     do_check(Schema, Conf, Opts).
@@ -250,9 +240,7 @@ map(Schema, Conf0, RootNames, Opts0) ->
                    false -> undefined;
                    Prefix -> Prefix
                end,
-    Opts = maps:merge(#{getter => fun deep_get/2,
-                        setter => fun deep_put/4,
-                        schema_mod => Schema,
+    Opts = maps:merge(#{schema_mod => Schema,
                         is_richmap => true,
                         env_namespace => EnvPrefix
                         }, Opts0),
@@ -279,7 +267,7 @@ str(B) when is_binary(B) -> binary_to_list(B);
 str(S) when is_list(S) -> S.
 
 bin(A) when is_atom(A) -> atom_to_binary(A, utf8);
-bin(S) when is_list(S) -> iolist_to_binary(S).
+bin(S) -> iolist_to_binary(S).
 
 do_map(Fields, Value, Opts) ->
     case unbox(Opts, Value) of
@@ -503,27 +491,46 @@ log(_Opts, Level, Msg) ->
 
 unbox(_, undefined) -> undefined;
 unbox(#{is_richmap := false}, Value) -> Value;
-unbox(#{is_richmap := true}, Boxed) ->
+unbox(#{is_richmap := true}, Boxed) -> unbox(Boxed).
+
+unbox(Boxed) ->
     case is_map(Boxed) andalso maps:is_key(value, Boxed) of
         true -> maps:get(value, Boxed);
         false -> error({bad_richmap, Boxed})
     end.
 
+safe_unbox(MaybeBox) ->
+    case maps:get(value, MaybeBox, undefined) of
+        undefined -> #{};
+        Value -> Value
+    end.
+
 boxit(#{is_richmap := false}, Value, _OldValue) -> Value;
-boxit(#{is_richmap := true}, Value, undefined) -> #{value => Value};
-boxit(#{is_richmap := true}, Value, Box) -> Box#{value => Value}.
+boxit(#{is_richmap := true}, Value, undefined) -> boxit(Value, ?EMPTY_BOX);
+boxit(#{is_richmap := true}, Value, Box) -> boxit(Value, Box).
 
-get_field(_Opts, ?VIRTUAL_ROOT, Value) ->
-    Value;
-get_field(_Opts, _Path, undefined) ->
-    undefined;
-get_field(#{getter := G}, Path, MaybeBoxedValue) ->
-    G(str(Path), MaybeBoxedValue).
+boxit(Value, Box) -> Box#{value => Value}.
 
-put_value(_Opts, _Field, undefined, Conf) ->
+get_field(_Opts, ?VIRTUAL_ROOT, Value) -> Value;
+get_field(#{is_richmap := true}, Path, Conf) -> deep_get(Path, Conf);
+get_field(#{is_richmap := false}, Path, Conf) -> plain_get(Path, Conf).
+
+%% put (maybe deep) value to map/richmap
+%% e.g. "path.to.my.value"
+put_value(_Opts, _Path, undefined, Conf) ->
     Conf;
-put_value(#{setter := F}, Field, V, Conf) ->
-    F(str(Field), V, Conf, value).
+put_value(#{is_richmap := true}, Path, V, Conf) ->
+    deep_put(Path, V, Conf);
+put_value(#{is_richmap := false}, Path, V, Conf) ->
+    plain_put(split(Path), V, Conf).
+
+split(Path) -> lists:flatten(do_split(str(Path))).
+
+do_split([]) -> [];
+do_split(Path) when ?IS_NON_EMPTY_STRING(Path) ->
+    [bin(I) || I <- string:tokens(Path, ".")];
+do_split([H | T]) ->
+    [do_split(H) | do_split(T)].
 
 get_override_env(Type, Opts) ->
     case field_schema(Type, override_env) of
@@ -603,48 +610,42 @@ validation_errs(Opts, Context) ->
 plain_value(Value, #{is_richmap := false}) -> Value;
 plain_value(Value, #{is_richmap := true}) -> richmap_to_map(Value).
 
-plain_get([], Conf) ->
+%% @doc get a child node from map.
+plain_get(Path, Conf) ->
+    do_plain_get(split(Path), Conf).
+
+do_plain_get([], Conf) ->
     %% value as-is
     Conf;
-plain_get([H | T], Conf) when is_list(H) ->
-    %% deep value, get by path
-    {NewH, NewT} = retokenize(H, T),
-    case is_map(Conf) of
-        true ->
-            Child = maps:get(NewH, Conf, undefined),
-            plain_get(NewT, Child);
-        false ->
-            undefined
-    end;
-plain_get(Path, Conf) when is_list(Path) ->
-    plain_get(string:tokens(Path, "."), Conf).
+do_plain_get([H | T], Conf) ->
+    Child = maps:get(H, Conf, undefined),
+    do_plain_get(T, Child).
 
 %% @doc get a child node from richmap.
 %% Key (first arg) can be "foo.bar.baz" or ["foo.bar", "baz"] or ["foo", "bar", "baz"].
 -spec deep_get(string() | [string()], hocon:config()) -> hocon:config() | undefined.
-deep_get([], Value) ->
+deep_get(Path, Conf) ->
+    do_deep_get(split(Path), Conf).
+
+do_deep_get([], Value) ->
     %% terminal value
     Value;
-deep_get([H | T], EnclosingMap) when is_list(H) ->
-    %% deep value, get by path
-    {NewH, NewT} = retokenize(H, T),
+do_deep_get([H | T], EnclosingMap) ->
     %% `value` must exist, must be a richmap otherwise
     %% a bug in in the caller
     Value = maps:get(value, EnclosingMap),
     case is_map(Value) of
         true ->
-            case maps:get(NewH, Value, undefined) of
+            case maps:get(H, Value, undefined) of
                 undefined ->
                     %% no such field
                     undefined;
                 FieldValue ->
-                    deep_get(NewT, FieldValue)
+                    do_deep_get(T, FieldValue)
             end;
         false ->
             undefined
-    end;
-deep_get(Str, RichMap) when is_list(Str) ->
-    deep_get(string:tokens(Str, "."), RichMap).
+    end.
 
 %% @doc Get a child node from richmap and
 %% lookup the value of the given tag in the child node
@@ -657,50 +658,27 @@ deep_get(Path, RichMap, Tag, Default) ->
         Map -> maps:get(Tag, Map)
     end.
 
--spec(plain_put(string() | [string()], term(), hocon:confing(), atom()) -> hocon:config()).
-plain_put(Path, Value, Conf, value) ->
-    do_plain_put(Path, Value, Conf).
+-spec plain_put([binary()], term(), hocon:confing()) -> hocon:config().
+plain_put([], Value, _Old) -> Value;
+plain_put([Name | Path], Value, Conf) when is_map(Conf) ->
+    FieldV = maps:get(Name, Conf, #{}),
+    NewFieldV = plain_put(Path, Value, FieldV),
+    Conf#{Name => NewFieldV}.
 
-do_plain_put(Path, Value, Conf) when ?IS_NON_EMPTY_STRING(Path) ->
-    do_plain_put(string:tokens(Path, "."), Value, Conf);
-do_plain_put(Path, Value, Conf) ->
-    hocon_util:do_deep_merge(Conf, make_map(Path, Value)).
+%% put unboxed value to the richmap box
+%% this function is called places where there is no boxing context
+%% so it has to accept unboxed value.
+deep_put(Path, Value, Conf) ->
+    put_rich(split(Path), Value, Conf).
 
-make_map([], Value) ->
-    Value;
-make_map([Tag], Value) ->
-    #{iolist_to_binary(Tag) => Value};
-make_map([Tag | Tags], Value) ->
-    Map = make_map(Tags, Value),
-    #{iolist_to_binary(Tag) => Map}.
-
-%% @doc put a value to the child richmap.
--spec(deep_put(string() | [string()], term(), hocon:config(), atom()) -> hocon:config()).
-deep_put([], Value, Conf, Param) ->
-    hocon_util:do_deep_merge(Conf, #{Param => Value});
-deep_put([H | _T] = L, Value, RichMap, Param) when is_list(H) ->
-    hocon_util:do_deep_merge(RichMap, #{value => nested_richmap(L, Value, Param)});
-deep_put(Str, Value, RichMap, Param) when is_list(Str) ->
-    deep_put(string:tokens(Str, "."), Value, RichMap, Param).
-
-nested_richmap([H], Value, Param) ->
-    case retokenize(H, []) of
-        {X, []} ->
-            #{iolist_to_binary(X) => #{Param => Value}};
-        {NewH, NewT} ->
-            #{iolist_to_binary(NewH) => #{value => nested_richmap(NewT, Value, Param)}}
-    end;
-nested_richmap([H | T], Value, Param) ->
-    {NewH, NewT} = retokenize(H, T),
-    #{iolist_to_binary(NewH) => #{value => nested_richmap(NewT, Value, Param)}}.
-
-retokenize(H, T) ->
-    case string:tokens(H, ".") of
-        [X] ->
-            {iolist_to_binary(X), T};
-        [Token | More] ->
-            {iolist_to_binary(Token), More ++ T}
-    end.
+put_rich([], Value, Box) ->
+    boxit(Value, Box);
+put_rich([Name | Path], Value, Box) ->
+    BoxV = safe_unbox(Box),
+    FieldV = maps:get(Name, BoxV, #{}),
+    NewFieldV = put_rich(Path, Value, FieldV),
+    NewBoxV = BoxV#{Name => NewFieldV},
+    boxit(NewBoxV, Box).
 
 %% @doc Convert richmap to plain-map.
 richmap_to_map(RichMap) when is_map(RichMap) ->
