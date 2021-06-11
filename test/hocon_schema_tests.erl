@@ -442,12 +442,22 @@ union_of_structs_test() ->
                        "m2" => [{m2, integer()}]
                       }
           },
-    Check = fun(Input) ->
-                    {ok, Map} = hocon:binary(Input),
-                    hocon_schema:check_plain(Sc, Map, #{atom_key => true})
-            end,
-    ?assertEqual(#{f1 => #{m1 => 1}}, Check("f1.m1=1")),
-    ?assertEqual(#{f1 => #{m2 => 2}}, Check("f1.m2=2")),
+    ?assertEqual(#{f1 => #{m1 => 1}}, check_return_atom_keys(Sc, "f1.m1=1")),
+    ?assertEqual(#{f1 => #{m2 => 2}}, check_return_atom_keys(Sc, "f1.m2=2")),
     ?assertThrow([{validation_error, #{reason := matched_no_union_member}}],
-                 Check("f1.m3=3")),
+                 check_return_atom_keys(Sc, "f1.m3=3")),
     ok.
+
+multiple_errors_test() ->
+    Sc = #{structs => [?VIRTUAL_ROOT],
+           fields => #{?VIRTUAL_ROOT => [{m1, integer()}, {m2, integer()}]}
+          },
+    ?assertThrow([{validation_error, #{path := "m1"}},
+                  {validation_error, #{path := "m2"}}],
+                 check_return_atom_keys(Sc, "m1=a,m2=b")),
+    ok.
+
+check_return_atom_keys(Sc, Input) ->
+    {ok, Map} = hocon:binary(Input),
+    hocon_schema:check_plain(Sc, Map, #{atom_key => true}).
+
