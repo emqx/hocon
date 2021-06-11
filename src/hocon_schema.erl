@@ -436,7 +436,7 @@ maybe_log(_Opts, _, _) ->
 
 unbox(_, undefined) -> undefined;
 unbox(#{is_richmap := false}, Value) -> Value;
-unbox(#{is_richmap := true}, Boxed) -> maps:get(value, Boxed).
+unbox(#{is_richmap := true}, Boxed) -> maps:get(value, Boxed, undefined).
 
 boxit(#{is_richmap := false}, Value, _OldValue) -> Value;
 boxit(#{is_richmap := true}, Value, undefined) -> #{value => Value};
@@ -556,7 +556,7 @@ deep_get([], Value) ->
 deep_get([H | T], EnclosingMap) when is_list(H) ->
     %% deep value, get by path
     {NewH, NewT} = retokenize(H, T),
-    Value = maps:get(value, EnclosingMap),
+    Value = maps:get(value, EnclosingMap, undefined),
     case is_map(Value) of
         true ->
             case maps:get(NewH, Value, undefined) of
