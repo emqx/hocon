@@ -238,14 +238,17 @@ atom_key_test() ->
     Sc = #{structs => [''],
            fields => [{val, binary()}]
           },
+    Conf = "val = a",
+    {ok, PlainMap} = hocon:binary(Conf, #{}),
+    {ok, RichMap} = hocon:binary(Conf, #{format => richmap}),
     ?assertEqual(#{<<"val">> => <<"a">>},
-                 hocon_schema:check_plain(Sc, #{<<"val">> => <<"a">>})),
+                 hocon_schema:check_plain(Sc, PlainMap)),
     ?assertEqual(#{val => <<"a">>},
-                 hocon_schema:check_plain(Sc, #{<<"val">> => <<"a">>}, #{atom_key => true})),
+                 hocon_schema:check_plain(Sc, PlainMap, #{atom_key => true})),
     ?assertEqual(#{<<"val">> => <<"a">>},
-                     hocon_schema:check(Sc, #{<<"val">> => <<"a">>})),
+                 hocon_schema:richmap_to_map(hocon_schema:check(Sc, RichMap))),
     ?assertEqual(#{val => <<"a">>},
-                 hocon_schema:check(Sc, #{<<"val">> => <<"a">>}, #{atom_key => true})).
+                 hocon_schema:richmap_to_map(hocon_schema:check(Sc, RichMap, #{atom_key => true}))).
 
 validator_test() ->
     Sc = #{structs => [''],
