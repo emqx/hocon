@@ -245,10 +245,15 @@ map(Schema, Conf, RootNames) ->
 -spec map(schema(), hocon:config(), [name()], opts()) ->
         {[proplists:property()], hocon:config()}.
 map(Schema, Conf0, RootNames, Opts0) ->
+    EnvPrefix= case os:getenv("HOCON_ENV_OVERRIDE_PREFIX") of
+                   false -> undefined;
+                   Prefix -> Prefix
+               end,
     Opts = maps:merge(#{getter => fun deep_get/2,
                         setter => fun deep_put/4,
                         schema_mod => Schema,
-                        is_richmap => true
+                        is_richmap => true,
+                        env_namespace => EnvPrefix
                         }, Opts0),
     Conf = apply_env(Conf0, Opts),
     F =
@@ -333,7 +338,7 @@ map_fields([{FieldName, FieldSchema} | Fields], Conf0, Acc, Opts) ->
 map_one_field(FieldType, FieldSchema, FieldValue, Opts) ->
     {Acc, NewValue} = try map_field(FieldType, FieldSchema, FieldValue, Opts)
                       catch C : E : St ->
-                                NewE = #{ stack => stack(Opts)
+                                NewE = #{ path => path(Opts)
                                         , bad_value => FieldValue
                                         , error => E
                                         },
@@ -377,7 +382,7 @@ map_field(?ARRAY(Type), _Schema, Value0, Opts) ->
             {[], undefined};
         false ->
             {[{error, ?ERRS(not_array,
-                            #{stack => stack(Opts),
+                            #{path => path(Opts),
                               value => Value0 %% Value0 because it has metadata (when richmap)
                              })}], Value0}
     end;
@@ -400,7 +405,7 @@ check_unkown_fields(Opts, SchemaFieldNames0, DataFieldNames) ->
         [] ->
             ok;
         UnknownFileds ->
-            {error, ?ERRS(unknown_fields, #{stack => stack(Opts),
+            {error, ?ERRS(unknown_fields, #{path => path(Opts),
                                             unkonwn=> UnknownFileds,
                                            expected => SchemaFieldNames})}
     end.
@@ -433,7 +438,7 @@ push_stack(#{stack := Stack} = X, New) ->
     X#{stack := [New | Stack]}.
 
 %% get type validation stack.
-stack(#{stack := Stack}) -> lists:reverse(Stack).
+path(#{stack := Stack}) -> string:join(lists:reverse(lists:map(fun str/1, Stack)), ".").
 
 do_map_union([], _TypeCheck, PerTypeResult) ->
     {error, ?ERRS(matched_no_union_member, #{mismatches => PerTypeResult})};
@@ -459,7 +464,7 @@ do_map_array(F, [Elem | Rest], Res, Index) ->
     end.
 
 resolve_field_value(Schema, FieldValue, Opts) ->
-    case get_override_env(Schema) of
+    case get_override_env(Schema, Opts) of
         undefined -> maybe_use_default(field_schema(Schema, default), FieldValue, Opts);
         EnvValue -> boxit(Opts, EnvValue, FieldValue)
     end.
@@ -469,23 +474,21 @@ maybe_use_default(undefined, Value, _Opt) -> Value;
 maybe_use_default(Default, undefined, Opts) -> boxit(Opts, Default, ?EMPTY_BOX);
 maybe_use_default(_, Value, _Opts) -> Value.
 
-apply_env(Conf, Opts) ->
-    case os:getenv("HOCON_ENV_OVERRIDE_PREFIX") of
-        false ->
-            Conf;
-        Prefix ->
-            AllEnvs = [string:split(string:prefix(KV, Prefix), "=")
-                || KV <- os:getenv(), string:prefix(KV, Prefix) =/= nomatch],
-            log(Opts, debug, #{all_envs => AllEnvs}),
-            apply_env(AllEnvs, Conf, Opts)
-    end.
+apply_env(Conf, #{env_namespace := undefined}) -> Conf;
+apply_env(Conf, #{env_namespace := Prefix} = Opts) ->
+    AllEnvs = [string:split(string:prefix(KV, Prefix), "=")
+              || KV <- os:getenv(), string:prefix(KV, Prefix) =/= nomatch],
+    apply_env(AllEnvs, Conf, Opts).
 
 apply_env([], Conf, _Opts) ->
     Conf;
 apply_env([[K, V] | More], Conf, Opts) ->
-    Field = string:join(string:replace(string:lowercase(K), "__", ".", all), ""),
-    log(Opts, debug, #{hocon_env_override_key => Field, hocon_env_override_value => V}),
-    apply_env(More, put_value(Opts, Field, V, Conf), Opts).
+    Path = string:join(string:replace(string:lowercase(K), "__", ".", all), ""),
+    log_env_override(Opts, K, Path, V),
+    apply_env(More, put_value(Opts, Path, V, Conf), Opts).
+
+log_env_override(Opts, Var, K, V) ->
+    log(Opts, info, #{hocon_env_var_name => Var, path => K, value => V}).
 
 log(#{logger := Logger}, Level, Msg) ->
     Logger(Level, Msg);
@@ -512,14 +515,17 @@ put_value(_Opts, _Field, undefined, Conf) ->
 put_value(#{setter := F}, Field, V, Conf) ->
     F(str(Field), V, Conf, value).
 
-get_override_env(Type) ->
-    case {os:getenv("HOCON_ENV_OVERRIDE_PREFIX"), field_schema(Type, override_env)} of
-        {false, _} -> undefined;
-        {_, undefined} -> undefined;
-        {Prefix, Key} ->
-            case os:getenv(Prefix ++ Key) of
-                false -> undefined;
-                V -> V
+get_override_env(Type, Opts) ->
+    case field_schema(Type, override_env) of
+        undefined ->
+            undefined;
+        Var ->
+            case os:getenv(str(Var)) of
+                false ->
+                    undefined;
+                V ->
+                    log_env_override(Opts, Var, path(Opts), V),
+                    V
             end
     end.
 
@@ -581,7 +587,7 @@ do_validate(Value, [H | T], Opts) ->
 validation_err(Opts, Reason, Value) ->
     [{error, ?ERRS(validation_error,
                    #{reason => Reason,
-                     stack => stack(Opts),
+                     path => path(Opts),
                      value => Value
                     })}].
 

@@ -187,7 +187,7 @@ env_test_() ->
     [ ?_assertEqual([{["app_foo", "setting"], "hi"}],
                     F("foo.setting=hello", [{"EMQX_FOO__SETTING", "hi"}]))
     , ?_assertEqual([{["app_foo", "setting"], "yo"}],
-                    F("foo.setting=hello", [{"EMQX_MY_OVERRIDE", "yo"}]))
+                    F("foo.setting=hello", [{"MY_OVERRIDE", "yo"}]))
     , ?_assertEqual([{["app_foo", "numbers"], [4, 5, 6]}],
                     F("foo.numbers=[1,2,3]", [{"EMQX_FOO__NUMBERS", "[4,5,6]"}]))
     , ?_assertEqual([{["app_foo", "greet"], "hello"}],
@@ -300,7 +300,7 @@ nullable_test() ->
     ?assertEqual(#{<<"f2">> => "string", <<"f3">> => 0},
                  hocon_schema:check_plain(Sc, #{<<"f2">> => <<"string">>},
                                           #{nullable => true})),
-    ?assertThrow([{validation_error, #{reason := not_nullable, stack := [f1]}}],
+    ?assertThrow([{validation_error, #{reason := not_nullable, path := "f1"}}],
                  hocon_schema:check_plain(Sc, #{<<"f2">> => <<"string">>},
                                           #{nullable => false})),
     ok.
