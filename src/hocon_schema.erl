@@ -247,6 +247,7 @@ map(Schema, Conf0, RootNames, Opts0) ->
     Conf = apply_env(Conf0, Opts),
     F =
         fun (RootName, {MappedAcc, ConfAcc}) ->
+                ok = assert_no_dot(Schema, RootName),
                 RootValue = get_field(Opts, RootName, ConfAcc),
                 {Mapped, NewRootValue} =
                     do_map(fields(Schema, RootName), RootValue,
@@ -261,6 +262,23 @@ map(Schema, Conf0, RootNames, Opts0) ->
     {Mapped, NewConf} = lists:foldl(F, {[], Conf}, RootNames),
     ok = assert_no_error(Mapped),
     {Mapped, NewConf}.
+
+%% Assert no dot in root struct name.
+%% This is because the dot will cause root name to be splited,
+%% which in turn makes the implimentation complicated.
+%%
+%% e.g. if a root name is 'a.b.c', the schema is only defined
+%% for data below `c` level.
+%% `a` and `b` are implicitly single-filed structs.
+%%
+%% In this case if a non map value is assigned, such as `a.b=1`,
+%% the check code will crash rather than reporting a useful error reason.
+assert_no_dot(_, ?VIRTUAL_ROOT) -> ok;
+assert_no_dot(Schema, RootName) ->
+    case split(RootName) of
+        [_] -> ok;
+        _ -> error({bad_root_name, Schema, RootName})
+    end.
 
 str(A) when is_atom(A) -> atom_to_list(A);
 str(B) when is_binary(B) -> binary_to_list(B);

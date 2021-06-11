@@ -86,7 +86,7 @@ mapping_test_() ->
     , ?_assertThrow([{validation_error, _}], F("foo.setting=hi, foo.endpoint=hi"))
     , ?_assertThrow([{validation_error, _}], F("foo.greet=foo"))
     , ?_assertEqual([{["app_foo", "numbers"], [1, 2, 3]}], F("foo.numbers=[1,2,3]"))
-    , ?_assertEqual([{["a", "b", "some_int"], 1}], F("a.b.some_int=1"))
+    , ?_assertEqual([{["a_b", "some_int"], 1}], F("a_b.some_int=1"))
     , ?_assertEqual([], F("foo.ref_x_y={some_int = 1}"))
     , ?_assertThrow([{validation_error, _}], F("foo.ref_x_y={some_int = aaa}"))
     , ?_assertEqual([],
@@ -427,3 +427,10 @@ converter_test() ->
     ?assertEqual(#{<<"f1">> => 1}, hocon_schema:check_plain(Sc, Input)),
     ?assertThrow([{validation_error, #{reason := converter_crashed}}],
                  hocon_schema:check_plain(Sc, BadIn)).
+
+no_dot_in_root_name_test() ->
+    Sc = #{structs => ["a.b"],
+           fields => [{f1, hoconsc:t(integer())}]
+          },
+    ?assertError({bad_root_name, _, "a.b"},
+                hocon_schema:check(Sc, #{<<"a">> => 1})).
