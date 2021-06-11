@@ -476,7 +476,7 @@ apply_env(Conf, Opts) ->
         Prefix ->
             AllEnvs = [string:split(string:prefix(KV, Prefix), "=")
                 || KV <- os:getenv(), string:prefix(KV, Prefix) =/= nomatch],
-            maybe_log(Opts, debug, #{all_envs => AllEnvs}),
+            log(Opts, debug, #{all_envs => AllEnvs}),
             apply_env(AllEnvs, Conf, Opts)
     end.
 
@@ -484,13 +484,13 @@ apply_env([], Conf, _Opts) ->
     Conf;
 apply_env([[K, V] | More], Conf, Opts) ->
     Field = string:join(string:replace(string:lowercase(K), "__", ".", all), ""),
-    maybe_log(Opts, debug, #{hocon_env_override_key => Field, hocon_env_override_value => V}),
+    log(Opts, debug, #{hocon_env_override_key => Field, hocon_env_override_value => V}),
     apply_env(More, put_value(Opts, Field, V, Conf), Opts).
 
-maybe_log(#{logger := Logger}, Level, Msg) ->
+log(#{logger := Logger}, Level, Msg) ->
     Logger(Level, Msg);
-maybe_log(_Opts, _, _) ->
-    ok.
+log(_Opts, Level, Msg) ->
+    logger:log(Level, Msg).
 
 unbox(_, undefined) -> undefined;
 unbox(#{is_richmap := false}, Value) -> Value;
@@ -518,7 +518,6 @@ get_override_env(Type) ->
         {_, undefined} -> undefined;
         {Prefix, Key} ->
             case os:getenv(Prefix ++ Key) of
-                "" -> undefined;
                 false -> undefined;
                 V -> V
             end
@@ -597,13 +596,8 @@ plain_get([H | T], Conf) when is_list(H) ->
     {NewH, NewT} = retokenize(H, T),
     case is_map(Conf) of
         true ->
-            case maps:get(NewH, Conf, undefined) of
-                undefined ->
-                    %% no such field
-                    undefined;
-                ChildConf ->
-                    plain_get(NewT, ChildConf)
-            end;
+            Child = maps:get(NewH, Conf, undefined),
+            plain_get(NewT, Child);
         false ->
             undefined
     end;
@@ -650,10 +644,7 @@ deep_get(Path, RichMap, Tag, Default) ->
 
 -spec(plain_put(string() | [string()], term(), hocon:confing(), atom()) -> hocon:config()).
 plain_put(Path, Value, Conf, value) ->
-    do_plain_put(Path, Value, Conf);
-plain_put(_Path, _Value, Conf, Param) when Param =/= value ->
-    %% plain map does not have the ability to hold metadata
-    Conf.
+    do_plain_put(Path, Value, Conf).
 
 do_plain_put(Path, Value, Conf) when ?IS_NON_EMPTY_STRING(Path) ->
     do_plain_put(string:tokens(Path, "."), Value, Conf);

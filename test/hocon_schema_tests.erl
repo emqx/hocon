@@ -52,11 +52,13 @@ env_overide_test() ->
       fun() ->
               Conf = "{\"bar.field1\": \"foo\"}",
               Res = check(Conf),
-              ?assertEqual(Res, check_plain(Conf)),
+              ?assertEqual(Res, check_plain(Conf, #{logger => fun(_, _) -> ok end})),
               ?assertEqual(#{<<"bar">> => #{ <<"union_with_default">> => #{<<"val">> => 111},
-                                             <<"field1">> => "foo"}}, Res)
+                                             <<"field1">> => ""}}, Res)
       end, [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"},
-            {"EMQX_BAR__UNION_WITH_DEFAULT__VAL", "111"}]).
+            {"EMQX_BAR__UNION_WITH_DEFAULT__VAL", "111"},
+            {"EMQX_bar__field1", ""}
+           ]).
 
 check(Str) ->
     Opts = #{format => richmap},
@@ -65,7 +67,9 @@ check(Str) ->
     hocon_schema:richmap_to_map(RichMap2).
 
 check_plain(Str) ->
-    Opts = #{},
+    check_plain(Str, #{}) .
+
+check_plain(Str, Opts) ->
     {ok, Map} = hocon:binary(Str, Opts),
     hocon_schema:check_plain(?MODULE, Map).
 
