@@ -236,6 +236,19 @@ real_enum_test() ->
                                        value := {"badvalue"}}}],
                  hocon_schema:check_plain(Sc, #{<<"val">> => {"badvalue"}})).
 
+atom_key_test() ->
+    Sc = #{structs => [''],
+           fields => [{val, binary()}]
+          },
+    ?assertEqual(#{<<"val">> => <<"a">>},
+                 hocon_schema:check_plain(Sc, #{<<"val">> => <<"a">>})),
+    ?assertEqual(#{val => <<"a">>},
+                 hocon_schema:check_plain(Sc, #{<<"val">> => <<"a">>}, #{atom_key => true})),
+    ?assertEqual(#{<<"val">> => <<"a">>},
+                     hocon_schema:check(Sc, #{<<"val">> => <<"a">>})),
+    ?assertEqual(#{val => <<"a">>},
+                 hocon_schema:check(Sc, #{<<"val">> => <<"a">>}, #{atom_key => true})).
+
 validator_test() ->
     Sc = #{structs => [''],
            fields => [{f1, hoconsc:t(integer(), #{validator => fun(X) -> X < 10 end})}]
@@ -252,3 +265,4 @@ validator_crash_test() ->
     ?assertThrow([{validation_error, #{reason := #{exception := {error, always}}}}],
                  hocon_schema:check_plain(Sc, #{<<"f1">> => 11})),
     ok.
+
