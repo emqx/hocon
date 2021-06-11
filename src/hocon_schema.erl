@@ -473,7 +473,7 @@ do_map_array(F, [Elem | Rest], Res, Index) ->
 add_index_to_error_context([], _) -> [];
 add_index_to_error_context([{validation_error, Context} | More], Index) ->
     [{validation_error, Context#{array_index => Index}}
-     |add_index_to_error_context(More, Index)].
+     | add_index_to_error_context(More, Index)].
 
 resolve_field_value(Schema, FieldValue, Opts) ->
     case get_override_env(Schema, Opts) of

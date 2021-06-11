@@ -268,7 +268,7 @@ atom_key_test() ->
 
 atom_key_array_test() ->
    Sc = #{structs => [?VIRTUAL_ROOT],
-           fields => #{?VIRTUAL_ROOT => [{arr,hoconsc:array("sub")}],
+           fields => #{?VIRTUAL_ROOT => [{arr, hoconsc:array("sub")}],
                        "sub" => [{id, integer()}]
                       }
           },
@@ -311,7 +311,7 @@ nullable_test() ->
 
 bad_root_test() ->
     Sc = #{structs => ["ab"],
-           fields => #{"ab" => [{f1, hoconsc:t(integer(),#{default => 888})}]}
+           fields => #{"ab" => [{f1, hoconsc:t(integer(), #{default => 888})}]}
           },
     Input1 = "ab=1",
     {ok, Data1} = hocon:binary(Input1),
@@ -434,3 +434,20 @@ no_dot_in_root_name_test() ->
           },
     ?assertError({bad_root_name, _, "a.b"},
                 hocon_schema:check(Sc, #{<<"a">> => 1})).
+
+union_of_structs_test() ->
+    Sc = #{structs => [?VIRTUAL_ROOT],
+           fields => #{?VIRTUAL_ROOT => [{f1, hoconsc:union(["m1", "m2"])}],
+                       "m1" => [{m1, integer()}],
+                       "m2" => [{m2, integer()}]
+                      }
+          },
+    Check = fun(Input) ->
+                    {ok, Map} = hocon:binary(Input),
+                    hocon_schema:check_plain(Sc, Map, #{atom_key => true})
+            end,
+    ?assertEqual(#{f1 => #{m1 => 1}}, Check("f1.m1=1")),
+    ?assertEqual(#{f1 => #{m2 => 2}}, Check("f1.m2=2")),
+    ?assertThrow([{validation_error, #{reason := matched_no_union_member}}],
+                 Check("f1.m3=3")),
+    ok.
