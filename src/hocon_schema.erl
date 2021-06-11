@@ -319,9 +319,9 @@ do_map2([{[$$ | _] = _Wildcard, Schema}], Conf, Opts) ->
 do_map2(Fields, Value, Opts) ->
     SchemaFieldNames = [N || {N, _Schema} <- Fields],
     DataFieldNames = maps_keys(unbox(Opts, Value)),
-    case check_unkown_fields(Opts, SchemaFieldNames, DataFieldNames) of
+    case check_unknown_fields(Opts, SchemaFieldNames, DataFieldNames) of
         ok -> map_fields(Fields, Value, [], Opts);
-        Errs -> {Errs, Value}
+        Errs -> {[{error, Errs}], Value}
     end.
 
 map_fields([], Conf, Mapped, _Opts) ->
@@ -399,15 +399,15 @@ map_field(Type, Schema, Value0, Opts) ->
 maps_keys(undefined) -> [];
 maps_keys(Map) -> maps:keys(Map).
 
-check_unkown_fields(Opts, SchemaFieldNames0, DataFieldNames) ->
+check_unknown_fields(Opts, SchemaFieldNames0, DataFieldNames) ->
     SchemaFieldNames = lists:map(fun bin/1, SchemaFieldNames0),
     case DataFieldNames -- SchemaFieldNames of
         [] ->
             ok;
         UnknownFileds ->
-            {error, ?ERRS(unknown_fields, #{path => path(Opts),
-                                            unkonwn=> UnknownFileds,
-                                           expected => SchemaFieldNames})}
+            ?ERRS(unknown_fields, #{path => path(Opts),
+                                    unknown=> UnknownFileds,
+                                    expected => SchemaFieldNames})
     end.
 
 is_nullable(Opts, Schema) ->

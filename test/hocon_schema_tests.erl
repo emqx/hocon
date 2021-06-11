@@ -362,3 +362,13 @@ validation_error_if_not_nullable_test() ->
     Data = #{},
     ?assertThrow([{validation_error, #{reason := not_nullable}}],
                  hocon_schema:check_plain(Sc, Data, #{nullable => false})).
+
+unknown_fields_test() ->
+    Conf = "person.id.num=123,person.name=mike",
+    {ok, M} = hocon:binary(Conf, #{format => richmap}),
+    ?assertThrow([{unknown_fields, #{unknown := [<<"name">>]}}],
+                 begin
+                     {Mapped, _} = hocon_schema:map(demo_schema, M),
+                     Mapped
+                 end).
+
