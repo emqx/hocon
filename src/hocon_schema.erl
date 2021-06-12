@@ -27,7 +27,7 @@
 -export([translate/3]).
 -export([generate/2]).
 -export([check/2, check/3, check_plain/2, check_plain/3]).
--export([deep_get/2, deep_get/3, deep_get/4, deep_put/4, plain_put/4, plain_get/2]).
+-export([deep_get/2, deep_get/3, deep_get/4, deep_put/3]).
 -export([richmap_to_map/1]).
 
 -include("hoconsc.hrl").
@@ -63,6 +63,9 @@
                          , converter => function()
                          , validator => function()
                          , override_env => string()
+                           %% set true if not to allow missing or `undefined`
+                           %% NOTE: has no point setting it to `true` if field has a default value
+                         , nullable => boolean() % default = true
                          }.
 
 -type field() :: {name(), typefunc() | field_schema()}.
@@ -75,16 +78,16 @@
                    }.
 
 -define(IS_NON_EMPTY_STRING(X), (is_list(X) andalso X =/= [] andalso is_integer(hd(X)))).
--type raw_name() :: string() | [string()].
--type getter() :: fun((raw_name(), hocon:config()) -> term()).
--type setter() :: fun((raw_name(), term(), hocon:config()) -> term()).
 -type loggerfunc() :: fun((atom(), map()) -> ok).
--type opts() :: #{ getter => getter()
-                 , setter => setter()
-                 , is_richmap => boolean()
+-type opts() :: #{ is_richmap => boolean()
                  , logger => loggerfunc()
                  , stack => [name()]
                  , atom_key => boolean()
+                   %% By default allow all fields to be undefined.
+                   %% if `nullable` is set to `false`
+                   %% map or check APIs fail with validation_error.
+                   %% NOTE: this option serves as default value for field's `nullable` spec
+                 , nullable => boolean() %% default: true for map, false for check
                  }.
 
 -callback structs() -> [name()].
@@ -94,9 +97,13 @@
 
 -optional_callbacks([translations/0, translation/1]).
 
--define(VIRTUAL_ROOT, '').
+-define(VIRTUAL_ROOT, "").
 -define(ERR(Code, Context), {Code, Context}).
 -define(ERRS(Code, Context), [?ERR(Code, Context)]).
+-define(VALIDATION_ERRS(Context), ?ERRS(validation_error, Context)).
+-define(TRANSLATION_ERRS(Context), ?ERRS(translation_error, Context)).
+
+-define(DEFAULT_NULLABLE, true).
 
 -define(EMPTY_BOX, #{}).
 
@@ -107,7 +114,7 @@ structs(#{structs := Names}) -> Names.
 
 -spec fields(schema(), name()) -> [field()].
 fields(Mod, Name) when is_atom(Mod) -> Mod:fields(Name);
-fields(#{fields := Fields}, ?VIRTUAL_ROOT) -> Fields;
+fields(#{fields := Fields}, ?VIRTUAL_ROOT) when is_list(Fields) -> Fields;
 fields(#{fields := Fields}, Name) -> maps:get(Name, Fields).
 
 -spec translations(schema()) -> [name()].
@@ -116,15 +123,11 @@ translations(Mod) when is_atom(Mod) ->
         false -> [];
         true -> Mod:translations()
     end;
-translations(#{translations := Trs}) -> Trs.
+translations(#{translations := Trs}) -> maps:keys(Trs).
 
 -spec translation(schema(), name()) -> [translation()].
-translation(Mod, Name) when is_atom(Mod) ->
-    case erlang:function_exported(Mod, translation, 1) of
-        false -> [];
-        true -> Mod:translation(Name)
-    end;
-translation(#{translation := Tr}, Name) -> Tr(Name).
+translation(Mod, Name) when is_atom(Mod) -> Mod:translation(Name);
+translation(#{translations := Trs}, Name) -> maps:get(Name, Trs).
 
 %% @doc generates application env from a parsed .conf and a schema module.
 %% For example, one can set the output values by
@@ -174,12 +177,12 @@ do_translate([{MappedField, Translator} | More], Namespace, Conf, Acc) ->
         Value ->
             do_translate(More, Namespace, Conf, [{string:tokens(MappedField0, "."), Value} | Acc])
     catch
-        _:Reason:St ->
-            Error = {error, ?ERRS(translation_error,
-                                  #{reason => Reason,
-                                    stacktrace => St,
-                                    field => MappedField0
-                                   })},
+        Exception : Reason : St ->
+            Error = {error, ?TRANSLATION_ERRS(#{reason => Reason,
+                                                stacktrace => St,
+                                                value_path => MappedField0,
+                                                exception => Exception
+                                               })},
             do_translate(More, Namespace, Conf, [Error | Acc])
     end.
 
@@ -192,10 +195,7 @@ check(Schema, Conf) ->
     check(Schema, Conf, #{}).
 
 check(Schema, Conf, Opts0) ->
-    Opts = maps:merge(#{getter => fun deep_get/2,
-                        setter => fun deep_put/4,
-                        atom_key => false
-                        }, Opts0),
+    Opts = maps:merge(#{atom_key => false}, Opts0),
     do_check(Schema, Conf, Opts).
 
 %% @doc Check plain-map input against schema.
@@ -207,25 +207,20 @@ check_plain(Schema, Conf) ->
     check_plain(Schema, Conf, #{}).
 
 check_plain(Schema, Conf, Opts0) ->
-    Opts = maps:merge(#{getter => fun plain_get/2,
-                        setter => fun plain_put/4,
-                        is_richmap => false,
+    Opts = maps:merge(#{is_richmap => false,
                         atom_key => false
                        }, Opts0),
     do_check(Schema, Conf, Opts).
 
-do_check(Schema, Conf, Opts) ->
-    case map(Schema, Conf, structs(Schema), Opts) of
-        {[], NewConf} ->
-            case maps:get(atom_key, Opts) of
-                true ->
-                    atom_key_map(NewConf);
-                false ->
-                    NewConf
-            end;
-        {_Mapped, _} ->
-            %% should call map/2 instead
-            error({schema_supports_mapping, Schema})
+do_check(Schema, Conf, Opts0) ->
+    Opts = maps:merge(#{nullable => false}, Opts0),
+    %% discard mappings for check APIs
+    {_DiscardMappings, NewConf} = map(Schema, Conf, structs(Schema), Opts),
+    case maps:get(atom_key, Opts) of
+        true ->
+            atom_key_map(NewConf);
+        false ->
+            NewConf
     end.
 
 -spec map(schema(), hocon:config()) -> {[proplists:property()], hocon:config()}.
@@ -241,17 +236,22 @@ map(Schema, Conf, RootNames) ->
 -spec map(schema(), hocon:config(), [name()], opts()) ->
         {[proplists:property()], hocon:config()}.
 map(Schema, Conf0, RootNames, Opts0) ->
-    Opts = maps:merge(#{getter => fun deep_get/2,
-                        setter => fun deep_put/4,
-                        schema_mod => Schema,
-                        is_richmap => true
+    EnvPrefix= case os:getenv("HOCON_ENV_OVERRIDE_PREFIX") of
+                   false -> undefined;
+                   Prefix -> Prefix
+               end,
+    Opts = maps:merge(#{schema_mod => Schema,
+                        is_richmap => true,
+                        env_namespace => EnvPrefix
                         }, Opts0),
     Conf = apply_env(Conf0, Opts),
     F =
         fun (RootName, {MappedAcc, ConfAcc}) ->
+                ok = assert_no_dot(Schema, RootName),
                 RootValue = get_field(Opts, RootName, ConfAcc),
                 {Mapped, NewRootValue} =
-                    do_map(fields(Schema, RootName), RootValue, [], Opts#{stack => [RootName]}),
+                    do_map(fields(Schema, RootName), RootValue,
+                           Opts#{stack => [RootName || RootName =/= ?VIRTUAL_ROOT]}),
                 NewConfAcc =
                     case NewRootValue of
                         undefined -> ConfAcc;
@@ -263,21 +263,73 @@ map(Schema, Conf0, RootNames, Opts0) ->
     ok = assert_no_error(Mapped),
     {Mapped, NewConf}.
 
+%% Assert no dot in root struct name.
+%% This is because the dot will cause root name to be splited,
+%% which in turn makes the implimentation complicated.
+%%
+%% e.g. if a root name is 'a.b.c', the schema is only defined
+%% for data below `c` level.
+%% `a` and `b` are implicitly single-filed structs.
+%%
+%% In this case if a non map value is assigned, such as `a.b=1`,
+%% the check code will crash rather than reporting a useful error reason.
+assert_no_dot(_, ?VIRTUAL_ROOT) -> ok;
+assert_no_dot(Schema, RootName) ->
+    case split(RootName) of
+        [_] -> ok;
+        _ -> error({bad_root_name, Schema, RootName})
+    end.
+
 str(A) when is_atom(A) -> atom_to_list(A);
 str(B) when is_binary(B) -> binary_to_list(B);
 str(S) when is_list(S) -> S.
 
-do_map([{[$$ | _] = _Wildcard, _Schema}], undefined, Acc, _Opts) ->
-    {Acc, undefined};
-do_map([{[$$ | _] = _Wildcard, Schema}], Conf, Acc, Opts) ->
-    %% wildcard, this 'virtual' boxing only exists in schema but not in data
-    Keys = maps:keys(unbox(Opts, Conf)),
+bin(A) when is_atom(A) -> atom_to_binary(A, utf8);
+bin(S) -> iolist_to_binary(S).
+
+do_map(Fields, Value, Opts) ->
+    case unbox(Opts, Value) of
+        undefined ->
+            case maps:get(nullable, Opts, ?DEFAULT_NULLABLE) of
+                true -> do_map2(Fields, boxit(Opts, undefined, ?EMPTY_BOX), Opts);
+                false -> {validation_errs(Opts, not_nullable, undefined), undefined}
+            end;
+        V when is_map(V) ->
+            do_map2(Fields, Value, Opts);
+        _ ->
+            {validation_errs(Opts, bad_value_for_struct, Value), Value}
+    end.
+
+%% Conf must be a map from here on
+do_map2([{[$$ | _] = _Wildcard, Schema}], Conf, Opts) ->
+    %% wildcard: support dynamic filed names.
+    %% e.g. in this config:
+    %%     #{config => #{internal => #{val => 1},
+    %%                   external => #{val => 2}}
+    %% `foo` and `bar` share the same schema, which is_map
+    %%     [{"val", #{type => integer()}}]
+    %%
+    %% If there is no wildcard, the enclosing schema should be:
+    %%     [{"internal", #{type => "val"}}
+    %%      {"external", #{type => "val"}}]
+    %%
+    %% This will not allow us to add more fields without changing
+    %% the schema (source code). So, wildcard is for the rescue:
+    %% The enclosing field name can be defined with a leading $
+    %% e.g.
+    %%     [{"$name", #{type => "val"}}].
+    Keys = maps_keys(unbox(Opts, Conf)),
     FieldNames = [str(K) || K <- Keys],
     % All objects in this map should share the same schema.
     Fields = [{FieldName, Schema} || FieldName <- FieldNames],
-    map_fields(Fields, Conf, Acc, Opts);
-do_map(Fields, Conf, Acc, Opts) ->
-    map_fields(Fields, Conf, Acc, Opts).
+    do_map(Fields, Conf, Opts); %% start over
+do_map2(Fields, Value, Opts) ->
+    SchemaFieldNames = [N || {N, _Schema} <- Fields],
+    DataFieldNames = maps_keys(unbox(Opts, Value)),
+    case check_unknown_fields(Opts, SchemaFieldNames, DataFieldNames) of
+        ok -> map_fields(Fields, Value, [], Opts);
+        Errors -> {Errors, Value}
+    end.
 
 map_fields([], Conf, Mapped, _Opts) ->
     {Mapped, Conf};
@@ -291,14 +343,7 @@ map_fields([{FieldName, FieldSchema} | Fields], Conf0, Acc, Opts) ->
     map_fields(Fields, Conf, FAcc ++ Acc, Opts).
 
 map_one_field(FieldType, FieldSchema, FieldValue, Opts) ->
-    {Acc, NewValue} = try map_field(FieldType, FieldSchema, FieldValue, Opts)
-                      catch C : E : St ->
-                                NewE = #{ stack => stack(Opts)
-                                        , bad_value => FieldValue
-                                        , error => E
-                                        },
-                                erlang:raise(C, NewE, St)
-                      end,
+    {Acc, NewValue} = map_field(FieldType, FieldSchema, FieldValue, Opts),
     case find_errors(Acc) of
         ok ->
             Mapped = maybe_mapping(field_schema(FieldSchema, mapping),
@@ -311,44 +356,71 @@ map_one_field(FieldType, FieldSchema, FieldValue, Opts) ->
 map_field(?UNION(Types), Schema, Value, Opts) ->
     %% union is not a boxed value
     F = fun(Type) -> map_field(Type, Schema, Value, Opts) end,
-    case do_map_union(Types, F, #{}) of
+    case do_map_union(Types, F, #{}, Opts) of
         {ok, {Mapped, NewValue}} -> {Mapped, NewValue};
-        {error, Reasons} -> {[{error, Reasons}], Value}
+        Error -> {Error, Value}
     end;
 map_field(Ref, _Schema, Value,
           #{schema_mod := SchemaModule} = Opts) when is_list(Ref) ->
     Fields = fields(SchemaModule, Ref),
-    do_map(Fields, Value, [], Opts);
-map_field(?ARRAY(Type), Schema, Value0, Opts) ->
+    do_map(Fields, Value, Opts);
+map_field(?ARRAY(Type), _Schema, Value0, Opts) ->
     %% array needs an unbox
     Array = unbox(Opts, Value0),
-    F= fun(Elem) -> map_field(Type, Schema, Elem, Opts) end,
+    F= fun(Elem) -> map_field(Type, Type, Elem, Opts) end,
     case is_list(Array) of
         true ->
-            case do_map_array(F, Array) of
-                {ok, {Mapped, NewArray}} ->
+            case do_map_array(F, Array, [], 1) of
+                {ok, NewArray} ->
                     true = is_list(NewArray), %% assert
                     %% and we need to box it back
-                    {Mapped, boxit(Opts, Array, Value0)};
+                    {[], boxit(Opts, NewArray, Value0)};
                 {error, Reasons} ->
                     {[{error, Reasons}], Value0}
             end;
         false when Array =:= undefined ->
             {[], undefined};
         false ->
-            {[{error, ?ERRS(not_array,
-                            #{stack => stack(Opts),
-                              value => Value0 %% Value0 because it has metadata (when richmap)
-                             })}], Value0}
+            {validation_errs(Opts, not_array, Value0), Value0}
     end;
 map_field(Type, Schema, Value0, Opts) ->
     %% primitive type
     Value = unbox(Opts, Value0),
     PlainValue = plain_value(Value, Opts),
-    ConvertedValue = apply_converter(Schema, PlainValue),
-    Validators = add_default_validator(field_schema(Schema, validator), Type),
-    ValidationResult = validate(ConvertedValue, Validators, Opts),
-    {ValidationResult, boxit(Opts, ConvertedValue, Value0)}.
+    try apply_converter(Schema, PlainValue) of
+        ConvertedValue ->
+            IsNullable = is_nullable(Opts, Schema),
+            Validators = add_default_validator(field_schema(Schema, validator), Type),
+            ValidationResult = validate(ConvertedValue, IsNullable, Validators, Opts),
+            {ValidationResult, boxit(Opts, ConvertedValue, Value0)}
+    catch
+        C : E : St ->
+            {validation_errs(Opts, #{reason => converter_crashed,
+                                     exception => {C, E},
+                                     stacktrace => St
+                                     }), Value0}
+    end.
+
+maps_keys(undefined) -> [];
+maps_keys(Map) -> maps:keys(Map).
+
+check_unknown_fields(Opts, SchemaFieldNames0, DataFieldNames) ->
+    SchemaFieldNames = lists:map(fun bin/1, SchemaFieldNames0),
+    case DataFieldNames -- SchemaFieldNames of
+        [] ->
+            ok;
+        UnknownFileds ->
+            validation_errs(Opts, #{reason => unknown_fields,
+                                    path => path(Opts),
+                                    unknown=> UnknownFileds,
+                                    expected => SchemaFieldNames})
+    end.
+
+is_nullable(Opts, Schema) ->
+    case field_schema(Schema, nullable) of
+        undefined -> maps:get(nullable, Opts, ?DEFAULT_NULLABLE);
+        Bool when is_boolean(Bool) -> Bool
+    end.
 
 field_schema(Type, SchemaKey) when ?IS_TYPEREFL(Type) ->
     field_schema(hoconsc:t(Type), SchemaKey);
@@ -372,36 +444,39 @@ push_stack(#{stack := Stack} = X, New) ->
     X#{stack := [New | Stack]}.
 
 %% get type validation stack.
-stack(#{stack := Stack}) -> lists:reverse(Stack).
+path(#{stack := Stack}) -> string:join(lists:reverse(lists:map(fun str/1, Stack)), ".").
 
-do_map_union([], _TypeCheck, PerTypeResult) ->
-    {error, ?ERRS(matched_no_union_member, #{mismatches => PerTypeResult})};
-do_map_union([Type | Types], TypeCheck, PerTypeResult) ->
+do_map_union([], _TypeCheck, PerTypeResult, Opts) ->
+    validation_errs(Opts, #{reason => matched_no_union_member,
+                            mismatches => PerTypeResult});
+do_map_union([Type | Types], TypeCheck, PerTypeResult, Opts) ->
     {Mapped, Value} = TypeCheck(Type),
     case find_errors(Mapped) of
         ok ->
             {ok, {Mapped, Value}};
         {error, Reasons} ->
-            do_map_union(Types, TypeCheck, PerTypeResult#{Type => Reasons})
+            do_map_union(Types, TypeCheck, PerTypeResult#{Type => Reasons}, Opts)
     end.
 
-do_map_array(F, Array) when is_list(Array) ->
-    {Mapped, NewArray} = do_map_array2(F, Array, _Mapped = [], _ResElems = []),
-    case find_errors(Mapped) of
-        ok ->
-            {ok, {Mapped, NewArray}};
-        {error, Reasons} ->
-            {error, Reasons}
-    end.
-
-do_map_array2(_F, [], Mapped, Elems) ->
-    {Mapped, lists:reverse(Elems)};
-do_map_array2(F, [Elem | Rest], Mapped0, Res) ->
+do_map_array(_F, [], Elems, _Index) ->
+    {ok, lists:reverse(Elems)};
+do_map_array(F, [Elem | Rest], Res, Index) ->
     {Mapped, NewElem} = F(Elem),
-    do_map_array2(F, Rest, Mapped ++ Mapped0, [NewElem | Res]).
+    %% Mapped is only used to collect errors of array element checks,
+    %% as it is impossible to apply mappings for array elements
+    %% if there is such a need, use wildcard instead
+    case find_errors(Mapped) of
+        ok -> do_map_array(F, Rest, [NewElem | Res], Index + 1);
+        {error, Reasons} -> {error, add_index_to_error_context(Reasons, Index)}
+    end.
+
+add_index_to_error_context([], _) -> [];
+add_index_to_error_context([{validation_error, Context} | More], Index) ->
+    [{validation_error, Context#{array_index => Index}}
+     | add_index_to_error_context(More, Index)].
 
 resolve_field_value(Schema, FieldValue, Opts) ->
-    case get_override_env(Schema) of
+    case get_override_env(Schema, Opts) of
         undefined -> maybe_use_default(field_schema(Schema, default), FieldValue, Opts);
         EnvValue -> boxit(Opts, EnvValue, FieldValue)
     end.
@@ -411,58 +486,81 @@ maybe_use_default(undefined, Value, _Opt) -> Value;
 maybe_use_default(Default, undefined, Opts) -> boxit(Opts, Default, ?EMPTY_BOX);
 maybe_use_default(_, Value, _Opts) -> Value.
 
-apply_env(Conf, Opts) ->
-    case os:getenv("HOCON_ENV_OVERRIDE_PREFIX") of
-        false ->
-            Conf;
-        Prefix ->
-            AllEnvs = [string:split(string:prefix(KV, Prefix), "=")
-                || KV <- os:getenv(), string:prefix(KV, Prefix) =/= nomatch],
-            maybe_log(Opts, debug, #{all_envs => AllEnvs}),
-            apply_env(AllEnvs, Conf, Opts)
-    end.
+apply_env(Conf, #{env_namespace := undefined}) -> Conf;
+apply_env(Conf, #{env_namespace := Prefix} = Opts) ->
+    AllEnvs = [string:split(string:prefix(KV, Prefix), "=")
+              || KV <- os:getenv(), string:prefix(KV, Prefix) =/= nomatch],
+    apply_env(AllEnvs, Conf, Opts).
 
 apply_env([], Conf, _Opts) ->
     Conf;
 apply_env([[K, V] | More], Conf, Opts) ->
-    Field = string:join(string:replace(string:lowercase(K), "__", ".", all), ""),
-    maybe_log(Opts, debug, #{hocon_env_override_key => Field, hocon_env_override_value => V}),
-    apply_env(More, put_value(Opts, Field, V, Conf), Opts).
+    Path = string:join(string:replace(string:lowercase(K), "__", ".", all), ""),
+    log_env_override(Opts, K, Path, V),
+    apply_env(More, put_value(Opts, Path, V, Conf), Opts).
 
-maybe_log(#{logger := Logger}, Level, Msg) ->
+log_env_override(Opts, Var, K, V) ->
+    log(Opts, info, #{hocon_env_var_name => Var, path => K, value => V}).
+
+log(#{logger := Logger}, Level, Msg) ->
     Logger(Level, Msg);
-maybe_log(_Opts, _, _) ->
-    ok.
+log(_Opts, Level, Msg) ->
+    logger:log(Level, Msg).
 
 unbox(_, undefined) -> undefined;
 unbox(#{is_richmap := false}, Value) -> Value;
-unbox(#{is_richmap := true}, Boxed) -> maps:get(value, Boxed, undefined).
+unbox(#{is_richmap := true}, Boxed) -> unbox(Boxed).
+
+unbox(Boxed) ->
+    case is_map(Boxed) andalso maps:is_key(value, Boxed) of
+        true -> maps:get(value, Boxed);
+        false -> error({bad_richmap, Boxed})
+    end.
+
+safe_unbox(MaybeBox) ->
+    case maps:get(value, MaybeBox, undefined) of
+        undefined -> #{};
+        Value -> Value
+    end.
 
 boxit(#{is_richmap := false}, Value, _OldValue) -> Value;
-boxit(#{is_richmap := true}, Value, undefined) -> #{value => Value};
-boxit(#{is_richmap := true}, Value, Box) -> Box#{value => Value}.
+boxit(#{is_richmap := true}, Value, undefined) -> boxit(Value, ?EMPTY_BOX);
+boxit(#{is_richmap := true}, Value, Box) -> boxit(Value, Box).
 
-get_field(_Opts, ?VIRTUAL_ROOT, Value) ->
-    Value;
-get_field(_Opts, _Path, undefined) ->
-    undefined;
-get_field(#{getter := G}, Path, MaybeBoxedValue) ->
-    G(str(Path), MaybeBoxedValue).
+boxit(Value, Box) -> Box#{value => Value}.
 
-put_value(_Opts, _Field, undefined, Conf) ->
+get_field(_Opts, ?VIRTUAL_ROOT, Value) -> Value;
+get_field(#{is_richmap := true}, Path, Conf) -> deep_get(Path, Conf);
+get_field(#{is_richmap := false}, Path, Conf) -> plain_get(Path, Conf).
+
+%% put (maybe deep) value to map/richmap
+%% e.g. "path.to.my.value"
+put_value(_Opts, _Path, undefined, Conf) ->
     Conf;
-put_value(#{setter := F}, Field, V, Conf) ->
-    F(str(Field), V, Conf, value).
+put_value(#{is_richmap := true}, Path, V, Conf) ->
+    deep_put(Path, V, Conf);
+put_value(#{is_richmap := false}, Path, V, Conf) ->
+    plain_put(split(Path), V, Conf).
 
-get_override_env(Type) ->
-    case {os:getenv("HOCON_ENV_OVERRIDE_PREFIX"), field_schema(Type, override_env)} of
-        {false, _} -> undefined;
-        {_, undefined} -> undefined;
-        {Prefix, Key} ->
-            case os:getenv(Prefix ++ Key) of
-                "" -> undefined;
-                false -> undefined;
-                V -> V
+split(Path) -> lists:flatten(do_split(str(Path))).
+
+do_split([]) -> [];
+do_split(Path) when ?IS_NON_EMPTY_STRING(Path) ->
+    [bin(I) || I <- string:tokens(Path, ".")];
+do_split([H | T]) ->
+    [do_split(H) | do_split(T)].
+
+get_override_env(Type, Opts) ->
+    case field_schema(Type, override_env) of
+        undefined ->
+            undefined;
+        Var ->
+            case os:getenv(str(Var)) of
+                false ->
+                    undefined;
+                V ->
+                    log_env_override(Opts, Var, path(Opts), V),
+                    V
             end
     end.
 
@@ -497,80 +595,75 @@ check_enum_sybol(Value, Symbols) when is_atom(Value) ->
 check_enum_sybol(_Value, _Symbols) ->
     {error, unable_to_convert_to_enum_symbol}.
 
-validate(undefined, _Validators, _Opts) ->
+validate(undefined, true, _Validators, _Opts) ->
     []; % do not validate if no value is set
-validate(_Value, [], _Opts) ->
-    [];
-validate(Value, [H | T], Opts) ->
+validate(undefined, false, _Validators, Opts) ->
+    validation_errs(Opts, not_nullable, undefined);
+validate(Value, _, Validators, Opts) ->
+    do_validate(Value, Validators, Opts).
+
+%% returns on the first failure
+do_validate(_Value, [], _Opts) -> [];
+do_validate(Value, [H | T], Opts) ->
     try H(Value) of
         OK when OK =:= ok orelse OK =:= true ->
-            validate(Value, T, Opts);
+            do_validate(Value, T, Opts);
         false ->
-            validation_err(Opts, returned_false, Value);
+            validation_errs(Opts, returned_false, Value);
         {error, Reason} ->
-            validation_err(Opts, Reason, Value)
+            validation_errs(Opts, Reason, Value)
     catch
         C : E : St ->
-            validation_err(Opts, #{exception => {C, E},
-                                   stacktrace => St
-                                  }, Value)
+            validation_errs(Opts, #{exception => {C, E},
+                                    stacktrace => St
+                                   }, Value)
     end.
 
-validation_err(Opts, Reason, Value) ->
-    [{error, ?ERRS(validation_error,
-                   #{reason => Reason,
-                     stack => stack(Opts),
-                     value => Value
-                    })}].
+validation_errs(Opts, Reason, Value) ->
+    validation_errs(Opts, #{reason => Reason, value => Value}).
+
+validation_errs(Opts, Context) ->
+    [{error, ?VALIDATION_ERRS(Context#{path => path(Opts)})}].
 
 plain_value(Value, #{is_richmap := false}) -> Value;
 plain_value(Value, #{is_richmap := true}) -> richmap_to_map(Value).
 
-plain_get([], Conf) ->
+%% @doc get a child node from map.
+plain_get(Path, Conf) ->
+    do_plain_get(split(Path), Conf).
+
+do_plain_get([], Conf) ->
     %% value as-is
     Conf;
-plain_get([H | T], Conf) when is_list(H) ->
-    %% deep value, get by path
-    {NewH, NewT} = retokenize(H, T),
-    case is_map(Conf) of
-        true ->
-            case maps:get(NewH, Conf, undefined) of
-                undefined ->
-                    %% no such field
-                    undefined;
-                ChildConf ->
-                    plain_get(NewT, ChildConf)
-            end;
-        false ->
-            undefined
-    end;
-plain_get(Path, Conf) when is_list(Path) ->
-    plain_get(string:tokens(Path, "."), Conf).
+do_plain_get([H | T], Conf) ->
+    Child = maps:get(H, Conf, undefined),
+    do_plain_get(T, Child).
 
 %% @doc get a child node from richmap.
 %% Key (first arg) can be "foo.bar.baz" or ["foo.bar", "baz"] or ["foo", "bar", "baz"].
 -spec deep_get(string() | [string()], hocon:config()) -> hocon:config() | undefined.
-deep_get([], Value) ->
+deep_get(Path, Conf) ->
+    do_deep_get(split(Path), Conf).
+
+do_deep_get([], Value) ->
     %% terminal value
     Value;
-deep_get([H | T], EnclosingMap) when is_list(H) ->
-    %% deep value, get by path
-    {NewH, NewT} = retokenize(H, T),
-    Value = maps:get(value, EnclosingMap, undefined),
+do_deep_get([H | T], EnclosingMap) ->
+    %% `value` must exist, must be a richmap otherwise
+    %% a bug in in the caller
+    Value = maps:get(value, EnclosingMap),
     case is_map(Value) of
         true ->
-            case maps:get(NewH, Value, undefined) of
+            case maps:get(H, Value, undefined) of
                 undefined ->
                     %% no such field
                     undefined;
                 FieldValue ->
-                    deep_get(NewT, FieldValue)
+                    do_deep_get(T, FieldValue)
             end;
         false ->
             undefined
-    end;
-deep_get(Str, RichMap) when is_list(Str) ->
-    deep_get(string:tokens(Str, "."), RichMap).
+    end.
 
 %% @doc Get a child node from richmap and
 %% lookup the value of the given tag in the child node
@@ -583,58 +676,27 @@ deep_get(Path, RichMap, Tag, Default) ->
         Map -> maps:get(Tag, Map)
     end.
 
--spec(plain_put(string() | [string()], term(), hocon:confing(), atom()) -> hocon:config()).
-plain_put(Path, Value, Conf, value) ->
-    do_plain_put(Path, Value, Conf);
-plain_put(_Path, _Value, Conf, Param) when Param =/= value ->
-    %% plain map does not have the ability to hold metadata
-    Conf.
+-spec plain_put([binary()], term(), hocon:confing()) -> hocon:config().
+plain_put([], Value, _Old) -> Value;
+plain_put([Name | Path], Value, Conf) when is_map(Conf) ->
+    FieldV = maps:get(Name, Conf, #{}),
+    NewFieldV = plain_put(Path, Value, FieldV),
+    Conf#{Name => NewFieldV}.
 
-do_plain_put(Path, Value, Conf) when ?IS_NON_EMPTY_STRING(Path) ->
-    do_plain_put(string:tokens(Path, "."), Value, Conf);
-do_plain_put(Path, Value, Conf) ->
-    hocon_util:do_deep_merge(Conf, make_map(Path, Value)).
+%% put unboxed value to the richmap box
+%% this function is called places where there is no boxing context
+%% so it has to accept unboxed value.
+deep_put(Path, Value, Conf) ->
+    put_rich(split(Path), Value, Conf).
 
-make_map([], Value) ->
-    Value;
-make_map([Tag], Value) ->
-    #{iolist_to_binary(Tag) => Value};
-make_map([Tag | Tags], Value) ->
-    Map = make_map(Tags, Value),
-    #{iolist_to_binary(Tag) => Map}.
-
-%% @doc put a value to the child richmap.
--spec(deep_put(string() | [string()], term(), hocon:config(), atom()) -> hocon:config()).
-deep_put([], Value, Conf, Param) ->
-    hocon_util:do_deep_merge(Conf, #{Param => Value});
-deep_put([H | _T] = L, Value, RichMap, Param) when is_list(H) ->
-    hocon_util:do_deep_merge(RichMap, #{value => nested_richmap(L, Value, Param)});
-deep_put(Str, Value, RichMap, Param) when is_list(Str) ->
-    deep_put(string:tokens(Str, "."), Value, RichMap, Param).
-
-nested_richmap([H], Value, Param) ->
-    case retokenize(H, []) of
-        {X, []} ->
-            #{iolist_to_binary(X) => #{Param => Value}};
-        {NewH, NewT} ->
-            #{iolist_to_binary(NewH) => #{value => nested_richmap(NewT, Value, Param)}}
-    end;
-nested_richmap([H | T], Value, Param) ->
-    {NewH, NewT} = retokenize(H, T),
-    #{iolist_to_binary(NewH) => #{value => nested_richmap(NewT, Value, Param)}}.
-
-retokenize(H, T) ->
-    case string:tokens(H, ".") of
-        [X] ->
-            {iolist_to_binary(X), T};
-        [Token | More] ->
-            {iolist_to_binary(Token), More ++ T}
-    end.
-
-resolve_array(ArrayOfRichMap) when is_list(ArrayOfRichMap) ->
-    [richmap_to_map(R) || R <- ArrayOfRichMap];
-resolve_array(Other) ->
-    Other.
+put_rich([], Value, Box) ->
+    boxit(Value, Box);
+put_rich([Name | Path], Value, Box) ->
+    BoxV = safe_unbox(Box),
+    FieldV = maps:get(Name, BoxV, #{}),
+    NewFieldV = put_rich(Path, Value, FieldV),
+    NewBoxV = BoxV#{Name => NewFieldV},
+    boxit(NewBoxV, Box).
 
 %% @doc Convert richmap to plain-map.
 richmap_to_map(RichMap) when is_map(RichMap) ->
@@ -653,7 +715,7 @@ richmap_to_map(Iter, Map) ->
         {value, M, _} when is_map(M) ->
             richmap_to_map(maps:iterator(M), #{});
         {value, A, _} when is_list(A) ->
-            resolve_array(A);
+            [richmap_to_map(R) || R <- A];
         {value, V, _} ->
             V;
         {K, V, I} ->
@@ -686,9 +748,8 @@ atom_key_map(BinKeyMap) when is_map(BinKeyMap) ->
     maps:fold(
         fun(K, V, Acc) when is_binary(K) ->
               Acc#{binary_to_existing_atom(K, utf8) => atom_key_map(V)};
-           (K, V, Acc) when is_list(K) ->
-              Acc#{list_to_existing_atom(K) => atom_key_map(V)};
            (K, V, Acc) when is_atom(K) ->
+              %% richmap keys
               Acc#{K => atom_key_map(V)}
         end, #{}, BinKeyMap);
 atom_key_map(ListV) when is_list(ListV) ->

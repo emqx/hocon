@@ -14,7 +14,7 @@
 
 -define(FIELD(NAME, TYPE), hoconsc:t(TYPE, #{mapping => NAME})).
 
-structs() -> [foo, "a.b", "b", person, "vm"].
+structs() -> [foo, "a_b", "b", person, "vm"].
 translations() -> ["app_foo"].
 
 fields(foo) ->
@@ -28,8 +28,8 @@ fields(foo) ->
     , {max, integer()}
     ];
 
-fields("a.b") ->
-    [ {"some_int", hoconsc:t(integer(), #{mapping => "a.b.some_int"})}
+fields("a_b") ->
+    [ {"some_int", hoconsc:t(integer(), #{mapping => "a_b.some_int"})}
     ];
 
 fields("b") ->
