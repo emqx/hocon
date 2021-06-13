@@ -29,6 +29,7 @@
 -export([check/2, check/3, check_plain/2, check_plain/3]).
 -export([deep_get/2, deep_get/3, deep_get/4, deep_put/3]).
 -export([richmap_to_map/1]).
+-export([find_struct/2]).
 
 -include("hoconsc.hrl").
 
@@ -128,6 +129,14 @@ translations(#{translations := Trs}) -> maps:keys(Trs).
 -spec translation(schema(), name()) -> [translation()].
 translation(Mod, Name) when is_atom(Mod) -> Mod:translation(Name);
 translation(#{translations := Trs}, Name) -> maps:get(Name, Trs).
+
+%% @doc Find struct name from a guess.
+find_struct(Schema, StructName) ->
+    Names = [{bin(N), N} || N <- structs(Schema)],
+    case lists:keyfind(bin(StructName), 1, Names) of
+        false -> throw({unknown_struct_name, StructName});
+        {_, N} -> N
+    end.
 
 %% @doc generates application env from a parsed .conf and a schema module.
 %% For example, one can set the output values by

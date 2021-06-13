@@ -117,7 +117,12 @@ get(_ParsedArgs, []) ->
 get(ParsedArgs, [Query | _]) ->
     Schema = load_schema(ParsedArgs),
     Conf = load_conf(ParsedArgs),
-    {_, NewConf} = hocon_schema:map(Schema, Conf),
+    %% map only the desired root name
+    [RootName0 | _] = string:tokens(Query, "."),
+    RootName = hocon_schema:find_struct(Schema, RootName0),
+    %% do not log anything for `get` commands
+    DummyLogger = #{logger => fun(_, _) -> ok end},
+    {_, NewConf} = hocon_schema:map(Schema, Conf, [RootName], DummyLogger),
     ?STDOUT("~p", [hocon_schema:deep_get(Query, NewConf, value)]),
     stop_ok().
 
