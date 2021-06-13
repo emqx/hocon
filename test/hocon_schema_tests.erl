@@ -464,3 +464,7 @@ check_return_atom_keys(Sc, Input) ->
     {ok, Map} = hocon:binary(Input),
     hocon_schema:check_plain(Sc, Map, #{atom_key => true}).
 
+find_struct_test() ->
+    ?assertEqual(foo, hocon_schema:find_struct(demo_schema, "foo")),
+    ?assertThrow({unknown_struct_name, "noexist"},
+                 hocon_schema:find_struct(demo_schema, "noexist")).
