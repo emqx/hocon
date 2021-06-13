@@ -228,12 +228,14 @@ map(Schema, Conf) ->
     RootNames = structs(Schema),
     map(Schema, Conf, RootNames, #{}).
 
--spec map(schema(), hocon:config(), [name()]) ->
+-spec map(schema(), hocon:config(), all | [name()]) ->
         {[proplists:property()], hocon:config()}.
+map(Schema, Conf, all) ->
+    map(Schema, Conf, structs(Schema));
 map(Schema, Conf, RootNames) ->
     map(Schema, Conf, RootNames, #{}).
 
--spec map(schema(), hocon:config(), [name()], opts()) ->
+-spec map(schema(), hocon:config(), all | [name()], opts()) ->
         {[proplists:property()], hocon:config()}.
 map(Schema, Conf0, RootNames, Opts0) ->
     EnvPrefix= case os:getenv("HOCON_ENV_OVERRIDE_PREFIX") of
