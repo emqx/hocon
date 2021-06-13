@@ -437,13 +437,16 @@ no_dot_in_root_name_test() ->
 
 union_of_structs_test() ->
     Sc = #{structs => [?VIRTUAL_ROOT],
-           fields => #{?VIRTUAL_ROOT => [{f1, hoconsc:union(["m1", "m2"])}],
+           fields => #{?VIRTUAL_ROOT => [{f1, hoconsc:union([dummy, "m1", "m2"])}],
                        "m1" => [{m1, integer()}],
                        "m2" => [{m2, integer()}]
                       }
           },
     ?assertEqual(#{f1 => #{m1 => 1}}, check_return_atom_keys(Sc, "f1.m1=1")),
     ?assertEqual(#{f1 => #{m2 => 2}}, check_return_atom_keys(Sc, "f1.m2=2")),
+    ?assertEqual(#{f1 => dummy}, check_return_atom_keys(Sc, "f1=dummy")),
+    ?assertThrow([{validation_error, #{reason := matched_no_union_member}}],
+                 check_return_atom_keys(Sc, "f1=other")),
     ?assertThrow([{validation_error, #{reason := matched_no_union_member}}],
                  check_return_atom_keys(Sc, "f1.m3=3")),
     ok.

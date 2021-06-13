@@ -353,9 +353,15 @@ map_one_field(FieldType, FieldSchema, FieldValue, Opts) ->
             {Acc, FieldValue}
     end.
 
-map_field(?UNION(Types), Schema, Value, Opts) ->
+map_field(?UNION(Types), Schema0, Value, Opts) ->
     %% union is not a boxed value
-    F = fun(Type) -> map_field(Type, Schema, Value, Opts) end,
+    F = fun(Type) ->
+                %% go deep with union member's type, but all
+                %% other schema information should be inherited from the enclosing schema
+                Schema = fun(type) -> Type;
+                            (Other) -> field_schema(Schema0, Other)
+                         end,
+                map_field(Type, Schema, Value, Opts) end,
     case do_map_union(Types, F, #{}, Opts) of
         {ok, {Mapped, NewValue}} -> {Mapped, NewValue};
         Error -> {Error, Value}
