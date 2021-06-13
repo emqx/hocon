@@ -209,13 +209,11 @@ engage_hocon(ParsedArgs) ->
     Schema = load_schema(ParsedArgs),
     Conf = load_conf(ParsedArgs),
     LogFun = case proplists:get_value(verbose_env, ParsedArgs) of
-                 true ->
-                     fun(Key, Value) -> ?STDOUT("~s = ~p", [string:join(Key, "."), Value]) end;
-                 false ->
-                     fun(_, _) -> ok end
+                 true -> fun log_for_generator/2;
+                 false -> fun(_, _) -> ok end
              end,
 
-    case hocon_schema:generate(Schema, Conf) of
+    case hocon_schema:generate(Schema, Conf, #{logger => LogFun}) of
         %{error, _X} ->
             % @TODO print error
         %    error;
@@ -296,6 +294,13 @@ stringify_line(K, V) when is_list(V) ->
 stringify_line(K, V) ->
     io_lib:format("~s ~w", [K, V]).
 
+log_for_generator(_Level, #{hocon_env_var_name := Var, path := P, value := V}) ->
+    ?STDOUT("~s = ~p -> ~s", [Var, V, P]);
+log_for_generator(debug, _Args) -> ok;
+log_for_generator(info, _Args) -> ok;
+log_for_generator(Level, Args) ->
+    io:format(standard_error, "[~p] ~p~n", [Level, Args]).
+
 -ifndef(TEST).
 stop_deactivate() ->
     init:stop(1),
@@ -306,6 +311,7 @@ stop_deactivate() ->
 stop_ok() ->
     init:stop(0).
 -endif.
+
 
 -ifdef(TEST).
 %% In test mode we don't want to kill the test VM prematurely.

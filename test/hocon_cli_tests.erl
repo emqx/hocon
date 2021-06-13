@@ -83,7 +83,18 @@ generate_basic() ->
                    {ok, Stdout} = cuttlefish_test_group_leader:get_output(),
                    {ok, [[{app_foo, Plist}]]} = file:consult(regexp_config(Stdout)),
                    ?assertEqual("yaa", proplists:get_value(setting, Plist))
+               end),
+    ?CAPTURING(begin
+                   with_envs(fun hocon_cli:main/1,
+                             [["-c", etc("demo-schema-example-1.conf"),
+                              "-s", "demo_schema", "-d", out(), "generate", "--verbose_env"]],
+                             [{"ZZZ_FOO__MIN", "42"}, {"ZZZ_FOO_MAX", "43"},
+                              {"HOCON_ENV_OVERRIDE_PREFIX", "ZZZ_"}]),
+                   {ok, Stdout} = cuttlefish_test_group_leader:get_output(),
+                   ?assertMatch(<<"ZZZ_FOO__MIN = \"42\" -> foo.min\n", _/binary>>,
+                                iolist_to_binary(Stdout))
                end).
+
 
 generate_vmargs() ->
     ?CAPTURING(begin
@@ -138,8 +149,8 @@ prune_test() ->
     Cli(),
     AppConfigs = lists:sort(filelib:wildcard("app.*.config", out())),
     VMArgs = lists:sort(filelib:wildcard("vm.*.args", out())),
-    ?_assert(length(AppConfigs) =:= 2),
-    ?_assert(length(VMArgs) =:= 2),
+    ?assertEqual(2, length(AppConfigs)),
+    ?assertEqual(2, length(VMArgs)),
 
     timer:sleep(1100),
     Cli(),
