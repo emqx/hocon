@@ -387,7 +387,7 @@ unknown_fields_test() ->
     ?assertThrow([{validation_error, #{reason := unknown_fields,
                                        unknown := [<<"name">>]}}],
                  begin
-                     {Mapped, _} = hocon_schema:map(demo_schema, M),
+                     {Mapped, _} = hocon_schema:map(demo_schema, M, all),
                      Mapped
                  end).
 
