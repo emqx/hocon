@@ -25,7 +25,7 @@
 
 -export([map/2, map/3, map/4]).
 -export([translate/3]).
--export([generate/2]).
+-export([generate/2, generate/3]).
 -export([check/2, check/3, check_plain/2, check_plain/3]).
 -export([deep_get/2, deep_get/3, deep_get/4, deep_put/3]).
 -export([richmap_to_map/1]).
@@ -44,7 +44,7 @@
              , opts/0
              ]).
 
--type name() :: atom() | string().
+-type name() :: atom() | string() | binary().
 -type type() :: typerefl:type() %% primitive (or complex, but terminal) type
               | name() %% reference to another struct
               | ?ARRAY(type()) %% array of
@@ -145,7 +145,10 @@ find_struct(Schema, StructName) ->
 %%    end, hocon_schema_generate(Schema, Conf)).
 -spec(generate(schema(), hocon:config()) -> [proplists:property()]).
 generate(Schema, Conf) ->
-    {Mapped, NewConf} = map(Schema, Conf),
+    generate(Schema, Conf, #{}).
+
+generate(Schema, Conf, Opts) ->
+    {Mapped, NewConf} = map(Schema, Conf, all, Opts),
     Translated = translate(Schema, NewConf, Mapped),
     nest(Translated).
 
@@ -239,13 +242,13 @@ map(Schema, Conf) ->
 
 -spec map(schema(), hocon:config(), all | [name()]) ->
         {[proplists:property()], hocon:config()}.
-map(Schema, Conf, all) ->
-    map(Schema, Conf, structs(Schema));
 map(Schema, Conf, RootNames) ->
     map(Schema, Conf, RootNames, #{}).
 
 -spec map(schema(), hocon:config(), all | [name()], opts()) ->
         {[proplists:property()], hocon:config()}.
+map(Schema, Conf, all, Opts) ->
+    map(Schema, Conf, structs(Schema), Opts);
 map(Schema, Conf0, RootNames, Opts0) ->
     EnvPrefix= case os:getenv("HOCON_ENV_OVERRIDE_PREFIX") of
                    false -> undefined;
@@ -516,7 +519,11 @@ apply_env([[K, V] | More], Conf, Opts) ->
     log_env_override(Opts, K, Path, V),
     apply_env(More, put_value(Opts, Path, V, Conf), Opts).
 
-log_env_override(Opts, Var, K, V) ->
+log_env_override(#{env_namespace :=  Prefix} = Opts, Var0, K, V) ->
+    Var = case Prefix of
+              undefined -> Var0;
+              _ -> Prefix ++ Var0
+          end,
     log(Opts, info, #{hocon_env_var_name => Var, path => K, value => V}).
 
 log(#{logger := Logger}, Level, Msg) ->
