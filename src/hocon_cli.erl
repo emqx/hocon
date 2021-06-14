@@ -18,6 +18,7 @@
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
+-export([is_valid_now_time/1]).
 -endif.
 
 -export([main/1]).
@@ -54,12 +55,16 @@ cli_options() ->
     , {log_level, $l, "log_level", {string, "notice"}, "log level"}
     , {max_history, $m, "max_history", {integer, 3},
         "the maximum number of generated config files to keep"}
+    , {now_time, $t, "now_time", string, "the time suffix for generated files"}
     , {verbose_env, $v, "verbose_env", {boolean, false}, "whether to log env overrides to stdout"}
     ].
 
 print_help() ->
-    getopt:usage(cli_options(),
-        escript:script_name()),
+    ?STDOUT("Commands: now_time: get the current time for generate command's -t option", []),
+    ?STDOUT("          generate: generate app.<time>.config and vm.<time>.args", []),
+    ?STDOUT("          get: get value of a given key", []),
+    ?STDOUT("", []),
+    getopt:usage(cli_options(), "hocon generate"),
     stop_deactivate().
 
 parse_and_command(Args) ->
@@ -86,7 +91,7 @@ main(Args) ->
                end,
     logger:remove_handler(default),
     logger:add_handler(hocon_cli, logger_std_h,
-        #{config => #{type => standard_error},
+        #{config => #{type => standard_io},
             formatter => {logger_formatter,
                 #{legacy_header => false,
                     single_line => true,
@@ -104,9 +109,19 @@ main(Args) ->
             get(ParsedArgs, Extra);
         generate ->
             generate(ParsedArgs);
+        now_time ->
+            now_time();
         _Other ->
             print_help()
     end.
+
+%% equav command: date -u +"%Y.%m.%d.%H.%M.%S"
+now_time() ->
+    {{Y, M, D}, {HH, MM, SS}} = calendar:local_time(),
+    ?STDOUT("~p.~2..0b.~2..0b.~2..0b.~2..0b.~2..0b", [Y, M, D, HH, MM, SS]).
+
+is_valid_now_time(T) ->
+    re:run(T, "^[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[0-9]{2}\.[0-9]{2}\.[0-9]{2}$") =/= nomatch.
 
 -spec get([proplists:property()], [string()]) -> no_return().
 get(_ParsedArgs, []) ->
@@ -125,22 +140,6 @@ get(ParsedArgs, [Query | _]) ->
     {_, NewConf} = hocon_schema:map(Schema, Conf, [RootName], DummyLogger),
     ?STDOUT("~p", [hocon_schema:deep_get(Query, NewConf, value)]),
     stop_ok().
-
--spec generate([proplists:property()]) -> no_return().
-generate(ParsedArgs) ->
-    case engage_hocon(ParsedArgs) of
-        %% this is nice and all, but currently all error paths of engage_hocon end with
-        %% stop_deactivate() hopefully factor that to be cleaner.
-        error ->
-            stop_deactivate();
-        {AppConf, VMArgs} ->
-            %% Note: we have added a parameter '-vm_args' to this. It appears redundant
-            %% but it is not! the erlang vm allows us to access all arguments to the erl
-            %% command EXCEPT '-args_file', so in order to get access to this file location
-            %% from within the vm, we need to pass it in twice.
-            ?STDOUT(" -config ~s -args_file ~s -vm_args ~s ", [AppConf, VMArgs, VMArgs]),
-            stop_ok()
-    end.
 
 load_schema(ParsedArgs) ->
     case {proplists:get_value(schema_file, ParsedArgs),
@@ -186,23 +185,27 @@ writable_destination_path(ParsedArgs) ->
             error
     end.
 
--spec engage_hocon([proplists:property()]) -> {string(), string()} | error.
-engage_hocon(ParsedArgs) ->
+-spec generate([proplists:property()]) -> ok.
+generate(ParsedArgs) ->
     AbsPath = case writable_destination_path(ParsedArgs) of
-                  error ->
-                      stop_deactivate(),
-                      error;
+                  error -> stop_deactivate();
                   Path -> Path
               end,
 
-    Date = calendar:local_time(),
-
     DestFile = proplists:get_value(dest_file, ParsedArgs),
 
-    DestinationFilename = filename_maker(DestFile, Date, "config"),
+    NowTime = proplists:get_value(now_time, ParsedArgs, ""),
+    case is_valid_now_time(NowTime) of
+        true -> ok;
+        false ->
+            ?LOG:error("bad -t|--now_time option, get it from this script's now_time command"),
+            stop_deactivate()
+    end,
+
+    DestinationFilename = filename_maker(DestFile, NowTime, "config"),
     Destination = filename:join(AbsPath, DestinationFilename),
 
-    DestinationVMArgsFilename = filename_maker("vm", Date, "args"),
+    DestinationVMArgsFilename = filename_maker("vm", NowTime, "args"),
     DestinationVMArgs = filename:join(AbsPath, DestinationVMArgsFilename),
     ?LOG:debug("Generating config in: ~p", [Destination]),
 
@@ -212,11 +215,7 @@ engage_hocon(ParsedArgs) ->
                  true -> fun log_for_generator/2;
                  false -> fun(_, _) -> ok end
              end,
-
-    case hocon_schema:generate(Schema, Conf, #{logger => LogFun}) of
-        %{error, _X} ->
-            % @TODO print error
-        %    error;
+    try hocon_schema:generate(Schema, Conf, #{logger => LogFun}) of
         NewConfig ->
             AppConfig = proplists:delete(vm_args, NewConfig),
             VmArgs = stringify(proplists:get_value(vm_args, NewConfig)),
@@ -229,13 +228,16 @@ engage_hocon(ParsedArgs) ->
             case { file:write_file(Destination, io_lib:fwrite("~p.\n", [AppConfig])),
                    file:write_file(DestinationVMArgs, string:join(VmArgs, "\n"))} of
                 {ok, ok} ->
-                    {Destination, DestinationVMArgs};
+                    ok;
                 {Err1, Err2} ->
                     maybe_log_file_error(Destination, Err1),
                     maybe_log_file_error(DestinationVMArgs, Err2),
-                    error
+                    stop_deactivate()
             end
-
+    catch
+        throw : Errors ->
+            lists:foreach(fun(E) -> ?LOG:error("~p", [E]) end, Errors),
+            stop_deactivate()
     end.
 
 -spec prune(file:name_all(), non_neg_integer()) -> ok.
@@ -275,11 +277,8 @@ maybe_log_file_error(Filename, {error, Reason}) ->
     ?LOG:error("Error writing ~s: ~s", [Filename, file:format_error(Reason)]),
     ok.
 
-filename_maker(Filename, Date, Extension) ->
-    {{Y, M, D}, {HH, MM, SS}} = Date,
-    _DestinationFilename =
-        lists:flatten(io_lib:format("~s.~p.~2..0b.~2..0b.~2..0b.~2..0b.~2..0b.~s",
-            [Filename, Y, M, D, HH, MM, SS, Extension])).
+filename_maker(Filename, NowTime, Extension) ->
+    lists:flatten(io_lib:format("~s.~s.~s", [Filename, NowTime, Extension])).
 
 %% @doc turns a proplist into a list of strings suitable for vm.args files
 -spec stringify(undefined | [{any(), string()}]) -> [string()].
