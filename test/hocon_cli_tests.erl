@@ -53,55 +53,73 @@
         end
      end)()).
 
-generate_test_() ->
-    [ {"`generate` output is correct", fun generate_basic/0}
-    , {"dump vm.args correctly", fun generate_vmargs/0}
+generate_config_test_() ->
+    Output = [{app_foo, [{range, {1, 10}}, {setting, "hello"}]}],
+    Gen = fun(T, Sc) ->
+             hocon_cli:main(["-c", etc("demo-schema-example-1.conf")]
+                             ++ generate_opts(T) ++ Sc)
+          end,
+    [fun() ->
+             [$2 | Time0] = now_time(),
+             Time = [$3 | Time0],
+             Gen(Time, ["-i", ss("demo_schema.erl")]),
+             {ok, Config} = file:consult(config_fname(Time)),
+             ?assertEqual(Output, hd(Config))
+     end,
+     fun() ->
+             Time = now_time(),
+             Gen(Time, ["-s", "demo_schema"]),
+             {ok, Config} = file:consult(config_fname(Time)),
+             ?assertEqual(Output, hd(Config))
+      end
     ].
 
-generate_basic() ->
-    Output = [{app_foo, [{range, {1, 10}}, {setting, "hello"}]}],
+generate_multiple_input_config_test() ->
+    Time = now_time(),
+    hocon_cli:main(["-s", "demo_schema",
+                    "-c", etc("demo-schema-example-2.conf"),
+                    "-c", etc("demo-schema-example-3.conf")
+                    ] ++ generate_opts(Time)),
+    {ok, [[{app_foo, Plist}]]} = file:consult(config_fname(Time)),
+    ?assertEqual("yaa", proplists:get_value(setting, Plist)).
+
+generate_opts(T) -> ["-t", T, "-d", out(), "generate"].
+
+now_time_test() ->
     ?CAPTURING(begin
-                   hocon_cli:main(["-i", ss("demo_schema.erl"),
-                       "-c", etc("demo-schema-example-1.conf"),
-                       "-d", out(), "generate"]),
+                   hocon_cli:main(["now_time"]),
                    {ok, Stdout} = cuttlefish_test_group_leader:get_output(),
-                   {ok, Config} = file:consult(regexp_config(Stdout)),
-                   ?assertEqual(Output, hd(Config))
-               end),
-    ?CAPTURING(begin
-                   hocon_cli:main(["-c", etc("demo-schema-example-1.conf"),
-                                   "-s", "demo_schema", "-d", out(), "generate"]),
-                   {ok, Stdout} = cuttlefish_test_group_leader:get_output(),
-                   {ok, Config} = file:consult(regexp_config(Stdout)),
-                   ?assertEqual(Output, hd(Config))
-               end),
-    ?CAPTURING(begin
-                   hocon_cli:main(["-s", "demo_schema",
-                                   "-c", etc("demo-schema-example-2.conf"),
-                                   "-c", etc("demo-schema-example-3.conf"),
-                                   "-d", out(), "generate"]),
-                   {ok, Stdout} = cuttlefish_test_group_leader:get_output(),
-                   {ok, [[{app_foo, Plist}]]} = file:consult(regexp_config(Stdout)),
-                   ?assertEqual("yaa", proplists:get_value(setting, Plist))
-               end),
-    ?CAPTURING(begin
-                   with_envs(fun hocon_cli:main/1,
-                             [["-c", etc("demo-schema-example-1.conf"),
-                              "-s", "demo_schema", "-d", out(), "generate", "--verbose_env"]],
-                             [{"ZZZ_FOO__MIN", "42"}, {"ZZZ_FOO_MAX", "43"},
-                              {"HOCON_ENV_OVERRIDE_PREFIX", "ZZZ_"}]),
-                   {ok, Stdout} = cuttlefish_test_group_leader:get_output(),
-                   ?assertMatch(<<"ZZZ_FOO__MIN = \"42\" -> foo.min\n", _/binary>>,
-                                iolist_to_binary(Stdout))
+                   ?assert(hocon_cli:is_valid_now_time(Stdout))
                end).
 
-
-generate_vmargs() ->
+generate_with_env_logging_test() ->
     ?CAPTURING(begin
-                   hocon_cli:main(["-c", etc("demo-schema-example-2.conf"),
-                                    "-d", out(), "-s", "demo_schema", "generate"]),
+                   Time = now_time(),
+                   with_envs(fun hocon_cli:main/1,
+                             [["-c", etc("demo-schema-example-1.conf"),
+                               "-s", "demo_schema",
+                               "-t", Time,
+                               "-d", out(),
+                               "--verbose_env", "generate"
+                               ]],
+                             [{"ZZZ_FOO__MIN", "42"}, {"ZZZ_FOO__MAX", "43"},
+                              {"HOCON_ENV_OVERRIDE_PREFIX", "ZZZ_"}]),
                    {ok, Stdout} = cuttlefish_test_group_leader:get_output(),
-                   {ok, Config} = file:read_file(regexp_vmargs(Stdout)),
+                   ?assertEqual([<<"ZZZ_FOO__MAX = \"43\" -> foo.max">>,
+                                 <<"ZZZ_FOO__MIN = \"42\" -> foo.min">>],
+                                lists:sort(binary:split(iolist_to_binary(Stdout),
+                                                        <<"\n">>, [global, trim])))
+               end).
+
+generate_vmargs_test() ->
+    ?CAPTURING(begin
+                   Time = now_time(),
+                   hocon_cli:main(["-c", etc("demo-schema-example-2.conf"),
+                                   "-t", Time,
+                                   "-d", out(),
+                                   "-s", "demo_schema",
+                                   "generate"]),
+                   {ok, Config} = file:read_file(vmargs_fname(Time)),
                    ?assertEqual(<<"-env ERL_MAX_PORTS 64000\n-name emqx@127.0.0.1">>, Config)
                end).
 
@@ -139,6 +157,7 @@ prune_test() ->
 
     Cli = fun () -> hocon_cli:main(["-i", ss("demo_schema.erl"),
                                     "-c", etc("demo-schema-example-1.conf"),
+                                    "--now_time", now_time(),
                                     "-m", integer_to_list(ExpectedMax),
                                     "-d", out()]) end,
     Cli(),
@@ -170,15 +189,15 @@ ss(Name) ->
 out() ->
     "generated".
 
-regexp_config(StdOut) ->
-    {ok, MP} = re:compile("-config (.+config)"),
-    {match, Path} = re:run(StdOut, MP, [global, {capture, all_but_first, list}]),
-    Path.
+config_fname(TimeStr) ->
+    filename:join([out(), "app." ++ TimeStr ++ ".config"]).
 
-regexp_vmargs(StdOut) ->
-    {ok, MP} = re:compile("-vm_args (.+args)"),
-    {match, Path} = re:run(StdOut, MP, [{capture, all_but_first, list}, global]),
-    Path.
+vmargs_fname(TimeStr) ->
+    filename:join([out(), "vm." ++ TimeStr ++ ".args"]).
 
 with_envs(Fun, Args, Envs) ->
     hocon_test_lib:with_envs(Fun, Args, Envs).
+
+now_time() ->
+    {{Y, M, D}, {HH, MM, SS}} = calendar:local_time(),
+    lists:flatten(io_lib:format("~p.~2..0b.~2..0b.~2..0b.~2..0b.~2..0b", [Y, M, D, HH, MM, SS])).
