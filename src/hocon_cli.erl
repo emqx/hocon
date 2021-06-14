@@ -50,8 +50,8 @@ cli_options() ->
     , {dest_file, $f, "dest_file", {string, "app"}, "the file name to write"}
     , {schema_file, $i, "schema_file", string, "the file name of schema module"}
     , {schema_module, $s, "schema_module", atom, "the name of schema module"}
-    , {conf_file, $c, "conf_file", string, "a cuttlefish conf file, multiple files allowed"}
-    , {log_level, $l, "log_level", {string, "notice"}, "log level for cuttlefish output"}
+    , {conf_file, $c, "conf_file", string, "hocon conf file, multiple files allowed"}
+    , {log_level, $l, "log_level", {string, "notice"}, "log level"}
     , {max_history, $m, "max_history", {integer, 3},
         "the maximum number of generated config files to keep"}
     , {verbose_env, $v, "verbose_env", {boolean, false}, "whether to log env overrides to stdout"}
@@ -85,7 +85,7 @@ main(Args) ->
                    _ -> notice
                end,
     logger:remove_handler(default),
-    logger:add_handler(cuttlefish, logger_std_h,
+    logger:add_handler(hocon_cli, logger_std_h,
         #{config => #{type => standard_error},
             formatter => {logger_formatter,
                 #{legacy_header => false,
@@ -129,7 +129,7 @@ get(ParsedArgs, [Query | _]) ->
 -spec generate([proplists:property()]) -> no_return().
 generate(ParsedArgs) ->
     case engage_hocon(ParsedArgs) of
-        %% this is nice and all, but currently all error paths of engage_cuttlefish end with
+        %% this is nice and all, but currently all error paths of engage_hocon end with
         %% stop_deactivate() hopefully factor that to be cleaner.
         error ->
             stop_deactivate();
