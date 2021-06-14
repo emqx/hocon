@@ -135,7 +135,7 @@ translation(#{translations := Trs}, Name) -> maps:get(Name, Trs).
 find_struct(Schema, StructName) ->
     Names = [{bin(N), N} || N <- structs(Schema)],
     case lists:keyfind(bin(StructName), 1, Names) of
-        false -> throw({unknown_struct_name, StructName});
+        false -> throw({unknown_struct_name, Schema, StructName});
         {_, N} -> N
     end.
 
@@ -178,7 +178,7 @@ translate(Schema, Conf, Mapped) ->
         Namespaces ->
             Res = lists:append([do_translate(translation(Schema, N), str(N), Conf, Mapped) ||
                         N <- Namespaces]),
-            ok = assert_no_error(Res),
+            ok = assert_no_error(Schema, Res),
             %% rm field if translation returns undefined
             [{K, V} || {K, V} <- lists:ukeymerge(1, Res, Mapped), V =/= undefined]
     end.
@@ -275,7 +275,7 @@ map(Schema, Conf0, RootNames, Opts0) ->
                 {lists:append(MappedAcc, Mapped), NewConfAcc}
         end,
     {Mapped, NewConf} = lists:foldl(F, {[], Conf}, RootNames),
-    ok = assert_no_error(Mapped),
+    ok = assert_no_error(Schema, Mapped),
     {Mapped, NewConf}.
 
 %% Assert no dot in root struct name.
@@ -745,10 +745,10 @@ richmap_to_map(Iter, Map) ->
             Map
     end.
 
-assert_no_error(List) ->
+assert_no_error(Schema, List) ->
     case find_errors(List) of
         ok -> ok;
-        {error, Reasons} -> throw(Reasons)
+        {error, Reasons} -> throw({Schema, Reasons})
     end.
 
 %% find error but do not throw, return result
