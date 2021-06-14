@@ -89,6 +89,7 @@
                    %% map or check APIs fail with validation_error.
                    %% NOTE: this option serves as default value for field's `nullable` spec
                  , nullable => boolean() %% default: true for map, false for check
+                 , schema => schema()
                  }.
 
 -callback structs() -> [name()].
@@ -251,10 +252,10 @@ map(Schema, Conf, all, Opts) ->
     map(Schema, Conf, structs(Schema), Opts);
 map(Schema, Conf0, RootNames, Opts0) ->
     EnvPrefix= case os:getenv("HOCON_ENV_OVERRIDE_PREFIX") of
-                   false -> undefined;
+                   V when V =:= false orelse V =:= [] -> undefined;
                    Prefix -> Prefix
                end,
-    Opts = maps:merge(#{schema_mod => Schema,
+    Opts = maps:merge(#{schema => Schema,
                         is_richmap => true,
                         env_namespace => EnvPrefix
                         }, Opts0),
@@ -380,9 +381,8 @@ map_field(?UNION(Types), Schema0, Value, Opts) ->
         {ok, {Mapped, NewValue}} -> {Mapped, NewValue};
         Error -> {Error, Value}
     end;
-map_field(Ref, _Schema, Value,
-          #{schema_mod := SchemaModule} = Opts) when is_list(Ref) ->
-    Fields = fields(SchemaModule, Ref),
+map_field(Ref, _Schema, Value, #{schema := Schema} = Opts) when is_list(Ref) ->
+    Fields = fields(Schema, Ref),
     do_map(Fields, Value, Opts);
 map_field(?ARRAY(Type), _Schema, Value0, Opts) ->
     %% array needs an unbox
@@ -520,10 +520,7 @@ apply_env([[K, V] | More], Conf, Opts) ->
     apply_env(More, put_value(Opts, Path, V, Conf), Opts).
 
 log_env_override(#{env_namespace :=  Prefix} = Opts, Var0, K, V) ->
-    Var = case Prefix of
-              undefined -> Var0;
-              _ -> Prefix ++ Var0
-          end,
+    Var = Prefix ++ Var0,
     log(Opts, info, #{hocon_env_var_name => Var, path => K, value => V}).
 
 log(#{logger := Logger}, Level, Msg) ->
@@ -580,7 +577,7 @@ get_override_env(Type, Opts) ->
             undefined;
         Var ->
             case os:getenv(str(Var)) of
-                false ->
+                V when V =:= false orelse V =:= [] ->
                     undefined;
                 V ->
                     log_env_override(Opts, Var, path(Opts), V),
