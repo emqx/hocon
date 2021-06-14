@@ -23,6 +23,10 @@
 -export([structs/0, fields/1]).
 
 -define(VIRTUAL_ROOT, "").
+-define(GEN_VALIDATION_ERR(Reason, Expr),
+        ?_assertThrow({_, [{validation_error, Reason}]}, Expr)).
+-define(VALIDATION_ERR(Reason, Expr),
+        ?assertThrow({_, [{validation_error, Reason}]}, Expr)).
 
 %% namespaces
 structs() -> [bar].
@@ -81,32 +85,31 @@ mapping_test_() ->
                      Mapped end,
     [ ?_assertEqual([{["app_foo", "setting"], "hello"}], F("foo.setting=hello"))
     , ?_assertEqual([{["app_foo", "setting"], "1"}], F("foo.setting=1"))
-    , ?_assertThrow([{validation_error, _}], F("foo.setting=[a,b,c]"))
+    , ?GEN_VALIDATION_ERR(_, F("foo.setting=[a,b,c]"))
     , ?_assertEqual([{["app_foo", "endpoint"], {127, 0, 0, 1}}], F("foo.endpoint=\"127.0.0.1\""))
-    , ?_assertThrow([{validation_error, _}], F("foo.setting=hi, foo.endpoint=hi"))
-    , ?_assertThrow([{validation_error, _}], F("foo.greet=foo"))
+    , ?GEN_VALIDATION_ERR(_, F("foo.setting=hi, foo.endpoint=hi"))
+    , ?GEN_VALIDATION_ERR(_, F("foo.greet=foo"))
     , ?_assertEqual([{["app_foo", "numbers"], [1, 2, 3]}], F("foo.numbers=[1,2,3]"))
     , ?_assertEqual([{["a_b", "some_int"], 1}], F("a_b.some_int=1"))
     , ?_assertEqual([], F("foo.ref_x_y={some_int = 1}"))
-    , ?_assertThrow([{validation_error, _}], F("foo.ref_x_y={some_int = aaa}"))
+    , ?GEN_VALIDATION_ERR(_, F("foo.ref_x_y={some_int = aaa}"))
     , ?_assertEqual([],
         F("foo.ref_x_y={some_dur = 5s}"))
     , ?_assertEqual([{["app_foo", "refjk"], #{<<"some_int">> => 1}}],
                     F("foo.ref_j_k={some_int = 1}"))
-    , ?_assertThrow([{validation_error, _},
-                     {validation_error, _}], F("foo.greet=foo\n foo.endpoint=hi"))
+    , ?_assertThrow({_, [{validation_error, _},
+                         {validation_error, _}]},
+                    F("foo.greet=foo\n foo.endpoint=hi"))
     , ?_assertEqual([{["app_foo", "u"], #{<<"val">> => 1}}], F("b.u.val=1"))
     , ?_assertEqual([{["app_foo", "u"], #{<<"val">> => true}}], F("b.u.val=true"))
-    , ?_assertThrow([{validation_error, #{reason := matched_no_union_member}}], F("b.u.val=aaa"))
+    , ?GEN_VALIDATION_ERR(#{reason := matched_no_union_member}, F("b.u.val=aaa"))
     , ?_assertEqual([{["app_foo", "u"], #{<<"val">> => 44}}], F("b.u.val=44"))
     , ?_assertEqual([{["app_foo", "arr"], [#{<<"val">> => 1}, #{<<"val">> => 2}]}],
                     F("b.arr=[{val=1},{val=2}]"))
-    , ?_assertThrow([{validation_error, #{array_index := 3}}],
-                    F("b.arr=[{val=1},{val=2},{val=a}]"))
+    , ?GEN_VALIDATION_ERR(#{array_index := 3}, F("b.arr=[{val=1},{val=2},{val=a}]"))
 
-    , ?_assertThrow([{validation_error, #{array_index := 2,
-                                          reason := matched_no_union_member}}],
-                    F("b.ua=[{val=1},{val=a},{val=true}]"))
+    , ?GEN_VALIDATION_ERR(#{array_index := 2, reason := matched_no_union_member},
+                          F("b.ua=[{val=1},{val=a},{val=true}]"))
     , ?_assertEqual([{["app_foo", "ua"], [#{<<"val">> => 1}, #{<<"val">> => true}]}],
                     F("b.ua=[{val=1},{val=true}]"))
     ].
@@ -225,8 +228,8 @@ union_as_enum_test() ->
           },
     ?assertEqual(#{<<"enum">> => a},
                  hocon_schema:check_plain(Sc, #{<<"enum">> => a})),
-    ?assertThrow([{validation_error, #{reason := matched_no_union_member}}],
-                 hocon_schema:check_plain(Sc, #{<<"enum">> => x})).
+    ?VALIDATION_ERR(#{reason := matched_no_union_member},
+                    hocon_schema:check_plain(Sc, #{<<"enum">> => x})).
 
 real_enum_test() ->
     Sc = #{structs => [?VIRTUAL_ROOT],
@@ -236,11 +239,11 @@ real_enum_test() ->
                  hocon_schema:check_plain(Sc, #{<<"val">> => <<"a">>})),
     ?assertEqual(#{val => a},
                  hocon_schema:check_plain(Sc, #{<<"val">> => <<"a">>}, #{atom_key => true})),
-    ?assertThrow([{validation_error, #{reason := not_a_enum_symbol, value := x}}],
-                 hocon_schema:check_plain(Sc, #{<<"val">> => <<"x">>})),
-    ?assertThrow([{validation_error, #{reason := unable_to_convert_to_enum_symbol,
-                                       value := {"badvalue"}}}],
-                 hocon_schema:check_plain(Sc, #{<<"val">> => {"badvalue"}})).
+    ?VALIDATION_ERR(#{reason := not_a_enum_symbol, value := x},
+                    hocon_schema:check_plain(Sc, #{<<"val">> => <<"x">>})),
+    ?VALIDATION_ERR(#{reason := unable_to_convert_to_enum_symbol,
+                      value := {"badvalue"}},
+                    hocon_schema:check_plain(Sc, #{<<"val">> => {"badvalue"}})).
 
 array_of_enum_test() ->
     Sc = #{structs => [?VIRTUAL_ROOT],
@@ -282,16 +285,15 @@ validator_test() ->
            fields => [{f1, hoconsc:t(integer(), #{validator => fun(X) -> X < 10 end})}]
           },
     ?assertEqual(#{<<"f1">> => 1}, hocon_schema:check_plain(Sc, #{<<"f1">> => 1})),
-    ?assertThrow([{validation_error, _}],
-                 hocon_schema:check_plain(Sc, #{<<"f1">> => 11})),
+    ?VALIDATION_ERR(_, hocon_schema:check_plain(Sc, #{<<"f1">> => 11})),
     ok.
 
 validator_crash_test() ->
     Sc = #{structs => [?VIRTUAL_ROOT],
            fields => [{f1, hoconsc:t(integer(), #{validator => [fun(_) -> error(always) end]})}]
           },
-    ?assertThrow([{validation_error, #{reason := #{exception := {error, always}}}}],
-                 hocon_schema:check_plain(Sc, #{<<"f1">> => 11})),
+    ?VALIDATION_ERR(#{reason := #{exception := {error, always}}},
+                    hocon_schema:check_plain(Sc, #{<<"f1">> => 11})),
     ok.
 
 nullable_test() ->
@@ -304,9 +306,9 @@ nullable_test() ->
     ?assertEqual(#{<<"f2">> => "string", <<"f3">> => 0},
                  hocon_schema:check_plain(Sc, #{<<"f2">> => <<"string">>},
                                           #{nullable => true})),
-    ?assertThrow([{validation_error, #{reason := not_nullable, path := "f1"}}],
-                 hocon_schema:check_plain(Sc, #{<<"f2">> => <<"string">>},
-                                          #{nullable => false})),
+    ?VALIDATION_ERR(#{reason := not_nullable, path := "f1"},
+                    hocon_schema:check_plain(Sc, #{<<"f2">> => <<"string">>},
+                                             #{nullable => false})),
     ok.
 
 bad_root_test() ->
@@ -315,18 +317,18 @@ bad_root_test() ->
           },
     Input1 = "ab=1",
     {ok, Data1} = hocon:binary(Input1),
-    ?assertThrow([{validation_error, #{reason := bad_value_for_struct}}],
-                 hocon_schema:check_plain(Sc, Data1)),
+    ?VALIDATION_ERR(#{reason := bad_value_for_struct},
+                    hocon_schema:check_plain(Sc, Data1)),
     ok.
 
 bad_value_test() ->
     Conf = "person.id=123",
     {ok, M} = hocon:binary(Conf, #{format => richmap}),
-    ?assertThrow([{validation_error, #{reason := bad_value_for_struct}}],
-                 begin
-                     {Mapped, _} = hocon_schema:map(demo_schema, M),
-                     Mapped
-                 end).
+    ?VALIDATION_ERR(#{reason := bad_value_for_struct},
+                    begin
+                        {Mapped, _} = hocon_schema:map(demo_schema, M),
+                        Mapped
+                    end).
 
 multiple_structs_test() ->
     Sc = #{structs => [root],
@@ -353,7 +355,7 @@ translation_crash_test() ->
           },
     {ok, Data} = hocon:binary("f1=12,f2=foo", #{format => richmap}),
     {Mapped, Conf} = hocon_schema:map(?MODULE, Data),
-    ?assertThrow([{translation_error, #{reason := always, exception := error}}],
+    ?assertThrow({_, [{translation_error, #{reason := always, exception := error}}]},
                  hocon_schema:translate(Sc, Conf, Mapped)).
 
 %% a schema module may have multiple root names (which the structs/0 returns)
@@ -378,27 +380,25 @@ validation_error_if_not_nullable_test() ->
                                ]}
         },
     Data = #{},
-    ?assertThrow([{validation_error, #{reason := not_nullable}}],
-                 hocon_schema:check_plain(Sc, Data, #{nullable => false})).
+    ?VALIDATION_ERR(#{reason := not_nullable},
+                    hocon_schema:check_plain(Sc, Data, #{nullable => false})).
 
 unknown_fields_test() ->
     Conf = "person.id.num=123,person.name=mike",
     {ok, M} = hocon:binary(Conf, #{format => richmap}),
-    ?assertThrow([{validation_error, #{reason := unknown_fields,
-                                       unknown := [<<"name">>]}}],
-                 begin
-                     {Mapped, _} = hocon_schema:map(demo_schema, M, all),
-                     Mapped
-                 end).
+    ?GEN_VALIDATION_ERR(#{reason := unknown_fields,
+                          unknown := [<<"name">>]},
+                        begin
+                            {Mapped, _} = hocon_schema:map(demo_schema, M, all),
+                            Mapped
+                        end).
 
 nullable_field_test() ->
     Sc = #{structs => [?VIRTUAL_ROOT],
            fields => [{f1, hoconsc:t(integer(), #{nullable => false})}]
           },
-    ?assertThrow([{validation_error,
-                   #{reason := not_nullable,
-                     path := "f1"}}],
-                 hocon_schema:check_plain(Sc, #{})),
+    ?VALIDATION_ERR(#{reason := not_nullable, path := "f1"},
+                    hocon_schema:check_plain(Sc, #{})),
     ok.
 
 bad_input_test() ->
@@ -414,8 +414,8 @@ not_array_test() ->
            fields => [{f1, hoconsc:array(integer())}]
           },
     BadInput = #{<<"f1">> => 1},
-    ?assertThrow([{validation_error, #{reason := not_array}}],
-                 hocon_schema:check_plain(Sc, BadInput)).
+    ?VALIDATION_ERR(#{reason := not_array},
+                    hocon_schema:check_plain(Sc, BadInput)).
 
 converter_test() ->
     Sc = #{structs => [?VIRTUAL_ROOT],
@@ -425,8 +425,8 @@ converter_test() ->
     Input = #{<<"f1">> => <<"one">>},
     BadIn = #{<<"f1">> => <<"two">>},
     ?assertEqual(#{<<"f1">> => 1}, hocon_schema:check_plain(Sc, Input)),
-    ?assertThrow([{validation_error, #{reason := converter_crashed}}],
-                 hocon_schema:check_plain(Sc, BadIn)).
+    ?VALIDATION_ERR(#{reason := converter_crashed},
+                    hocon_schema:check_plain(Sc, BadIn)).
 
 no_dot_in_root_name_test() ->
     Sc = #{structs => ["a.b"],
@@ -445,18 +445,18 @@ union_of_structs_test() ->
     ?assertEqual(#{f1 => #{m1 => 1}}, check_return_atom_keys(Sc, "f1.m1=1")),
     ?assertEqual(#{f1 => #{m2 => 2}}, check_return_atom_keys(Sc, "f1.m2=2")),
     ?assertEqual(#{f1 => dummy}, check_return_atom_keys(Sc, "f1=dummy")),
-    ?assertThrow([{validation_error, #{reason := matched_no_union_member}}],
-                 check_return_atom_keys(Sc, "f1=other")),
-    ?assertThrow([{validation_error, #{reason := matched_no_union_member}}],
-                 check_return_atom_keys(Sc, "f1.m3=3")),
+    ?VALIDATION_ERR(#{reason := matched_no_union_member},
+                    check_return_atom_keys(Sc, "f1=other")),
+    ?VALIDATION_ERR(#{reason := matched_no_union_member},
+                    check_return_atom_keys(Sc, "f1.m3=3")),
     ok.
 
 multiple_errors_test() ->
     Sc = #{structs => [?VIRTUAL_ROOT],
            fields => #{?VIRTUAL_ROOT => [{m1, integer()}, {m2, integer()}]}
           },
-    ?assertThrow([{validation_error, #{path := "m1"}},
-                  {validation_error, #{path := "m2"}}],
+    ?assertThrow({_, [{validation_error, #{path := "m1"}},
+                      {validation_error, #{path := "m2"}}]},
                  check_return_atom_keys(Sc, "m1=a,m2=b")),
     ok.
 
@@ -466,5 +466,5 @@ check_return_atom_keys(Sc, Input) ->
 
 find_struct_test() ->
     ?assertEqual(foo, hocon_schema:find_struct(demo_schema, "foo")),
-    ?assertThrow({unknown_struct_name, "noexist"},
+    ?assertThrow({unknown_struct_name, _, "noexist"},
                  hocon_schema:find_struct(demo_schema, "noexist")).
