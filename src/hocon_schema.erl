@@ -67,6 +67,8 @@
                            %% set true if not to allow missing or `undefined`
                            %% NOTE: has no point setting it to `true` if field has a default value
                          , nullable => boolean() % default = true
+                           %% for sensitive data obfuscation (password, token)
+                         , sensitive => boolean()
                          }.
 
 -type field() :: {name(), typefunc() | field_schema()}.
@@ -78,17 +80,20 @@
                    , translation => fun((name()) -> [translation()])
                    }.
 
+-define(FROM_ENV_VAR(Name, Value), {'$FROM_ENV_VAR', Name, Value}).
 -define(IS_NON_EMPTY_STRING(X), (is_list(X) andalso X =/= [] andalso is_integer(hd(X)))).
 -type loggerfunc() :: fun((atom(), map()) -> ok).
--type opts() :: #{ is_richmap => boolean()
-                 , logger => loggerfunc()
-                 , stack => [name()]
+-type opts() :: #{ logger => loggerfunc()
                  , atom_key => boolean()
                    %% By default allow all fields to be undefined.
                    %% if `nullable` is set to `false`
                    %% map or check APIs fail with validation_error.
                    %% NOTE: this option serves as default value for field's `nullable` spec
                  , nullable => boolean() %% default: true for map, false for check
+
+                 %% below options are generated internally and should not be passed in by callers
+                 , is_richmap => boolean()
+                 , stack => [name()]
                  , schema => schema()
                  }.
 
@@ -256,10 +261,9 @@ map(Schema, Conf0, RootNames, Opts0) ->
                    Prefix -> Prefix
                end,
     Opts = maps:merge(#{schema => Schema,
-                        is_richmap => true,
-                        env_namespace => EnvPrefix
+                        is_richmap => true
                         }, Opts0),
-    Conf = apply_env(Conf0, Opts),
+    Conf = apply_env(EnvPrefix, Conf0, Opts),
     F =
         fun (RootName, {MappedAcc, ConfAcc}) ->
                 ok = assert_no_dot(Schema, RootName),
@@ -351,8 +355,8 @@ map_fields([], Conf, Mapped, _Opts) ->
 map_fields([{FieldName, FieldSchema} | Fields], Conf0, Acc, Opts) ->
     FieldType = field_schema(FieldSchema, type),
     FieldValue0 = get_field(Opts, FieldName, Conf0),
-    FieldValue = resolve_field_value(FieldSchema, FieldValue0, Opts),
     NewOpts = push_stack(Opts, FieldName),
+    FieldValue = resolve_field_value(FieldSchema, FieldValue0, NewOpts),
     {FAcc, FValue} = map_one_field(FieldType, FieldSchema, FieldValue, NewOpts),
     Conf = put_value(Opts, FieldName, unbox(Opts, FValue), Conf0),
     map_fields(Fields, Conf, FAcc ++ Acc, Opts).
@@ -409,9 +413,8 @@ map_field(Type, Schema, Value0, Opts) ->
     PlainValue = plain_value(Value, Opts),
     try apply_converter(Schema, PlainValue) of
         ConvertedValue ->
-            IsNullable = is_nullable(Opts, Schema),
             Validators = add_default_validator(field_schema(Schema, validator), Type),
-            ValidationResult = validate(ConvertedValue, IsNullable, Validators, Opts),
+            ValidationResult = validate(Opts, Schema, ConvertedValue, Validators),
             {ValidationResult, boxit(Opts, ConvertedValue, Value0)}
     catch
         C : E : St ->
@@ -497,8 +500,19 @@ add_index_to_error_context([{validation_error, Context} | More], Index) ->
 
 resolve_field_value(Schema, FieldValue, Opts) ->
     case get_override_env(Schema, Opts) of
-        undefined -> maybe_use_default(field_schema(Schema, default), FieldValue, Opts);
-        EnvValue -> boxit(Opts, EnvValue, FieldValue)
+        undefined ->
+            resolve_default_override(Schema, FieldValue, Opts);
+        EnvValue ->
+            boxit(Opts, EnvValue, FieldValue)
+    end.
+
+resolve_default_override(Schema, FieldValue, Opts) ->
+    case unbox(Opts, FieldValue) of
+        ?FROM_ENV_VAR(EnvName, EnvValue) ->
+            log_env_override(Schema, Opts, EnvName, path(Opts), EnvValue),
+            boxit(Opts, EnvValue, FieldValue);
+        _ ->
+            maybe_use_default(field_schema(Schema, default), FieldValue, Opts)
     end.
 
 %% use default value if field value is 'undefined'
@@ -506,22 +520,31 @@ maybe_use_default(undefined, Value, _Opt) -> Value;
 maybe_use_default(Default, undefined, Opts) -> boxit(Opts, Default, ?EMPTY_BOX);
 maybe_use_default(_, Value, _Opts) -> Value.
 
-apply_env(Conf, #{env_namespace := undefined}) -> Conf;
-apply_env(Conf, #{env_namespace := Prefix} = Opts) ->
-    AllEnvs = [string:split(string:prefix(KV, Prefix), "=")
-              || KV <- os:getenv(), string:prefix(KV, Prefix) =/= nomatch],
-    apply_env(AllEnvs, Conf, Opts).
+apply_env(undefined, Conf, _Opts) -> Conf;
+apply_env(Prefix, Conf, Opts) ->
+    AllEnvs = [string:split(KV, "=") || KV <- os:getenv(), string:prefix(KV, Prefix) =/= nomatch],
+    apply_env(Prefix, AllEnvs, Conf, Opts).
 
-apply_env([], Conf, _Opts) ->
+apply_env(_, [], Conf, _Opts) ->
     Conf;
-apply_env([[K, V] | More], Conf, Opts) ->
+apply_env(Prefix, [[K0, V] | More], Conf, Opts) ->
+    K = string:prefix(K0, Prefix),
     Path = string:join(string:replace(string:lowercase(K), "__", ".", all), ""),
-    log_env_override(Opts, K, Path, V),
-    apply_env(More, put_value(Opts, Path, V, Conf), Opts).
+    %% it lacks schema info here, so we need to tag the value '$FROM_ENV_VAR'
+    %% and the value will be logged later when checking against schema
+    %% so we know if the value is sensitive or not
+    apply_env(Prefix, More, put_value(Opts, Path, ?FROM_ENV_VAR(K0, V), Conf), Opts).
 
-log_env_override(#{env_namespace :=  Prefix} = Opts, Var0, K, V) ->
-    Var = Prefix ++ Var0,
+log_env_override(Schema, Opts, Var, K, V0) ->
+    V = obfuscate(Schema, V0),
     log(Opts, info, #{hocon_env_var_name => Var, path => K, value => V}).
+
+obfuscate(Schema, Value) ->
+    case field_schema(Schema, sensitive) of
+        true -> "*******";
+        _ -> Value
+    end.
+
 
 log(#{logger := Logger}, Level, Msg) ->
     Logger(Level, Msg);
@@ -571,8 +594,8 @@ do_split(Path) when ?IS_NON_EMPTY_STRING(Path) ->
 do_split([H | T]) ->
     [do_split(H) | do_split(T)].
 
-get_override_env(Type, Opts) ->
-    case field_schema(Type, override_env) of
+get_override_env(Schema, Opts) ->
+    case field_schema(Schema, override_env) of
         undefined ->
             undefined;
         Var ->
@@ -580,7 +603,7 @@ get_override_env(Type, Opts) ->
                 V when V =:= false orelse V =:= [] ->
                     undefined;
                 V ->
-                    log_env_override(Opts, Var, path(Opts), V),
+                    log_env_override(Schema, Opts, Var, path(Opts), V),
                     V
             end
     end.
@@ -616,28 +639,32 @@ check_enum_sybol(Value, Symbols) when is_atom(Value) ->
 check_enum_sybol(_Value, _Symbols) ->
     {error, unable_to_convert_to_enum_symbol}.
 
-validate(undefined, true, _Validators, _Opts) ->
+
+validate(Opts, Schema, Value, Validators) ->
+    validate(Opts, Schema, Value, is_nullable(Opts, Schema), Validators).
+
+validate(_Opts, _Schema, undefined, true, _Validators) ->
     []; % do not validate if no value is set
-validate(undefined, false, _Validators, Opts) ->
+validate(Opts, _Schema, undefined, false, _Validators) ->
     validation_errs(Opts, not_nullable, undefined);
-validate(Value, _, Validators, Opts) ->
-    do_validate(Value, Validators, Opts).
+validate(Opts, Schema, Value, _IsNullable, Validators) ->
+    do_validate(Opts, Schema, Value, Validators).
 
 %% returns on the first failure
-do_validate(_Value, [], _Opts) -> [];
-do_validate(Value, [H | T], Opts) ->
+do_validate(_Opts, _Schema, _Value, []) -> [];
+do_validate(Opts, Schema, Value, [H | T]) ->
     try H(Value) of
         OK when OK =:= ok orelse OK =:= true ->
-            do_validate(Value, T, Opts);
+            do_validate(Opts, Schema, Value, T);
         false ->
-            validation_errs(Opts, returned_false, Value);
+            validation_errs(Opts, returned_false, obfuscate(Schema, Value));
         {error, Reason} ->
-            validation_errs(Opts, Reason, Value)
+            validation_errs(Opts, Reason, obfuscate(Schema, Value))
     catch
         C : E : St ->
             validation_errs(Opts, #{exception => {C, E},
                                     stacktrace => St
-                                   }, Value)
+                                   }, obfuscate(Schema, Value))
     end.
 
 validation_errs(Opts, Reason, Value) ->

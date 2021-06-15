@@ -53,7 +53,7 @@ default_value_test() ->
     ?assertEqual(#{<<"bar">> => #{ <<"union_with_default">> => dummy,
                                    <<"field1">> => "foo"}}, Res).
 
-env_overide_test() ->
+env_override_test() ->
     with_envs(
       fun() ->
               Conf = "{\"bar.field1\": \"foo\"}",
@@ -485,6 +485,7 @@ sensitive_data_obfuscation_test() ->
                                        #{logger => fun(_Level, Msg) -> Self ! Msg end}),
               receive
                   #{hocon_env_var_name := "OBFUSCATION_TEST", path := Path, value := Value} ->
+                      ?assertEqual("secret", Path),
                       ?assertEqual("*******", Value)
               end
       end, [{"OBFUSCATION_TEST", "bbb"}]),
