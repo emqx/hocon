@@ -468,3 +468,25 @@ find_struct_test() ->
     ?assertEqual(foo, hocon_schema:find_struct(demo_schema, "foo")),
     ?assertThrow({unknown_struct_name, _, "noexist"},
                  hocon_schema:find_struct(demo_schema, "noexist")).
+
+
+sensitive_data_obfuscation_test() ->
+    Sc = #{structs => [?VIRTUAL_ROOT],
+           fields => #{?VIRTUAL_ROOT =>
+                       [{secret, hoconsc:t(string(),
+                                           #{sensitive => true,
+                                             override_env => "OBFUSCATION_TEST"
+                                            })}]}
+          },
+    Self = self(),
+    with_envs(
+      fun() ->
+              hocon_schema:check_plain(Sc, #{<<"secret">> => "aaa"},
+                                       #{logger => fun(_Level, Msg) -> Self ! Msg end}),
+              receive
+                  #{hocon_env_var_name := "OBFUSCATION_TEST", path := Path, value := Value} ->
+                      ?assertEqual("*******", Value)
+              end
+      end, [{"OBFUSCATION_TEST", "bbb"}]),
+    ok.
+
