@@ -26,7 +26,7 @@
 -export([map/2, map/3, map/4]).
 -export([translate/3]).
 -export([generate/2, generate/3]).
--export([check/2, check/3, check_plain/2, check_plain/3]).
+-export([check/2, check/3, check_plain/2, check_plain/3, check_plain/4]).
 -export([deep_get/2, deep_get/3, deep_get/4, deep_put/3]).
 -export([richmap_to_map/1]).
 -export([find_struct/2]).
@@ -214,7 +214,7 @@ check(Schema, Conf) ->
 
 check(Schema, Conf, Opts0) ->
     Opts = maps:merge(#{atom_key => false}, Opts0),
-    do_check(Schema, Conf, Opts).
+    do_check(Schema, Conf, Opts, all).
 
 %% @doc Check plain-map input against schema.
 %% Returns a new config with:
@@ -228,12 +228,18 @@ check_plain(Schema, Conf, Opts0) ->
     Opts = maps:merge(#{is_richmap => false,
                         atom_key => false
                        }, Opts0),
-    do_check(Schema, Conf, Opts).
+    check_plain(Schema, Conf, Opts, all).
 
-do_check(Schema, Conf, Opts0) ->
+check_plain(Schema, Conf, Opts0, RootNames) ->
+    Opts = maps:merge(#{is_richmap => false,
+                        atom_key => false
+                       }, Opts0),
+    do_check(Schema, Conf, Opts, RootNames).
+
+do_check(Schema, Conf, Opts0, RootNames) ->
     Opts = maps:merge(#{nullable => false}, Opts0),
     %% discard mappings for check APIs
-    {_DiscardMappings, NewConf} = map(Schema, Conf, structs(Schema), Opts),
+    {_DiscardMappings, NewConf} = map(Schema, Conf, RootNames, Opts),
     case maps:get(atom_key, Opts) of
         true ->
             atom_key_map(NewConf);
@@ -372,6 +378,15 @@ map_one_field(FieldType, FieldSchema, FieldValue, Opts) ->
             {Acc, FieldValue}
     end.
 
+map_field({ref, Module, Ref}, _FieldSchema, Value, Opts) ->
+    %% Switching to another module, good luck.
+    do_map(Module:fields(Ref), Value, Opts#{schema := Module});
+map_field({ref, Ref}, _FieldSchema, Value, #{schema := Schema} = Opts) ->
+    Fields = fields(Schema, Ref),
+    do_map(Fields, Value, Opts);
+map_field(Ref, _FieldSchema, Value, #{schema := Schema} = Opts) when is_list(Ref) ->
+    Fields = fields(Schema, Ref),
+    do_map(Fields, Value, Opts);
 map_field(?UNION(Types), Schema0, Value, Opts) ->
     %% union is not a boxed value
     F = fun(Type) ->
@@ -385,10 +400,7 @@ map_field(?UNION(Types), Schema0, Value, Opts) ->
         {ok, {Mapped, NewValue}} -> {Mapped, NewValue};
         Error -> {Error, Value}
     end;
-map_field(Ref, _Schema, Value, #{schema := Schema} = Opts) when is_list(Ref) ->
-    Fields = fields(Schema, Ref),
-    do_map(Fields, Value, Opts);
-map_field(?ARRAY(Type), _Schema, Value0, Opts) ->
+map_field(?ARRAY(Type), _FieldSchema, Value0, Opts) ->
     %% array needs an unbox
     Array = unbox(Opts, Value0),
     F= fun(Elem) -> map_field(Type, Type, Elem, Opts) end,

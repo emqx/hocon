@@ -28,14 +28,21 @@
 -define(VALIDATION_ERR(Reason, Expr),
         ?assertThrow({_, [{validation_error, Reason}]}, Expr)).
 
-%% namespaces
+%% root names
 structs() -> [bar].
 
 fields(bar) ->
     [ {union_with_default, fun union_with_default/1}
     , {field1, fun field1/1}
     ];
-fields(Other) -> demo_schema:fields(Other).
+fields(parent) ->
+    [ {child, hoconsc:t(hoconsc:ref(child))}
+    ];
+fields(child) ->
+    [ {name, string()}
+    ];
+fields(Other) ->
+    demo_schema:fields(Other).
 
 field1(type) -> string();
 field1(_) -> undefined.
@@ -491,3 +498,19 @@ sensitive_data_obfuscation_test() ->
       end, [{"OBFUSCATION_TEST", "bbb"}]),
     ok.
 
+remote_ref_test() ->
+    Sc = #{structs => [root],
+           fields => #{root => [{f1, hoconsc:t(hoconsc:ref(?MODULE, bar))}
+                               ]}
+          },
+    {ok, Data} = hocon:binary("root={f1={field1=foo}}", #{}),
+    ?assertMatch(#{root := #{f1 := #{field1 := "foo"}}},
+                 hocon_schema:check_plain(Sc, Data, #{atom_key => true})),
+    ok.
+
+local_ref_test() ->
+    Input = "parent={child={name=marribay}}",
+    {ok, Data} = hocon:binary(Input, #{}),
+    ?assertMatch(#{parent := #{child := #{name := "marribay"}}},
+                 hocon_schema:check_plain(?MODULE, Data, #{atom_key => true}, [parent])),
+    ok.
