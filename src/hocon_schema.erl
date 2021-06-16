@@ -261,18 +261,15 @@ map(Schema, Conf, RootNames) ->
         {[proplists:property()], hocon:config()}.
 map(Schema, Conf, all, Opts) ->
     map(Schema, Conf, structs(Schema), Opts);
-map(Schema, Conf0, RootNames, Opts0) ->
-    EnvPrefix= case os:getenv("HOCON_ENV_OVERRIDE_PREFIX") of
-                   V when V =:= false orelse V =:= [] -> undefined;
-                   Prefix -> Prefix
-               end,
+map(Schema, Conf, RootNames, Opts0) ->
     Opts = maps:merge(#{schema => Schema,
                         is_richmap => true
                         }, Opts0),
-    Conf = apply_env(EnvPrefix, Conf0, Opts),
+    {EnvNamespace, Envs} = collect_envs(),
     F =
-        fun (RootName, {MappedAcc, ConfAcc}) ->
+        fun (RootName, {MappedAcc, ConfAcc0}) ->
                 ok = assert_no_dot(Schema, RootName),
+                ConfAcc = apply_env(EnvNamespace, Envs, RootName, ConfAcc0, Opts),
                 RootValue = get_field(Opts, RootName, ConfAcc),
                 {Mapped, NewRootValue} =
                     do_map(fields(Schema, RootName), RootValue,
@@ -532,20 +529,38 @@ maybe_use_default(undefined, Value, _Opt) -> Value;
 maybe_use_default(Default, undefined, Opts) -> boxit(Opts, Default, ?EMPTY_BOX);
 maybe_use_default(_, Value, _Opts) -> Value.
 
-apply_env(undefined, Conf, _Opts) -> Conf;
-apply_env(Prefix, Conf, Opts) ->
-    AllEnvs = [string:split(KV, "=") || KV <- os:getenv(), string:prefix(KV, Prefix) =/= nomatch],
-    apply_env(Prefix, AllEnvs, Conf, Opts).
+collect_envs() ->
+    Ns = case os:getenv("HOCON_ENV_OVERRIDE_PREFIX") of
+             V when V =:= false orelse V =:= [] -> undefined;
+             Prefix -> Prefix
+         end,
+    case Ns of
+        undefined -> {undefined, []};
+        _ -> {Ns, collect_envs(Ns)}
+    end.
 
-apply_env(_, [], Conf, _Opts) ->
-    Conf;
-apply_env(Prefix, [[K0, V] | More], Conf, Opts) ->
-    K = string:prefix(K0, Prefix),
-    Path = string:join(string:replace(string:lowercase(K), "__", ".", all), ""),
-    %% it lacks schema info here, so we need to tag the value '$FROM_ENV_VAR'
-    %% and the value will be logged later when checking against schema
-    %% so we know if the value is sensitive or not
-    apply_env(Prefix, More, put_value(Opts, Path, ?FROM_ENV_VAR(K0, V), Conf), Opts).
+collect_envs(Ns) ->
+    [begin
+         [Name, Value] = string:split(KV, "="),
+         {Name, Value}
+     end || KV <- os:getenv(), string:prefix(KV, Ns) =/= nomatch].
+
+apply_env(_Ns, [], _RootName, Conf, _Opts) -> Conf;
+apply_env(Ns, [{VarName, V} | More], RootName, Conf, Opts) ->
+    K = string:prefix(VarName, Ns),
+    Path0 = string:split(string:lowercase(K), "__", all),
+    Path1 = lists:filter(fun(N) -> N =/= [] end, Path0),
+    NewConf = case Path1 =/= [] andalso bin(RootName) =:= bin(hd(Path1)) of
+                  true ->
+                      Path = string:join(Path1, "."),
+                      %% it lacks schema info here, so we need to tag the value '$FROM_ENV_VAR'
+                      %% %% %% and the value will be logged later when checking against schema
+                      %% %% %% so we know if the value is sensitive or not
+                      put_value(Opts, Path, ?FROM_ENV_VAR(VarName, V), Conf);
+                  false ->
+                      Conf
+              end,
+    apply_env(Ns, More, RootName, NewConf, Opts).
 
 log_env_override(Schema, Opts, Var, K, V0) ->
     V = obfuscate(Schema, V0),
