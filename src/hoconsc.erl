@@ -18,6 +18,7 @@
 -module(hoconsc).
 
 -export([t/1, t/2]).
+-export([ref/1, ref/2]).
 -export([array/1, union/1, enum/1]).
 
 -include("hoconsc.hrl").
@@ -26,6 +27,13 @@ t(Type) -> #{type => Type}.
 
 t(Type, Opts) ->
     Opts#{type => Type}.
+
+%% @doc Make a local reference type to local schema's struct definition.
+ref(Name) -> {ref, Name}.
+
+%% @doc Make a 'remote' reference type to a struct defined
+%% in the given module's `fields/1` callback.
+ref(Module, Name) -> {ref, Module, Name}.
 
 %% @doc make an array type
 array(OfType) -> ?ARRAY(OfType).
