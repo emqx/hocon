@@ -64,7 +64,7 @@
                          , converter => function()
                          , validator => function()
                          , override_env => string()
-                           %% set true if not to allow missing or `undefined`
+                           %% set true if a field is allowed to be `undefined`
                            %% NOTE: has no point setting it to `true` if field has a default value
                          , nullable => boolean() % default = true
                            %% for sensitive data obfuscation (password, token)
