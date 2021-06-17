@@ -20,7 +20,7 @@
 
 -behaviour(hocon_schema).
 
--export([structs/0, fields/1]).
+-export([structs/0, fields/1, validations/0]).
 
 -define(VIRTUAL_ROOT, "").
 -define(GEN_VALIDATION_ERR(Reason, Expr),
@@ -43,6 +43,17 @@ fields(child) ->
     ];
 fields(Other) ->
     demo_schema:fields(Other).
+
+validations() -> [{check_child_name, fun check_child_name/1}].
+
+check_child_name(Conf) ->
+    %% nobody names their kid with single letters.
+    case hocon_schema:get_value("parent", Conf) of
+        undefined ->
+            ok;
+        P ->
+            length(hocon_schema:get_value("child.name", P)) > 1
+    end.
 
 field1(type) -> string();
 field1(_) -> undefined.
@@ -353,6 +364,12 @@ no_translation_test() ->
     {Mapped, Conf} = hocon_schema:map(?MODULE, M),
     ?assertEqual(Mapped, hocon_schema:translate(?MODULE, Conf, Mapped)).
 
+no_translation2_test() ->
+    Sc = #{structs => [?VIRTUAL_ROOT],
+           fields => [{f1, integer()}]
+          },
+    ?assertEqual([], hocon_schema:translate(Sc, #{}, [])).
+
 translation_crash_test() ->
     Sc = #{structs => [?VIRTUAL_ROOT],
            fields => [{f1, hoconsc:t(integer())},
@@ -514,3 +531,42 @@ local_ref_test() ->
     ?assertMatch(#{parent := #{child := #{name := "marribay"}}},
                  hocon_schema:check_plain(?MODULE, Data, #{atom_key => true}, [parent])),
     ok.
+
+integrity_check_test() ->
+    Sc = #{structs => [root],
+           fields => #{root => [{f1, integer()},
+                                {f2, integer()}
+                               ]},
+           validations => [{"f1 > f2",
+                            fun(C) ->
+                                    F1 = hocon_schema:get_value("root.f1", C),
+                                    F2 = hocon_schema:get_value("root.f2", C),
+                                    F1 > F2
+                            end
+                           }]
+          },
+    Data1 = "root={f1=1,f2=2}",
+    ?VALIDATION_ERR(#{reason := integrity_validation_failure,
+                      validation_name := "f1 > f2"
+                     },
+                    check_plain_bin(Sc, Data1, #{atom_key => true})),
+    Data2 = "root={f1=3,f2=2}",
+    ?assertEqual(#{root => #{f1 => 3, f2 => 2}},
+                   check_plain_bin(Sc, Data2, #{atom_key => true})),
+    ok.
+
+integrity_crash_test() ->
+    Sc = #{structs => [root],
+           fields => #{root => [{f1, integer()}]},
+           validations => [{"always-crash", fun(_) -> error(always) end}]
+          },
+    Data1 = "root={f1=1}",
+    ?VALIDATION_ERR(#{reason := integrity_validation_crash,
+                      validation_name := "always-crash"
+                     },
+                    check_plain_bin(Sc, Data1, #{atom_key => true})),
+    ok.
+
+check_plain_bin(Sc, Data, Opts) ->
+    {ok, Conf} = hocon:binary(Data, #{}),
+    hocon_schema:check_plain(Sc, Conf, Opts).

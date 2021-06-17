@@ -21,6 +21,7 @@
         , fields/2
         , translations/1
         , translation/2
+        , validations/1
         ]).
 
 -export([map/2, map/3, map/4]).
@@ -28,7 +29,7 @@
 -export([generate/2, generate/3]).
 -export([check/2, check/3, check_plain/2, check_plain/3, check_plain/4]).
 -export([deep_get/2, deep_get/3, deep_get/4, deep_put/3]).
--export([richmap_to_map/1]).
+-export([richmap_to_map/1, get_value/2]).
 -export([find_struct/2]).
 
 -include("hoconsc.hrl").
@@ -54,6 +55,7 @@
 
 -type typefunc() :: fun((_) -> _).
 -type translationfunc() :: fun((hocon:config()) -> hocon:config()).
+-type validationfun() :: fun((hocon:config()) -> ok).
 -type field_schema() :: typerefl:type()
                       | ?UNION([type()])
                       | ?ARRAY(type())
@@ -73,11 +75,12 @@
 
 -type field() :: {name(), typefunc() | field_schema()}.
 -type translation() :: {name(), translationfunc()}.
+-type validation() :: {name(), validationfun()}.
 -type schema() :: module()
                 | #{ structs := [name()]
-                   , fileds := fun((name()) -> [field()])
-                   , translations => [name()]
-                   , translation => fun((name()) -> [translation()])
+                   , fileds := #{name() => [field()]}
+                   , translations => #{name() => [translation()]} %% for config mappings
+                   , validations => [validation()] %% for config integrity checks
                    }.
 
 -define(FROM_ENV_VAR(Name, Value), {'$FROM_ENV_VAR', Name, Value}).
@@ -101,8 +104,9 @@
 -callback fields(name()) -> [field()].
 -callback translations() -> [name()].
 -callback translation(name()) -> [translation()].
+-callback validations() -> [validation()].
 
--optional_callbacks([translations/0, translation/1]).
+-optional_callbacks([translations/0, translation/1, validations/0]).
 
 -define(VIRTUAL_ROOT, "").
 -define(ERR(Code, Context), {Code, Context}).
@@ -130,11 +134,20 @@ translations(Mod) when is_atom(Mod) ->
         false -> [];
         true -> Mod:translations()
     end;
-translations(#{translations := Trs}) -> maps:keys(Trs).
+translations(#{translations := Trs}) -> maps:keys(Trs);
+translations(Sc) when is_map(Sc) -> [].
 
 -spec translation(schema(), name()) -> [translation()].
 translation(Mod, Name) when is_atom(Mod) -> Mod:translation(Name);
 translation(#{translations := Trs}, Name) -> maps:get(Name, Trs).
+
+-spec validations(schema()) -> [validation()].
+validations(Mod) when is_atom(Mod) ->
+    case erlang:function_exported(Mod, validations, 0) of
+        false -> [];
+        true -> Mod:validations()
+    end;
+validations(Sc) -> maps:get(validations, Sc, []).
 
 %% @doc Find struct name from a guess.
 find_struct(Schema, StructName) ->
@@ -202,6 +215,35 @@ do_translate([{MappedField, Translator} | More], Namespace, Conf, Acc) ->
                                                 exception => Exception
                                                })},
             do_translate(More, Namespace, Conf, [Error | Acc])
+    end.
+
+assert_integrity(Schema, Conf0, #{is_richmap := IsRichMap}) ->
+    Conf = case IsRichMap of
+               true -> richmap_to_map(Conf0);
+               false -> Conf0
+           end,
+    Names = validations(Schema),
+    Errors = assert_integrity(Schema, Names, Conf, []),
+    ok = assert_no_error(Schema, Errors).
+
+assert_integrity(_Schema, [], _Conf, Result) -> lists:reverse(Result);
+assert_integrity(Schema, [{Name, Validator} | Rest], Conf, Acc) ->
+    try Validator(Conf) of
+        OK when OK =:= true orelse OK =:= ok ->
+            assert_integrity(Schema, Rest, Conf, Acc);
+        Other ->
+            assert_integrity(Schema, Rest, Conf,
+                             [{error, ?VALIDATION_ERRS(#{reason => integrity_validation_failure,
+                                                         validation_name => Name,
+                                                         result => Other})}])
+    catch
+        Exception : Reason : St ->
+            Error = {error, ?VALIDATION_ERRS(#{reason => integrity_validation_crash,
+                                               validation_name => Name,
+                                               exception => {Exception, Reason},
+                                               stacktrace => St
+                                              })},
+            assert_integrity(Schema, Rest, Conf, [Error | Acc])
     end.
 
 %% @doc Check richmap input against schema.
@@ -283,6 +325,7 @@ map(Schema, Conf, RootNames, Opts0) ->
         end,
     {Mapped, NewConf} = lists:foldl(F, {[], Conf}, RootNames),
     ok = assert_no_error(Schema, Mapped),
+    ok = assert_integrity(Schema, NewConf, Opts),
     {Mapped, NewConf}.
 
 %% Assert no dot in root struct name.
@@ -798,6 +841,11 @@ richmap_to_map(Iter, Map) ->
         none ->
             Map
     end.
+
+%% @doc Get (maybe nested) field value for the given path.
+-spec get_value(string(), hocon:config()) -> term().
+get_value(Path, Config) ->
+    plain_get(Path, Config).
 
 assert_no_error(Schema, List) ->
     case find_errors(List) of
