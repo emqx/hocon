@@ -17,7 +17,6 @@
 -module(hocon_schema_builtin).
 
 -include_lib("typerefl/include/types.hrl").
--include_lib("typerefl/src/typerefl_int.hrl").
 
 -include("hoconsc.hrl").
 
