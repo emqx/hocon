@@ -88,6 +88,7 @@
 -type loggerfunc() :: fun((atom(), map()) -> ok).
 -type opts() :: #{ logger => loggerfunc()
                  , atom_key => boolean()
+                 , return_plain => boolean()
                    %% By default allow all fields to be undefined.
                    %% if `nullable` is set to `false`
                    %% map or check APIs fail with validation_error.
@@ -255,7 +256,7 @@ check(Schema, Conf) ->
     check(Schema, Conf, #{}).
 
 check(Schema, Conf, Opts0) ->
-    Opts = maps:merge(#{atom_key => false}, Opts0),
+    Opts = maps:merge(#{is_richmap => true, atom_key => false}, Opts0),
     do_check(Schema, Conf, Opts, all).
 
 %% @doc Check plain-map input against schema.
@@ -282,12 +283,18 @@ do_check(Schema, Conf, Opts0, RootNames) ->
     Opts = maps:merge(#{nullable => false}, Opts0),
     %% discard mappings for check APIs
     {_DiscardMappings, NewConf} = map(Schema, Conf, RootNames, Opts),
-    case maps:get(atom_key, Opts) of
-        true ->
-            atom_key_map(NewConf);
-        false ->
-            NewConf
-    end.
+    maybe_covert_keys_to_atom(
+        maybe_convert_to_plain_map(NewConf, Opts), Opts).
+
+maybe_convert_to_plain_map(Conf, #{is_richmap := true, return_plain := true}) ->
+    richmap_to_map(Conf);
+maybe_convert_to_plain_map(Conf, _Opts) ->
+    Conf.
+
+maybe_covert_keys_to_atom(Conf, #{atom_key := true}) ->
+    atom_key_map(Conf);
+maybe_covert_keys_to_atom(Conf, _Opts) ->
+    Conf.
 
 -spec map(schema(), hocon:config()) -> {[proplists:property()], hocon:config()}.
 map(Schema, Conf) ->

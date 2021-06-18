@@ -201,7 +201,6 @@ richmap_to_map_test_() ->
                       #{<<"b">> => [1, 2, #{<<"x">> => <<"foo">>}]}}, F("a.b = [1,2,{x=foo}]"))
     ].
 
-
 env_test_() ->
     F = fun (Str, Envs) ->
                     {ok, M} = hocon:binary(Str, #{format => richmap}),
@@ -297,6 +296,16 @@ atom_key_array_test() ->
     {ok, PlainMap} = hocon:binary(Conf, #{}),
     ?assertEqual(#{arr => [#{id => 1}, #{id => 2}]},
                  hocon_schema:check_plain(Sc, PlainMap, #{atom_key => true})).
+return_plain_test() ->
+    Sc = #{structs => [?VIRTUAL_ROOT],
+           fields => [ {metadata, hoconsc:t(string())}
+                     , {type, hoconsc:t(string())}
+                     , {value, hoconsc:t(string())}
+                     ]},
+    StrConf = "type=t, metadata=m, value=v",
+    {ok, M} = hocon:binary(StrConf, #{format => richmap}),
+    ?assertMatch(#{metadata := "m", type := "t", value := "v"},
+        hocon_schema:check(Sc, M, #{atom_key => true, return_plain => true})).
 
 validator_test() ->
     Sc = #{structs => [?VIRTUAL_ROOT],
