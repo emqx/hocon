@@ -283,8 +283,7 @@ do_check(Schema, Conf, Opts0, RootNames) ->
     Opts = maps:merge(#{nullable => false}, Opts0),
     %% discard mappings for check APIs
     {_DiscardMappings, NewConf} = map(Schema, Conf, RootNames, Opts),
-    maybe_covert_keys_to_atom(
-        maybe_convert_to_plain_map(NewConf, Opts), Opts).
+    NewConf.
 
 maybe_convert_to_plain_map(Conf, #{is_richmap := true, return_plain := true}) ->
     richmap_to_map(Conf);
@@ -333,7 +332,8 @@ map(Schema, Conf, RootNames, Opts0) ->
     {Mapped, NewConf} = lists:foldl(F, {[], Conf}, RootNames),
     ok = assert_no_error(Schema, Mapped),
     ok = assert_integrity(Schema, NewConf, Opts),
-    {Mapped, NewConf}.
+    {Mapped, maybe_covert_keys_to_atom(
+                maybe_convert_to_plain_map(NewConf, Opts), Opts)}.
 
 %% Assert no dot in root struct name.
 %% This is because the dot will cause root name to be splited,
