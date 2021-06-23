@@ -170,6 +170,9 @@ generate_compatibility_test() ->
 
     [{app_foo, C0}] = cuttlefish_generator:map({Translations, Mappings, []}, Conf),
     [{app_foo, C1}] = hocon_schema:generate(demo_schema, Hocon),
+    {[{app_foo, C1}], Conf1} = hocon_schema:map_translate(demo_schema, Hocon, #{}),
+    ?assertMatch(#{<<"foo">> := #{<<"max">> := 2, <<"min">> := 1, <<"setting">> := "val"}},
+        hocon_schema:richmap_to_map(Conf1)),
     ?assertEqual(lists:ukeysort(1, C0), lists:ukeysort(1, C1)).
 
 deep_get_test_() ->
