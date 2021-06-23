@@ -26,17 +26,14 @@
 
 -export([map/2, map/3, map/4]).
 -export([translate/3]).
+-export([nest/1]).
 -export([generate/2, generate/3]).
 -export([check/2, check/3, check_plain/2, check_plain/3, check_plain/4]).
 -export([deep_get/2, deep_get/3, deep_get/4, deep_put/3]).
--export([richmap_to_map/1, get_value/2]).
+-export([richmap_to_map/1, atom_key_map/1, get_value/2]).
 -export([find_struct/2]).
 
 -include("hoconsc.hrl").
-
--ifdef(TEST).
--export([nest/1]).
--endif.
 
 -export_type([ name/0
              , typefunc/0
