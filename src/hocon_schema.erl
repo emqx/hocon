@@ -171,7 +171,8 @@ generate(Schema, Conf, Opts) ->
     {Mapped, _NewConf} = map_translate(Schema, Conf, Opts),
     Mapped.
 
--spec(map_translate(schema(), hocon:config(), opts()) -> [proplists:property()]).
+-spec(map_translate(schema(), hocon:config(), opts()) ->
+    {[proplists:property()], hocon:config()}).
 map_translate(Schema, Conf, Opts) ->
     {Mapped, NewConf} = map(Schema, Conf, all, Opts),
     Translated = translate(Schema, NewConf, Mapped),
