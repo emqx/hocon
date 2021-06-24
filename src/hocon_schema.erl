@@ -384,7 +384,7 @@ do_map2([{[$$ | _] = _Wildcard, Schema}], Conf, Opts) ->
     %% e.g. in this config:
     %%     #{config => #{internal => #{val => 1},
     %%                   external => #{val => 2}}
-    %% `foo` and `bar` share the same schema, which is_map
+    %% `internal` and `external` share the same schema, which is_map
     %%     [{"val", #{type => integer()}}]
     %%
     %% If there is no wildcard, the enclosing schema should be:
