@@ -1,6 +1,6 @@
 {application, hocon,
  [{description, "HOCON configuration file Parser"},
-  {vsn, "0.0.1"},
+  {vsn, "git"},
   {registered, []},
   {applications,
    [kernel,
