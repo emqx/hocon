@@ -149,6 +149,12 @@ unquoted_test_() ->
 multiline_string_test_() ->
     [].
 
+obj_inside_array_test_() ->
+    [ ?_assertEqual(#{<<"a">> => [#{<<"b">> => #{<<"c">> => 1}}]}, binary("a:[{b.c = 1}]"))
+    , ?_assertEqual(#{<<"a">> => [#{<<"b">> => #{<<"c">> => [#{<<"x">> => #{<<"y">> => 1}}]}}]},
+                    binary("a:[{b.c = [{x.y=1}]}]"))
+    ].
+
 array_concat_test_() ->
     [ ?_assertEqual(#{<<"a">> => [1, 2, 3, 4]}, binary("a=[1, 2] [3, 4]"))
     , ?_assertEqual(#{<<"a">> => [1, 2, 3, 4]}, binary("a=[1, 2][3, 4]"))

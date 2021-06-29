@@ -128,6 +128,10 @@ do_expand([{#{type := key}=Key, Value} | More], Acc) ->
     do_expand(More, [create_nested(Key, Value) | Acc]);
 do_expand([#{type := object}=O | More], Acc)  ->
     do_expand(More, [O#{value => do_expand(value_of(O), [])} | Acc]);
+do_expand([#{type := array, value := V} = A | More], Acc)  ->
+    do_expand(More, [A#{value => do_expand(V, [])} | Acc]);
+do_expand([#{type := concat, value := V} = C | More], Acc)  ->
+    do_expand(More, [C#{value => do_expand(V, [])} | Acc]);
 do_expand([Other | More], Acc) ->
     do_expand(More, [Other | Acc]).
 
