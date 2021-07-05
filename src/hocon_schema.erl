@@ -365,6 +365,8 @@ str(S) when is_list(S) -> S.
 bin(A) when is_atom(A) -> atom_to_binary(A, utf8);
 bin(S) -> iolist_to_binary(S).
 
+atom(B) when is_binary(B) -> binary_to_atom(B, utf8).
+
 do_map(Fields, Value, Opts) ->
     case unbox(Opts, Value) of
         undefined ->
@@ -492,7 +494,8 @@ map_field(Type, Schema, Value0, Opts) ->
 maps_keys(undefined) -> [];
 maps_keys(Map) -> maps:keys(Map).
 
-check_unknown_fields(Opts, SchemaFieldNames0, DataFieldNames) ->
+check_unknown_fields(Opts, SchemaFieldNames0, DataFieldNames0) ->
+    DataFieldNames = lists:map(fun bin/1, DataFieldNames0),
     SchemaFieldNames = lists:map(fun bin/1, SchemaFieldNames0),
     case DataFieldNames -- SchemaFieldNames of
         [] ->
@@ -767,7 +770,10 @@ do_plain_get([], Conf) ->
     %% value as-is
     Conf;
 do_plain_get([H | T], Conf) ->
-    Child = maps:get(H, Conf, undefined),
+    Child = case maps:get(H, Conf, undefined) of
+        undefined -> maps:get(atom(H), Conf, undefined);
+        C -> C
+    end,
     do_plain_get(T, Child).
 
 %% @doc get a child node from richmap.
