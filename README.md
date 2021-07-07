@@ -20,12 +20,19 @@ HOCON spec for reference: https://lightbend.github.io/config/
   - Array (`#{key => [1,2,3,4]}`)
     * `key=[1, 2] [3, 4]`
     * `key=[1, 2]\n[3, 4]`
-    * `key=[1,2,3,4]` 
+    * `key=[1,2,3,4]`
   - Object (`#{key => #{a => 1,b => 2}}`):
     * `key={a: 1} {b: 2}`
     * `key={a: 1}\n{b: 2}`
-    * `key={a=1, b=2}` 
+    * `key={a=1, b=2}`
 - `url()/file()/classpath()` includes are not supported
+
+## Schema
+
+HOCON schema (`hocon_schema`) is a type-safe data validation framework.
+which is compatible to [basho cuttlefish](https://github.com/basho/cuttlefish)
+
+See more information in [SCHEMA.md](SCHEMA.md)
 
 ## Test Data
 
