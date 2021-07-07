@@ -365,7 +365,7 @@ str(S) when is_list(S) -> S.
 bin(A) when is_atom(A) -> atom_to_binary(A, utf8);
 bin(S) -> iolist_to_binary(S).
 
-atom(B) when is_binary(B) -> binary_to_atom(B, utf8).
+atom(B) when is_binary(B) -> binary_to_existing_atom(B, utf8).
 
 do_map(Fields, Value, Opts) ->
     case unbox(Opts, Value) of
