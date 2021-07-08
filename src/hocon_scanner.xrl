@@ -40,7 +40,6 @@ Ignored             = {WhiteSpace}|{NewLine}|{Comment}
 
 %% Punctuator
 Punctuator          = [{}\[\],:=]
-TrailingComma       = ,({WhiteSpace}|{NewLine})*}|,({WhiteSpace}|{NewLine})*]
 
 %% Null
 Null               = null
@@ -89,7 +88,6 @@ Rules.
 
 {Ignored}         : skip_token.
 {Punctuator}      : {token, {list_to_atom(string:trim(TokenChars)), TokenLine}}.
-{TrailingComma}   : {skip_token, string:trim(TokenChars, leading, ",")}.
 {Bool}            : {token, {bool, TokenLine, bool(TokenChars)}}.
 {Null}            : {token, {null, TokenLine, null}}.
 {Unquoted}        : {token, maybe_include(TokenChars, TokenLine)}.

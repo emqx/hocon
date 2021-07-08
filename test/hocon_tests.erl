@@ -135,7 +135,8 @@ commas_test_() ->
     ].
 
 trailing_comma_test_() ->
-    [ ?_assertEqual({ok, #{<<"a">> => [#{<<"b">> => 1}, #{<<"c">> => 2}]}},
+    [ ?_assertEqual({ok, #{<<"a">> => [#{<<"b">> => 1}, #{<<"c">> => 2}],
+                           <<"b">> => [<<"c">>, <<"d">>]}},
                     hocon:load("etc/trailing-comma.conf"))
     ].
 

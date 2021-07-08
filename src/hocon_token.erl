@@ -16,7 +16,7 @@
 
 -module(hocon_token).
 
--export([read/1, scan/2, trans_key/1, parse/2, include/2]).
+-export([read/1, scan/2, trans_key/1, rm_trailing_comma/1, parse/2, include/2]).
 -export([value_of/1]).
 
 -export_type([boxed/0, inbox/0]).
@@ -56,6 +56,17 @@ scan(Input, Ctx) when is_list(Input) ->
         {error, {Line, _Mod, ErrorInfo}, _} ->
             scan_error(Line, hocon_scanner:format_error(ErrorInfo), Ctx)
     end.
+
+rm_trailing_comma(Tokens) ->
+    rm_trailing_comma(Tokens, []).
+
+rm_trailing_comma([], Acc) -> lists:reverse(Acc);
+rm_trailing_comma([{',', _}, {'}', _} = Cr | More], Acc) ->
+    rm_trailing_comma(More, [Cr | Acc]);
+rm_trailing_comma([{',', _}, {']', _} = Sr | More], Acc) ->
+    rm_trailing_comma(More, [Sr | Acc]);
+rm_trailing_comma([Other | More], Acc) ->
+    rm_trailing_comma(More, [Other | Acc]).
 
 %% Due to the lack of a splicable value terminal token,
 %% the parser would have to look-ahead the second token
