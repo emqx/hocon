@@ -134,6 +134,11 @@ commas_test_() ->
     , ?_assertError(_, binary("a={b=1,,c=2}"))
     ].
 
+trailing_comma_test_() ->
+    [ ?_assertEqual({ok, #{<<"a">> => [#{<<"b">> => 1}, #{<<"c">> => 2}]}},
+                    hocon:load("etc/trailing-comma.conf"))
+    ].
+
 object_merging_test_() ->
     [ ?_assertEqual(binary("a={b=1, c=2}"), binary("a={b=1}, a={c=2}"))
     , ?_assertEqual(binary("a={b=1, c=2}"), binary("a={b=1, c=1}, a={c=2}"))
