@@ -40,7 +40,7 @@ Ignored             = {WhiteSpace}|{NewLine}|{Comment}
 
 %% Punctuator
 Punctuator          = [{}\[\],:=]
-TrailingComma       = ,({Ignored})*}|,({Ignored})*]
+TrailingComma       = ,({WhiteSpace}|{NewLine})*}|,({WhiteSpace}|{NewLine})*]
 
 %% Null
 Null               = null
