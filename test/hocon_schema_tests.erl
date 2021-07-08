@@ -273,6 +273,17 @@ array_of_enum_test() ->
     {ok, PlainMap} = hocon:binary(Conf, #{}),
     ?assertEqual(#{<<"val">> => [a, b]}, hocon_schema:check_plain(Sc, PlainMap)).
 
+array_of_primitives_test() ->
+    Sc = #{structs => [?VIRTUAL_ROOT],
+           fields => [ {k, hoconsc:t(hoconsc:array(string()), #{default => ["a", "b"]})}
+                     , {x, string()}
+                     ]
+          },
+    Conf = "x = y",
+    {ok, RichMap} = hocon:binary(Conf, #{format => richmap}),
+    ?assertEqual(#{<<"k">> => ["a", "b"], <<"x">> => <<"y">>}, hocon_schema:richmap_to_map(
+       hocon_schema:check(Sc, RichMap))).
+
 atom_key_test() ->
     Sc = #{structs => [?VIRTUAL_ROOT],
            fields => [{val, binary()}]
