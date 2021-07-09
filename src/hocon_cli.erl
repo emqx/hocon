@@ -23,6 +23,7 @@
 
 -export([main/1]).
 
+-define(STDERR(Str, Args), io:format(standard_error, Str ++ "~n", Args)).
 -define(STDOUT(Str, Args), io:format(Str ++ "~n", Args)).
 -define(FORMAT(Str, Args), io_lib:format(Str, Args)).
 -define(FORMAT_TEMPLATE, [time, " [", level, "] ", msg, "\n"]).
@@ -34,13 +35,6 @@
                     | {integer(), module(), term()}.
 
 -elvis([{elvis_style, macro_module_names, disable}]).
-
--ifndef(TEST).
-% @TODO add logger module for test
--define(LOG, logger).
--else.
--define(LOG, logger).
--endif.
 
 cli_options() ->
 %% Option Name, Short Code, Long Code, Argument Spec, Help Message
@@ -131,7 +125,7 @@ get(_ParsedArgs, []) ->
     stop_deactivate();
 get(ParsedArgs, [Query | _]) ->
     Schema = load_schema(ParsedArgs),
-    Conf = load_conf(ParsedArgs),
+    Conf = load_conf(ParsedArgs, fun logger_for_get/3),
     %% map only the desired root name
     [RootName0 | _] = string:tokens(Query, "."),
     RootName = hocon_schema:find_struct(Schema, RootName0),
@@ -152,13 +146,13 @@ load_schema(ParsedArgs) ->
             Module
     end.
 
--spec load_conf([proplists:property()]) -> hocon:config() | no_return().
-load_conf(ParsedArgs) ->
+-spec load_conf([proplists:property()], function()) -> hocon:config() | no_return().
+load_conf(ParsedArgs, LogFunc) ->
     ConfFiles = proplists:get_all_values(conf_file, ParsedArgs),
-    ?LOG:debug("ConfFiles: ~p", [ConfFiles]),
+    LogFunc(debug, "ConfFiles: ~p", [ConfFiles]),
     case hocon:files(ConfFiles, #{format => richmap}) of
         {error, E} ->
-            ?LOG:error("~p~n", [E]),
+            LogFunc(error, "~p~n", [E]),
             stop_deactivate();
         {ok, Conf} ->
             Conf
@@ -179,8 +173,7 @@ writable_destination_path(ParsedArgs) ->
         ok ->
             AbsoluteDestPath;
         {error, E} ->
-            ?LOG:error(
-                "Error creating ~s: ~s",
+            log(error, "Error creating ~s: ~s",
                 [AbsoluteDestPath, file:format_error(E)]),
             error
     end.
@@ -198,7 +191,7 @@ generate(ParsedArgs) ->
     case is_valid_now_time(NowTime) of
         true -> ok;
         false ->
-            ?LOG:error("bad -t|--now_time option, get it from this script's now_time command"),
+            log(error, "bad -t|--now_time option, get it from this script's now_time command", []),
             stop_deactivate()
     end,
 
@@ -207,10 +200,10 @@ generate(ParsedArgs) ->
 
     DestinationVMArgsFilename = filename_maker("vm", NowTime, "args"),
     DestinationVMArgs = filename:join(AbsPath, DestinationVMArgsFilename),
-    ?LOG:debug("Generating config in: ~p", [Destination]),
+    log(debug, "Generating config in: ~p", [Destination]),
 
     Schema = load_schema(ParsedArgs),
-    Conf = load_conf(ParsedArgs),
+    Conf = load_conf(ParsedArgs, fun log/3),
     LogFun = case proplists:get_value(verbose_env, ParsedArgs) of
                  true -> fun log_for_generator/2;
                  false -> fun(_, _) -> ok end
@@ -236,7 +229,7 @@ generate(ParsedArgs) ->
             end
     catch
         throw : Errors ->
-            lists:foreach(fun(E) -> ?LOG:error("~p", [E]) end, Errors),
+            lists:foreach(fun(E) -> log(error, "~p", [E]) end, Errors),
             stop_deactivate()
     end.
 
@@ -266,7 +259,7 @@ do_delete([File | Files], Left) ->
     case file:delete(File) of
         ok -> ok;
         {error, Reason} ->
-            ?LOG:error("Could not delete ~s, ~p", [File, Reason])
+            log(error, "Could not delete ~s, ~p", [File, Reason])
     end,
     do_delete(Files, Left - 1).
 
@@ -274,7 +267,7 @@ do_delete([File | Files], Left) ->
 maybe_log_file_error(_, ok) ->
     ok;
 maybe_log_file_error(Filename, {error, Reason}) ->
-    ?LOG:error("Error writing ~s: ~s", [Filename, file:format_error(Reason)]),
+    log(error, "Error writing ~s: ~s", [Filename, file:format_error(Reason)]),
     ok.
 
 filename_maker(Filename, NowTime, Extension) ->
@@ -320,3 +313,15 @@ stop_deactivate() ->
 stop_ok() ->
     ok.
 -endif.
+
+log(Level, Fmt, Args) ->
+    logger:Level(Fmt, Args).
+
+%% log to stderr for 'get' command
+logger_for_get(L, Fmt, Args) when L =:= debug orelse L =:= info ->
+    case os:getenv("DEBUG") of
+        "1" -> ?STDERR(Fmt, Args);
+        _ -> ok
+    end;
+logger_for_get(_, Fmt, Args) ->
+    ?STDERR(Fmt, Args).

@@ -47,7 +47,7 @@ define a root level schema with just a `integer()` type.
 Structs consist of data fields, which can be defined using `hocon_schema` behaviour callbacks.
 
 * `structs/0`: This callback returns all the root level namespaces.
-* `fields/1`: THis callback returns the schema for each data field (in a list, so order matters).
+* `fields/1`: This callback returns the schema for each data field (in a list, so order matters).
 
 For example, to define a struct named `foo` having one integer field, the schema module may look like:
 
@@ -99,15 +99,15 @@ the union member types in the defined order until the given data matches any of 
 
 ### Config generation
 
-When starting a Erlang node it requires a system configuration file, (usually named `sys.config`),
+When starting a Erlang node it usually requires a system configuration file, (usually named `sys.config`),
 see [Erlang doc](https://erlang.org/doc/man/config.html#sys.config) for more details.
 
-When using HOCON config format, we need a tool to tranfrom a HOCON file to a config file of `sys.config` format.
+When using HOCON config format, we need a tool to transfrom a HOCON file to a config file of `sys.config` format.
 `hocon_schema` is such a tool.
 
 ### Config mapping
 
-As introduced above, Erlang requires a `sys.config` to bootstrap, the content of this config is essentially
+The content of the above mentioned config file for Erlang node to bootstrap is essentially
 an Erlang expression which evaluates to an Erlang term (the 'object' in Erlang).
 
 To map HOCON objects (or their fields) to Erlang terms, we need to define a set of rules, such rules in HOCON schema
@@ -160,7 +160,7 @@ specific field values can be retrieved with `hocon_schema:deep_get` API.
 
 Inter-field or even inter-object config validation can be done by implementing
 the `validations` optional callback.
-Validations work similar to translations, only the OK return value is discarded
+Validations work similar to translations, only the OK (`ok` or `true`) return value is discarded
 and failures are raised as exception in the map call.
 
 NOTE: the integrity validation is performed after all fields are checked and coverted.
@@ -202,11 +202,10 @@ HOCON schema also supports below field metadata.
 <a name="default_override_rule"></a>
 ## Default environment variable override
 
-By default, a field (except for when it's inside an array element) can be overriden by an environment
+By default, a field (except for when it's inside an array element) can be overridden by an environment
 variable the name of which is translated from field's absolute path with dots replaced by
 double-underscores and then prepended with a prefix.
 
-For example, the value of config entry `foo.bar.field1` can be overriden by
+For example, the value of config entry `foo.bar.field1` can be overridden by
 `PREFIX_FOO__BAR__FIELD1`, or `PREFIX_foo_bar_field1`, where `PREFIX_`
 is configurable by another environment variable `HOCON_ENV_OVERRIDE_PREFIX`.
-
