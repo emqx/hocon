@@ -590,3 +590,31 @@ integrity_crash_test() ->
 check_plain_bin(Sc, Data, Opts) ->
     {ok, Conf} = hocon:binary(Data, #{}),
     hocon_schema:check_plain(Sc, Conf, Opts).
+
+default_value_for_array_field_test() ->
+    Sc = #{structs => [?VIRTUAL_ROOT],
+           fields => [ {k, hoconsc:t(hoconsc:array(string()), #{default => [<<"a">>, <<"b">>]})}
+                     , {x, string()}
+                     ]
+          },
+    Conf = "x = y",
+    {ok, RichMap} = hocon:binary(Conf, #{format => richmap}),
+    ?assertEqual(#{<<"k">> => ["a", "b"], <<"x">> => "y"}, hocon_schema:richmap_to_map(
+       hocon_schema:check(Sc, RichMap))).
+
+default_value_map_field_test() ->
+    Sc = #{structs => [?VIRTUAL_ROOT],
+           fields => #{?VIRTUAL_ROOT => [ {k, #{type => hoconsc:ref(sub),
+                                                default => #{<<"a">> => <<"foo">>,
+                                                             <<"b">> => <<"bar">>}}}
+                                          , {x, string()}
+                                        ],
+                       sub => [{a, string()}, {b, string()}]
+                      }
+          },
+    Conf = "x = y",
+    {ok, RichMap} = hocon:binary(Conf, #{format => richmap}),
+    ?assertEqual(#{<<"k">> => #{<<"a">> => "foo",
+                                <<"b">> => "bar"},
+                   <<"x">> => "y"},
+                 hocon_schema:richmap_to_map(hocon_schema:check(Sc, RichMap))).
