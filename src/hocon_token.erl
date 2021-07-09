@@ -238,10 +238,10 @@ parse_error(Line, ErrorInfo, Ctx) ->
 format_error(Line, ErrorInfo, #{filename := [undefined]}) ->
     unicode:characters_to_binary(
             [ErrorInfo,
-             io_lib:format(" at_line ~w.",
+             io_lib:format(" line_number ~w",
                            [Line])]);
 format_error(Line, ErrorInfo, Ctx) ->
     unicode:characters_to_binary(
         [ErrorInfo,
-         io_lib:format(" in_file ~p at_line ~w.",
-                       [hd(hocon_util:get_stack(filename, Ctx)), Line])]).
+         io_lib:format(" line_number ~w in_file ~s",
+                       [Line, hd(hocon_util:get_stack(filename, Ctx))])]).

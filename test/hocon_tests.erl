@@ -43,12 +43,12 @@ test_file_load("test02"++_, F) ->
 test_file_load("cycle"++_, F) ->
     ?assertMatch({error, {cycle, _}}, hocon:load(F));
 test_file_load("test13-reference-bad-substitutions", F) ->
-    ?assertMatch([["<<\"b\">>", "test13-reference-bad-substitutions.conf", "1"]], re_error(F));
+    ?assertMatch([["<<\"b\">>", "1", "test13-reference-bad-substitutions.conf"]], re_error(F));
 % include "test01" is not allowed.
 test_file_load("test03", F) ->
     ?assertMatch({error, {scan_error, _}}, hocon:load(F));
 test_file_load("test03-included", F) ->
-    ?assertMatch([["<<\"bar\">>", "test03-included.conf", "9"]], re_error(F));
+    ?assertMatch([["<<\"bar\">>", "9", "test03-included.conf"]], re_error(F));
 test_file_load("test05", F) ->
     ?assertMatch({error, {scan_error, _}}, hocon:load(F));
 test_file_load("test07", F) ->
@@ -330,10 +330,6 @@ concat_error_binary_test_() ->
                       <<"failed_to_concat [<<\"xyz\">>,2.0] at_line 1">>}},
                     hocon:binary("a=2.0, b=xyz${a}"))
     , ?_assertEqual({error,
-                     {parse_error,
-                      <<"syntax error before: <<\"a\">> at_line 1.">>}},
-                    hocon:binary("a=xyz, b=true${a}"))
-    , ?_assertEqual({error,
                      {concat_error,
                       <<"failed_to_concat [<<\"xyz\">>,2.0] at_line 2">>}},
                     hocon:binary("a=2.0, \nb=xyz${a}"))
@@ -347,16 +343,20 @@ concat_error_binary_test_() ->
                     hocon:binary("a=[1,2], b={x\n=1}${a}"))
     ].
 
+parse_sytax_error_test() ->
+    {error, {parse_error, Txt}} = hocon:binary("a=xyz, b=true${a}"),
+    ?assertEqual(Txt, <<"syntax error before: <<\"a\">> line_number 1">>).
+
 concat_error_file_test_() ->
-    [ ?_assertEqual([["[[1,2],{<<\"x\">>,1}]", "concat-error-1.conf", "1"]],
+    [ ?_assertEqual([["[[1,2],{<<\"x\">>,1}]", "1", "concat-error-1.conf"]],
                     re_error("etc/concat-error-1.conf"))
-    , ?_assertEqual([["[{<<\"x\">>,1},[1,2]]", "concat-error-2.conf", "2"]],
+    , ?_assertEqual([["[{<<\"x\">>,1},[1,2]]", "2", "concat-error-2.conf"]],
                     re_error("etc/concat-error-2.conf"))
-    , ?_assertEqual([["[<<\"b\">>,[1]]", "concat-error-3.conf", "4"]],
+    , ?_assertEqual([["[<<\"b\">>,[1]]", "4", "concat-error-3.conf"]],
                     re_error("etc/concat-error-3.conf"))
     , ?_assertEqual(re_error("etc/concat-error-1.conf"),
                     re_error("etc/concat-error-4.conf"))
-    , ?_assertEqual([["[1,<<\"xyz\">>]", "concat-error-5.conf", "1"]],
+    , ?_assertEqual([["[1,<<\"xyz\">>]", "1", "concat-error-5.conf"]],
                     re_error("etc/concat-error-5.conf"))
     ].
 
@@ -373,9 +373,9 @@ resolve_error_binary_test_() ->
                     hocon:binary("a=${x}\n x=${?y}"))].
 
 resolve_error_file_test_() ->
-    [ ?_assertEqual([["<<\"x\">>", "resolve-error-1.conf", "2"],
-                     ["<<\"y\">>", "resolve-error-1.conf", "2"],
-                     ["<<\"y\">>", "resolve-error-1.conf", "4"]],
+    [ ?_assertEqual([["<<\"x\">>", "2", "resolve-error-1.conf"],
+                     ["<<\"y\">>", "2", "resolve-error-1.conf"],
+                     ["<<\"y\">>", "4", "resolve-error-1.conf"]],
                     re_error("etc/resolve-error-1.conf"))
     , ?_assertEqual(lists:append(re_error("etc/resolve-error-1.conf"),
                                  re_error("etc/resolve-error-1.conf")),
@@ -465,10 +465,10 @@ utf8_test() ->
 
 re_error(Filename0) ->
     {error, {_ErrorType, Msg}} = hocon:load(Filename0),
-    {ok, MP} = re:compile("([^ \(\t\n\r\f]+) in_file \"([^ \t\n\r\f]+)\" at_line ([0-9]+)"),
-    {match, VFLs} = re:run(binary_to_list(Msg), MP,
+    {ok, MP} = re:compile("([^ \(\t\n\r\f]+) at_line ([0-9]+) in_file ([^ \t\n\r\f,]+)"),
+    {match, VLFs} = re:run(binary_to_list(Msg), MP,
                            [global, {capture, all_but_first, list}]),
-    lists:map(fun ([V, F, L]) -> [V, filename:basename(F), L] end, VFLs).
+    lists:map(fun ([V, L, F]) -> [V, L, filename:basename(F)] end, VLFs).
 
 binary(B) when is_binary(B) ->
     {ok, R} = hocon:binary(B),
