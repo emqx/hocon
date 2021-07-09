@@ -354,27 +354,23 @@ merge(Key, Val, Map) when is_map(Val) ->
 merge(Key, Val, Map) -> maps:put(Key, Val, Map).
 
 resolve_error(Unresolved) ->
-    NFL = fun (V) ->
-        case filename_of(V) of
-            undefined ->
-                io_lib:format(", ~p at_line ~p", [name_of(V), line_of(V)]) ;
-            F ->
-                io_lib:format(", ~p in_file ~p at_line ~p", [name_of(V), F, line_of(V)]) end
-        end,
+    NFL = fun (V) -> io_lib:format(", ~p ~s", [name_of(V), location(V)]) end,
     <<_LeadingComma, Enriched/binary>> = lists:foldl(fun (V, AccIn) ->
          iolist_to_binary([AccIn, NFL(V)]) end, "", Unresolved),
     throw({resolve_error, iolist_to_binary(["failed_to_resolve", Enriched])}).
 
 concat_error(Acc, Metadata) ->
-    ErrorInfo = case filename_of(Metadata) of
-        undefined ->
-            io_lib:format("failed_to_concat ~p at_line ~p",
-                          [format_tokens(Acc), line_of(Metadata)]);
-        F ->
-            io_lib:format("failed_to_concat ~p in_file ~p at_line ~p",
-                          [format_tokens(Acc), F, line_of(Metadata)])
-        end,
+    ErrorInfo = io_lib:format("failed_to_concat ~p ~s", [format_tokens(Acc), location(Metadata)]),
     throw({concat_error, iolist_to_binary(ErrorInfo)}).
+
+location(Metadata) ->
+    io_lib:format("at_line ~p~s", [line_of(Metadata), maybe_filename(Metadata)]).
+
+maybe_filename(Meta) ->
+    case filename_of(Meta) of
+        undefined -> "";
+        F -> io_lib:format(" in_file ~s", [F])
+    end.
 
 % transforms tokens to values.
 format_tokens(List) when is_list(List) ->

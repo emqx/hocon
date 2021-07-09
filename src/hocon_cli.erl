@@ -125,7 +125,7 @@ get(_ParsedArgs, []) ->
     stop_deactivate();
 get(ParsedArgs, [Query | _]) ->
     Schema = load_schema(ParsedArgs),
-    Conf = load_conf(ParsedArgs, fun logger_for_get/3),
+    Conf = load_conf(ParsedArgs, fun log_for_get/3),
     %% map only the desired root name
     [RootName0 | _] = string:tokens(Query, "."),
     RootName = hocon_schema:find_struct(Schema, RootName0),
@@ -318,10 +318,10 @@ log(Level, Fmt, Args) ->
     logger:Level(Fmt, Args).
 
 %% log to stderr for 'get' command
-logger_for_get(L, Fmt, Args) when L =:= debug orelse L =:= info ->
+log_for_get(L, Fmt, Args) when L =:= debug orelse L =:= info ->
     case os:getenv("DEBUG") of
-        "1" -> ?STDERR(Fmt, Args);
+        "1" -> ?STDERR("[~p]: " ++ Fmt, [L | Args]);
         _ -> ok
     end;
-logger_for_get(_, Fmt, Args) ->
-    ?STDERR(Fmt, Args).
+log_for_get(L, Fmt, Args) ->
+    ?STDERR("[~p]: " ++ Fmt, [L | Args]).
