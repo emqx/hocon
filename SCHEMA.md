@@ -12,7 +12,7 @@ While the `complex` types denote the values which enclose either other `complex`
 
 ### Primitive types
 
-Most of the `primitive` types are provided by (and also can be extended from) the [typerefl](https://github.com/k32/typerefl) libray.
+Most of the `primitive` types are provided by (and also can be extended from) the [typerefl](https://github.com/k32/typerefl) library.
 Typerefl is highly composible hence can be used to define complex types.
 However in HOCON schema we only use it to define `primitive` types.
 
@@ -187,10 +187,11 @@ min_max(Conf) ->
 Besides fields' `mapping` metadata, which is introduced above, for config mapping,
 HOCON schema also supports below field metadata.
 
-* `default`: default value of the field.
 * `converter`: an anonymous function evaluated during config generation to convert the field value.
 * `validator`: field value validator, an anonymous function which should return `true` or `ok` if
   the value is as expected. NOTE: the input to validator after convert (if present) is applied.
+* `default`: default value of the field. NOTE that default values are to be treated as raw inputs,
+  meaning they are put hrough  the `converter`s and `validator`s etc, and then type-checked.
 * `override_env`: special environment variable name to override this field value.
   NOTE: For generic override, see [below](#default_override_rule) for more info
 * `nullable`: set to `true` if this field is allowed to be `undefined`.
