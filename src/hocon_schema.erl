@@ -581,8 +581,9 @@ resolve_default_override(Schema, FieldValue, Opts) ->
     end.
 
 %% use default value if field value is 'undefined'
-maybe_use_default(undefined, Value, _Opt) -> Value;
-maybe_use_default(Default, undefined, Opts) -> boxit(Opts, Default, ?EMPTY_BOX);
+maybe_use_default(undefined, Value, _Opts) -> Value;
+maybe_use_default(Default, undefined, Opts) ->
+    maybe_mkrich(Opts, Default, ?EMPTY_BOX);
 maybe_use_default(_, Value, _Opts) -> Value.
 
 collect_envs() ->
@@ -655,6 +656,21 @@ boxit(#{is_richmap := true}, Value, undefined) -> boxit(Value, ?EMPTY_BOX);
 boxit(#{is_richmap := true}, Value, Box) -> boxit(Value, Box).
 
 boxit(Value, Box) -> Box#{value => Value}.
+
+%% nested boxing
+maybe_mkrich(#{is_richmap := false}, Value, _Box) ->
+    Value;
+maybe_mkrich(#{is_richmap := true}, Value, Box) ->
+    hocon_util:do_deep_merge(mkrich(Value), Box).
+
+mkrich(Arr) when is_list(Arr) ->
+    NewArr = [mkrich(I) || I <- Arr],
+    boxit(NewArr, ?EMPTY_BOX);
+mkrich(Map) when is_map(Map) ->
+    boxit(maps:from_list(
+            [{Name, mkrich(Value)} || {Name, Value} <- maps:to_list(Map)]), ?EMPTY_BOX);
+mkrich(Val) ->
+    boxit(Val, ?EMPTY_BOX).
 
 get_field(_Opts, ?VIRTUAL_ROOT, Value) -> Value;
 get_field(#{is_richmap := true}, Path, Conf) -> deep_get(Path, Conf);
