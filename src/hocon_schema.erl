@@ -611,9 +611,9 @@ read_hocon_val(Value) ->
     end.
 
 read_informal_hocon_val(Value) ->
-    BoxedVal = "virtual_root=" ++ Value,
+    BoxedVal = "fake_key=" ++ Value,
     {ok, HoconVal} = hocon:binary(BoxedVal, #{}),
-    maps:get(<<"virtual_root">>, HoconVal).
+    maps:get(<<"fake_key">>, HoconVal).
 
 apply_env(_Ns, [], _RootName, Conf, _Opts) -> Conf;
 apply_env(Ns, [{VarName, V} | More], RootName, Conf, Opts) ->
