@@ -221,6 +221,18 @@ env_test_() ->
                     F("", [{"EMQX_FOO__GREET", "hello"}]))
     ].
 
+env_array_val_test() ->
+    Sc = #{structs => [?VIRTUAL_ROOT],
+           fields => [{"val", hoconsc:array(string())}]
+          },
+    Conf = "val = [a,b]",
+    {ok, PlainMap} = hocon:binary(Conf, #{}),
+    ?assertEqual(#{<<"val">> => ["c", "d"]},
+        with_envs(fun hocon_schema:check_plain/2, [Sc, PlainMap],
+            [ {"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"}
+            , {"EMQX_VAL", "[c, d]"}
+            ])).
+
 translate_test_() ->
     F = fun (Str) -> {ok, M} = hocon:binary(Str, #{format => richmap}),
                      {Mapped, Conf} = hocon_schema:map(demo_schema, M),

@@ -568,14 +568,14 @@ resolve_field_value(Schema, FieldValue, Opts) ->
         undefined ->
             resolve_default_override(Schema, FieldValue, Opts);
         EnvValue ->
-            boxit(Opts, EnvValue, FieldValue)
+            maybe_mkrich(Opts, EnvValue, ?EMPTY_BOX)
     end.
 
 resolve_default_override(Schema, FieldValue, Opts) ->
     case unbox(Opts, FieldValue) of
         ?FROM_ENV_VAR(EnvName, EnvValue) ->
             log_env_override(Schema, Opts, EnvName, path(Opts), EnvValue),
-            boxit(Opts, EnvValue, FieldValue);
+            maybe_mkrich(Opts, EnvValue, ?EMPTY_BOX);
         _ ->
             maybe_use_default(field_schema(Schema, default), FieldValue, Opts)
     end.
@@ -599,15 +599,29 @@ collect_envs() ->
 collect_envs(Ns) ->
     [begin
          [Name, Value] = string:split(KV, "="),
-         {Name, Value}
+         {Name, read_hocon_val(Value)}
      end || KV <- os:getenv(), string:prefix(KV, Ns) =/= nomatch].
+
+read_hocon_val("") -> "";
+read_hocon_val(Value) ->
+    try {ok, HoconVal} = hocon:binary(Value, #{}),
+        HoconVal
+    catch
+        _ : _ -> read_informal_hocon_val(Value)
+    end.
+
+read_informal_hocon_val(Value) ->
+    BoxedVal = "virtual_root=" ++ Value,
+    {ok, HoconVal} = hocon:binary(BoxedVal, #{}),
+    maps:get(<<"virtual_root">>, HoconVal).
 
 apply_env(_Ns, [], _RootName, Conf, _Opts) -> Conf;
 apply_env(Ns, [{VarName, V} | More], RootName, Conf, Opts) ->
     K = string:prefix(VarName, Ns),
     Path0 = string:split(string:lowercase(K), "__", all),
     Path1 = lists:filter(fun(N) -> N =/= [] end, Path0),
-    NewConf = case Path1 =/= [] andalso bin(RootName) =:= bin(hd(Path1)) of
+    NewConf = case RootName =:= ?VIRTUAL_ROOT orelse
+                   (Path1 =/= [] andalso bin(RootName) =:= bin(hd(Path1))) of
                   true ->
                       Path = string:join(Path1, "."),
                       %% it lacks schema info here, so we need to tag the value '$FROM_ENV_VAR'
@@ -703,7 +717,7 @@ get_override_env(Schema, Opts) ->
                     undefined;
                 V ->
                     log_env_override(Schema, Opts, Var, path(Opts), V),
-                    V
+                    read_hocon_val(V)
             end
     end.
 
