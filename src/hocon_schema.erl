@@ -604,16 +604,19 @@ collect_envs(Ns) ->
 
 read_hocon_val("") -> "";
 read_hocon_val(Value) ->
-    try {ok, HoconVal} = hocon:binary(Value, #{}),
-        HoconVal
-    catch
-        _ : _ -> read_informal_hocon_val(Value)
+    case hocon:binary(Value, #{}) of
+        {ok, HoconVal} -> HoconVal;
+        {error, _} -> read_informal_hocon_val(Value)
     end.
 
 read_informal_hocon_val(Value) ->
     BoxedVal = "fake_key=" ++ Value,
-    {ok, HoconVal} = hocon:binary(BoxedVal, #{}),
-    maps:get(<<"fake_key">>, HoconVal).
+    case hocon:binary(BoxedVal, #{}) of
+        {ok, HoconVal} ->
+            maps:get(<<"fake_key">>, HoconVal);
+        {error, Reason} ->
+            error({invalid_hocon_string, Value, Reason})
+    end.
 
 apply_env(_Ns, [], _RootName, Conf, _Opts) -> Conf;
 apply_env(Ns, [{VarName, V} | More], RootName, Conf, Opts) ->
