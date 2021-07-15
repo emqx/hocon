@@ -93,11 +93,11 @@ Rules.
 {Unquoted}        : {token, maybe_include(TokenChars, TokenLine)}.
 {Integer}         : {token, {integer, TokenLine, list_to_integer(TokenChars)}}.
 {Float}           : {token, {float, TokenLine, to_float(TokenChars)}}.
-{String}          : {token, {string, TokenLine, iolist_to_binary(unquote(TokenChars))}}.
-{MultilineString} : {token, {string, TokenLine, iolist_to_binary(unquote(TokenChars))}}.
-{Bytesize}        : {token, {string, TokenLine, iolist_to_binary(TokenChars)}}.
-{Percent}         : {token, {string, TokenLine, iolist_to_binary(TokenChars)}}.
-{Duration}        : {token, {string, TokenLine, iolist_to_binary(TokenChars)}}.
+{String}          : {token, {string, TokenLine, unquote(TokenChars)}}.
+{MultilineString} : {token, {string, TokenLine, unquote(TokenChars)}}.
+{Bytesize}        : {token, {string, TokenLine, TokenChars}}.
+{Percent}         : {token, {string, TokenLine, TokenChars}}.
+{Duration}        : {token, {string, TokenLine, TokenChars}}.
 {Variable}        : {token, {variable, TokenLine, var_ref_name(TokenChars)}}.
 {MaybeVar}        : {token, {variable, TokenLine, {maybe, maybe_var_ref_name(TokenChars)}}}.
 {Required}        : {token, {required, TokenLine}, get_filename_from_required(TokenChars)}.
@@ -106,7 +106,7 @@ Rules.
 Erlang code.
 
 maybe_include("include", TokenLine)  -> {include, TokenLine};
-maybe_include(TokenChars, TokenLine) -> {string, TokenLine, iolist_to_binary(TokenChars)}.
+maybe_include(TokenChars, TokenLine) -> {string, TokenLine, TokenChars}.
 
 get_filename_from_required("required(" ++ Filename) ->
     [$) | FilenameRev] = lists:reverse(Filename),

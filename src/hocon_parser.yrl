@@ -75,17 +75,19 @@ make_variable({V, Line, Value}) when V =:= variable orelse V =:= endvar ->
     #{type => variable, value => Value, name => Value, metadata => #{line => Line}, required => true}.
 
 make_include(String, true) ->  #{type => include,
-                                 value => value_of(String),
+                                 value => bin(value_of(String)),
                                  metadata => #{line => line_of(String)},
                                  required => true};
 make_include(String, false) ->  #{type => include,
-                                  value => value_of(String),
+                                  value => bin(value_of(String)),
                                   metadata => #{line => line_of(String)},
                                   required => false}.
 
 make_concat(S) -> #{type => concat, value => S}.
 
-str_to_bin(#{type := T, value := V} = M) when T =:= string -> M#{value => iolist_to_binary(V)}.
+str_to_bin(#{type := T, value := V} = M) when T =:= string -> M#{value => bin(V)}.
 
 line_of(Token) -> element(2, Token).
 value_of(Token) -> element(3, Token).
+
+bin(Value) -> iolist_to_binary(Value).

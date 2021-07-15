@@ -604,6 +604,7 @@ collect_envs(Ns) ->
 
 read_hocon_val("") -> "";
 read_hocon_val(Value) ->
+    io:format(standard_error, "read_hocon_val: ~p~n", [Value]),
     case hocon:binary(Value, #{}) of
         {ok, HoconVal} -> HoconVal;
         {error, _} -> read_informal_hocon_val(Value)
