@@ -56,7 +56,7 @@ load(Filename0, Opts) ->
     end.
 
 files(Files) ->
-    load(Files, #{format => map}).
+    files(Files, #{format => map}).
 
 files(Files, Opts) ->
     IncludesAll = lists:append(["include \"" ++ Filename ++ "\"\n" || Filename <- Files]),
