@@ -33,10 +33,10 @@ test_file_load("file-include", F) ->
     ?assertMatch({error, {scan_error, _}}, hocon:load(F));
 %% unquoted string starting by null is not allowed.
 test_file_load("test01", F) ->
-    ?assertError(_, hocon:load(F));
+    ?assertMatch({error, {parse_error, _}}, hocon:load(F));
 %% includes test01
 test_file_load("include-from-list", F) ->
-    ?assertError(_, hocon:load(F));
+    ?assertMatch({error, {parse_error, _}}, hocon:load(F));
 %% do not allow quoted variable name.
 test_file_load("test02"++_, F) ->
     ?assertMatch({error, {scan_error, _}}, hocon:load(F));
