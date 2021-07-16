@@ -319,7 +319,7 @@ map(Schema, Conf, RootNames, Opts0) ->
     Opts = maps:merge(#{schema => Schema,
                         is_richmap => true
                         }, Opts0),
-    {EnvNamespace, Envs} = collect_envs(),
+    {EnvNamespace, Envs} = collect_envs(Opts0),
     F =
         fun (RootName, {MappedAcc, ConfAcc0}) ->
                 ok = assert_no_dot(Schema, RootName),
@@ -586,36 +586,37 @@ maybe_use_default(Default, undefined, Opts) ->
     maybe_mkrich(Opts, Default, ?EMPTY_BOX);
 maybe_use_default(_, Value, _Opts) -> Value.
 
-collect_envs() ->
+collect_envs(Opts) ->
     Ns = case os:getenv("HOCON_ENV_OVERRIDE_PREFIX") of
              V when V =:= false orelse V =:= [] -> undefined;
              Prefix -> Prefix
          end,
     case Ns of
         undefined -> {undefined, []};
-        _ -> {Ns, collect_envs(Ns)}
+        _ -> {Ns, collect_envs(Ns, Opts)}
     end.
 
-collect_envs(Ns) ->
+collect_envs(Ns, Opts) ->
     [begin
          [Name, Value] = string:split(KV, "="),
-         {Name, read_hocon_val(Value)}
+         {Name, read_hocon_val(Name, Value, Opts)}
      end || KV <- os:getenv(), string:prefix(KV, Ns) =/= nomatch].
 
-read_hocon_val("") -> "";
-read_hocon_val(Value) ->
+read_hocon_val(_Name, "", _Opts) -> "";
+read_hocon_val(Name, Value, Opts) ->
     case hocon:binary(Value, #{}) of
         {ok, HoconVal} -> HoconVal;
-        {error, _} -> read_informal_hocon_val(Value)
+        {error, _} -> read_informal_hocon_val(Name, Value, Opts)
     end.
 
-read_informal_hocon_val(Value) ->
+read_informal_hocon_val(Name, Value, Opts) ->
     BoxedVal = "fake_key=" ++ Value,
     case hocon:binary(BoxedVal, #{}) of
         {ok, HoconVal} ->
             maps:get(<<"fake_key">>, HoconVal);
         {error, Reason} ->
-            error({invalid_hocon_string, Value, Reason})
+            log(Opts, warning, "invalid_hocon_string: ~p, reason: ~p", [Value, Reason]),
+            Value
     end.
 
 apply_env(_Ns, [], _RootName, Conf, _Opts) -> Conf;
@@ -651,6 +652,11 @@ log(#{logger := Logger}, Level, Msg) ->
     Logger(Level, Msg);
 log(_Opts, Level, Msg) ->
     logger:log(Level, Msg).
+
+log(#{logger := Logger}, Level, Format, Msg) ->
+    Logger(Level, Format, Msg);
+log(_Opts, Level, Format, Msg) ->
+    logger:log(Level, Format, Msg).
 
 unbox(_, undefined) -> undefined;
 unbox(#{is_richmap := false}, Value) -> Value;
@@ -720,7 +726,7 @@ get_override_env(Schema, Opts) ->
                     undefined;
                 V ->
                     log_env_override(Schema, Opts, Var, path(Opts), V),
-                    read_hocon_val(V)
+                    read_hocon_val(str(Var), V, Opts)
             end
     end.
 
