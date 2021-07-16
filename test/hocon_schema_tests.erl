@@ -233,6 +233,18 @@ env_array_val_test() ->
             , {"EMQX_VAL", "[c, d]"}
             ])).
 
+env_ip_port_test() ->
+    Sc = #{structs => [?VIRTUAL_ROOT],
+           fields => [{"val", string()}]
+          },
+    Conf = "val = \"127.0.0.1:1990\"",
+    {ok, PlainMap} = hocon:binary(Conf, #{}),
+    ?assertEqual(#{<<"val">> => "192.168.0.1:1991"},
+        with_envs(fun hocon_schema:check_plain/2, [Sc, PlainMap],
+            [ {"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"}
+            , {"EMQX_VAL", "192.168.0.1:1991"}
+            ])).
+
 translate_test_() ->
     F = fun (Str) -> {ok, M} = hocon:binary(Str, #{format => richmap}),
                      {Mapped, Conf} = hocon_schema:map(demo_schema, M),
