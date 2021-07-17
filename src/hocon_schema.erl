@@ -599,23 +599,27 @@ collect_envs(Opts) ->
 collect_envs(Ns, Opts) ->
     [begin
          [Name, Value] = string:split(KV, "="),
-         {Name, read_hocon_val(Name, Value, Opts)}
+         {Name, read_hocon_val(Value, Opts)}
      end || KV <- os:getenv(), string:prefix(KV, Ns) =/= nomatch].
 
-read_hocon_val(_Name, "", _Opts) -> "";
-read_hocon_val(Name, Value, Opts) ->
+read_hocon_val("", _Opts) -> "";
+read_hocon_val(Value, Opts) ->
     case hocon:binary(Value, #{}) of
         {ok, HoconVal} -> HoconVal;
-        {error, _} -> read_informal_hocon_val(Name, Value, Opts)
+        {error, _} -> read_informal_hocon_val(Value, Opts)
     end.
 
-read_informal_hocon_val(Name, Value, Opts) ->
+read_informal_hocon_val(Value, Opts) ->
     BoxedVal = "fake_key=" ++ Value,
     case hocon:binary(BoxedVal, #{}) of
         {ok, HoconVal} ->
             maps:get(<<"fake_key">>, HoconVal);
         {error, Reason} ->
-            log(Opts, warning, "invalid_hocon_string: ~p, reason: ~p", [Value, Reason]),
+            Msg = iolist_to_binary(
+                    io_lib:format(
+                      "invalid_hocon_string: ~p,reason: ~p",
+                      [Value, Reason])),
+            log(Opts, warning, Msg),
             Value
     end.
 
@@ -652,11 +656,6 @@ log(#{logger := Logger}, Level, Msg) ->
     Logger(Level, Msg);
 log(_Opts, Level, Msg) ->
     logger:log(Level, Msg).
-
-log(#{logger := Logger}, Level, Format, Msg) ->
-    Logger(Level, Format, Msg);
-log(_Opts, Level, Format, Msg) ->
-    logger:log(Level, Format, Msg).
 
 unbox(_, undefined) -> undefined;
 unbox(#{is_richmap := false}, Value) -> Value;
@@ -726,7 +725,7 @@ get_override_env(Schema, Opts) ->
                     undefined;
                 V ->
                     log_env_override(Schema, Opts, Var, path(Opts), V),
-                    read_hocon_val(str(Var), V, Opts)
+                    read_hocon_val(V, Opts)
             end
     end.
 
