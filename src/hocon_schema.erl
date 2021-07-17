@@ -615,7 +615,10 @@ read_informal_hocon_val(Value, Opts) ->
         {ok, HoconVal} ->
             maps:get(<<"fake_key">>, HoconVal);
         {error, Reason} ->
-            Msg = iolist_to_binary(io_lib:format("invalid_hocon_string: ~p, reason: ~p", [Value, Reason])),
+            Msg = iolist_to_binary(
+                    io_lib:format(
+                      "invalid_hocon_string: ~p,reason: ~p",
+                      [Value, Reason])),
             log(Opts, warning, Msg),
             Value
     end.
@@ -653,11 +656,6 @@ log(#{logger := Logger}, Level, Msg) ->
     Logger(Level, Msg);
 log(_Opts, Level, Msg) ->
     logger:log(Level, Msg).
-
-log(#{logger := Logger}, Level, Format, Msg) ->
-    Logger(Level, Format, Msg);
-log(_Opts, Level, Format, Msg) ->
-    logger:log(Level, Format, Msg).
 
 unbox(_, undefined) -> undefined;
 unbox(#{is_richmap := false}, Value) -> Value;
