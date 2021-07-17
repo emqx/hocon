@@ -654,6 +654,11 @@ log(#{logger := Logger}, Level, Msg) ->
 log(_Opts, Level, Msg) ->
     logger:log(Level, Msg).
 
+log(#{logger := Logger}, Level, Format, Msg) ->
+    Logger(Level, Format, Msg);
+log(_Opts, Level, Format, Msg) ->
+    logger:log(Level, Format, Msg).
+
 unbox(_, undefined) -> undefined;
 unbox(#{is_richmap := false}, Value) -> Value;
 unbox(#{is_richmap := true}, Boxed) -> unbox(Boxed).
