@@ -615,11 +615,9 @@ read_informal_hocon_val(Value, Opts) ->
         {ok, HoconVal} ->
             maps:get(<<"fake_key">>, HoconVal);
         {error, Reason} ->
-            Msg = iolist_to_binary(
-                    io_lib:format(
-                      "invalid_hocon_string: ~p,reason: ~p",
+            Msg = iolist_to_binary(io_lib:format("invalid_hocon_string: ~p, reason: ~p",
                       [Value, Reason])),
-            log(Opts, warning, Msg),
+            log(Opts, debug, Msg),
             Value
     end.
 
