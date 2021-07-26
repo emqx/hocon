@@ -16,6 +16,8 @@
 
 -module(hocon_schema).
 
+-elvis([{elvis_style, god_modules, disable}]).
+
 %% behaviour APIs
 -export([ structs/1
         , fields/2
@@ -31,6 +33,7 @@
 -export([deep_get/2, deep_get/3, deep_get/4, deep_put/3]).
 -export([richmap_to_map/1, get_value/2]).
 -export([find_struct/2]).
+-export([field_schema/2]).
 
 -include("hoconsc.hrl").
 
