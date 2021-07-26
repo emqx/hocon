@@ -17,6 +17,7 @@
 
 -include_lib("typerefl/include/types.hrl").
 -include_lib("eunit/include/eunit.hrl").
+-include("hocon_private.hrl").
 
 -behaviour(hocon_schema).
 
@@ -176,20 +177,28 @@ generate_compatibility_test() ->
     ?assertEqual(lists:ukeysort(1, C0), lists:ukeysort(1, C1)).
 
 deep_get_test_() ->
-    F = fun(Str, Key, Param) -> {ok, M} = hocon:binary(Str, #{format => richmap}),
-                                hocon_schema:deep_get(Key, M, Param, undefined) end,
-    [ ?_assertEqual(1, F("a=1", "a", value))
-    , ?_assertMatch(#{line := 1}, F("a=1", "a", metadata))
-    , ?_assertEqual(1, F("a={b=1}", "a.b", value))
-    , ?_assertEqual(1, F("a={b=1}", ["a", "b"], value))
-    , ?_assertEqual(undefined, F("a={b=1}", "a.c", value))
+    F = fun(Str, Key, Param) ->
+                {ok, M} = hocon:binary(Str, #{format => richmap}),
+                deep_get(Key, M, Param)
+        end,
+    [ ?_assertEqual(1, F("a=1", "a", ?HOCON_V))
+    , ?_assertMatch(#{line := 1}, F("a=1", "a", ?METADATA))
+    , ?_assertEqual(1, F("a={b=1}", "a.b", ?HOCON_V))
+    , ?_assertEqual(undefined, F("a={b=1}", "a.c", ?HOCON_V))
     ].
+
+deep_get(Path, Conf, Param) ->
+    case hocon_schema:deep_get(Path, Conf) of
+        undefined -> undefined;
+        Map -> maps:get(Param, Map, undefined)
+    end.
 
 deep_put_test_() ->
     F = fun(Str, Key, Value) ->
                 {ok, M} = hocon:binary(Str, #{format => richmap}),
                 NewM = hocon_schema:deep_put(Key, Value, M),
-                hocon_schema:deep_get(Key, NewM, value, undefined) end,
+                deep_get(Key, NewM, ?HOCON_V)
+        end,
     [ ?_assertEqual(2, F("a=1", "a", 2))
     , ?_assertEqual(2, F("a={b=1}", "a.b", 2))
     , ?_assertEqual(#{x => 1}, F("a={b=1}", "a.b", #{x => 1}))
@@ -220,6 +229,20 @@ env_test_() ->
     , ?_assertEqual([{["app_foo", "greet"], "hello"}],
                     F("", [{"EMQX_FOO__GREET", "hello"}]))
     ].
+
+env_object_val_test() ->
+    Sc = #{structs => [root],
+           fields => #{root => [{"val", hoconsc:t(hoconsc:ref(sub))}],
+                       sub => [{"f1", integer()}]
+                      }
+          },
+    Conf = "root = {val = {f1 = 43}}",
+    {ok, PlainMap} = hocon:binary(Conf, #{}),
+    ?assertEqual(#{<<"root">> => #{<<"val">> => #{<<"f1">> => 42}}},
+        with_envs(fun hocon_schema:check_plain/2, [Sc, PlainMap],
+            [ {"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"}
+            , {"EMQX_ROOT__VAL", "{f1:42}"}
+            ])).
 
 env_array_val_test() ->
     Sc = #{structs => [?VIRTUAL_ROOT],
@@ -315,17 +338,27 @@ atom_key_test() ->
 
 atom_key_array_test() ->
    Sc = #{structs => [?VIRTUAL_ROOT],
-           fields => #{?VIRTUAL_ROOT => [{arr, hoconsc:array("sub")}],
-                       "sub" => [{id, integer()}]
-                      }
-          },
+          fields => #{?VIRTUAL_ROOT => [{arr, hoconsc:array("sub")}],
+                      "sub" => [{id, integer()}]
+                     }
+         },
     Conf = "arr = [{id = 1}, {id = 2}]",
     {ok, PlainMap} = hocon:binary(Conf, #{}),
-    [ ?assertEqual(#{arr => [#{id => 1}, #{id => 2}]},
-            hocon_schema:check_plain(Sc, PlainMap, #{atom_key => true}))
-    , ?assertMatch({_, #{arr := [#{id := 1}, #{id := 2}]}},
-            hocon_schema:map(Sc, PlainMap, all, #{is_richmap => false, atom_key => true}))
-    ].
+    ?assertEqual(#{arr => [#{id => 1}, #{id => 2}]},
+                 hocon_schema:check_plain(Sc, PlainMap, #{atom_key => true})),
+    ?assertMatch({_, #{arr := [#{id := 1}, #{id := 2}]}},
+                 hocon_schema:map(Sc, PlainMap, all, #{is_richmap => false, atom_key => true})).
+
+%% if convert to non-existing atom
+atom_key_failure_test() ->
+   Sc = #{structs => [?VIRTUAL_ROOT],
+           fields => #{?VIRTUAL_ROOT => [{<<"non_existing_atom_as_key">>, hoconsc:t(integer())}]
+                      }
+          },
+    Conf = "non_existing_atom_as_key=1",
+    {ok, PlainMap} = hocon:binary(Conf, #{}),
+    ?assertError({non_existing_atom, <<"non_existing_atom_as_key">>},
+                 hocon_schema:map(Sc, PlainMap, all, #{is_richmap => false, atom_key => true})).
 
 return_plain_test_() ->
     Sc = #{structs => [?VIRTUAL_ROOT],
@@ -474,7 +507,7 @@ bad_input_test() ->
            fields => [{f1, integer()}]
           },
     %% NOTE: this is not a valid richmap, intended to test a crash
-    BadInput = #{value => #{<<"f1">> => 1}},
+    BadInput = #{?HOCON_V => #{<<"f1">> => 1}},
     ?assertError({bad_richmap, 1}, hocon_schema:map(Sc, BadInput)).
 
 not_array_test() ->

@@ -35,6 +35,7 @@
 -export_type([config/0, ctx/0]).
 
 -include("hocon.hrl").
+-include("hocon_private.hrl").
 
 main(Args) ->
     hocon_cli:main(Args).
@@ -118,40 +119,40 @@ to_list(Config) when is_map(Config) ->
 to_list(Value) -> Value.
 
 -spec(expand(hocon_token:boxed()) -> hocon_token:boxed()).
-expand(#{type := object}=O) ->
-    O#{value => do_expand(value_of(O), [])}.
+expand(#{?HOCON_T := object}=O) ->
+    O#{?HOCON_V => do_expand(value_of(O), [])}.
 
 do_expand([], Acc) ->
     lists:reverse(Acc);
-do_expand([{#{type := key}=Key, #{type := concat}=C} | More], Acc) ->
-    do_expand(More, [create_nested(Key, C#{value => do_expand(value_of(C), [])}) | Acc]);
-do_expand([{#{type := key}=Key, Value} | More], Acc) ->
+do_expand([{#{?HOCON_T := key}=Key, #{?HOCON_T := concat}=C} | More], Acc) ->
+    do_expand(More, [create_nested(Key, C#{?HOCON_V => do_expand(value_of(C), [])}) | Acc]);
+do_expand([{#{?HOCON_T := key}=Key, Value} | More], Acc) ->
     do_expand(More, [create_nested(Key, Value) | Acc]);
-do_expand([#{type := object}=O | More], Acc)  ->
-    do_expand(More, [O#{value => do_expand(value_of(O), [])} | Acc]);
-do_expand([#{type := array, value := V} = A | More], Acc)  ->
-    do_expand(More, [A#{value => do_expand(V, [])} | Acc]);
-do_expand([#{type := concat, value := V} = C | More], Acc)  ->
-    do_expand(More, [C#{value => do_expand(V, [])} | Acc]);
+do_expand([#{?HOCON_T := object}=O | More], Acc)  ->
+    do_expand(More, [O#{?HOCON_V => do_expand(value_of(O), [])} | Acc]);
+do_expand([#{?HOCON_T := array, ?HOCON_V := V} = A | More], Acc)  ->
+    do_expand(More, [A#{?HOCON_V => do_expand(V, [])} | Acc]);
+do_expand([#{?HOCON_T := concat, ?HOCON_V := V} = C | More], Acc)  ->
+    do_expand(More, [C#{?HOCON_V => do_expand(V, [])} | Acc]);
 do_expand([Other | More], Acc) ->
     do_expand(More, [Other | Acc]).
 
-create_nested(#{type := key}=Key, Value)  ->
+create_nested(#{?HOCON_T := key}=Key, Value)  ->
     do_create_nested(paths(value_of(Key)), Value, Key).
 
 do_create_nested([], Value, _OriginalKey) ->
     Value;
 do_create_nested([Path | More], Value, OriginalKey) ->
-    {maps:merge(OriginalKey, #{value => Path}),
-     #{type => concat, value => [do_create_nested(More, Value, OriginalKey)]}}.
+    {maps:merge(OriginalKey, #{?HOCON_V => Path}),
+     #{?HOCON_T => concat, ?HOCON_V => [do_create_nested(More, Value, OriginalKey)]}}.
 
 -spec(resolve(hocon_token:boxed()) -> hocon_token:boxed()).
-resolve(#{type := object}=O) ->
+resolve(#{?HOCON_T := object}=O) ->
     case do_resolve(value_of(O), [], [], value_of(O)) of
         skip ->
             O;
         {resolved, Resolved} ->
-            resolve(O#{value => Resolved});
+            resolve(O#{?HOCON_V => Resolved});
         {unresolved, Unresolved} ->
             resolve_error(lists:reverse(lists:flatten(Unresolved)))
     end.
@@ -170,16 +171,16 @@ do_resolve([V | More], Acc, Unresolved, RootKVList) ->
         delete ->
             {resolved, lists:reverse(Acc, More)}
     end;
-do_resolve(#{type := T}=X, _Acc, _Unresolved, RootKVList) when ?IS_VALUE_LIST(T) ->
+do_resolve(#{?HOCON_T := T}=X, _Acc, _Unresolved, RootKVList) when ?IS_VALUE_LIST(T) ->
     case do_resolve(value_of(X), [], [], RootKVList) of
         {resolved, Resolved} ->
-            {resolved, X#{value => Resolved}};
+            {resolved, X#{?HOCON_V => Resolved}};
         {unresolved, Var} ->
             {unresolved, Var};
         skip ->
             skip
     end;
-do_resolve(#{type := variable, required := Required}=V, _Acc, _Unresolved, RootKVList) ->
+do_resolve(#{?HOCON_T := variable, required := Required}=V, _Acc, _Unresolved, RootKVList) ->
     case {lookup(paths(hocon_token:value_of(V)), RootKVList), Required} of
         {notfound, true} ->
             {unresolved, V};
@@ -188,7 +189,7 @@ do_resolve(#{type := variable, required := Required}=V, _Acc, _Unresolved, RootK
         {ResolvedValue, _} ->
             {resolved, ResolvedValue}
     end;
-do_resolve({#{type := key}=K, Value}, _Acc, _Unresolved, RootKVList) ->
+do_resolve({#{?HOCON_T := key}=K, Value}, _Acc, _Unresolved, RootKVList) ->
     case do_resolve(Value, [], [], RootKVList) of
         {resolved, Resolved} ->
             {resolved, {K, Resolved}};
@@ -212,36 +213,37 @@ is_resolved(KV) ->
 lookup(Var, KVList) ->
     lookup(Var, KVList, notfound).
 
-lookup(Var, #{type := concat}=C, ResolvedValue) ->
+lookup(Var, #{?HOCON_T := concat}=C, ResolvedValue) ->
     lookup(Var, value_of(C), ResolvedValue);
-lookup([Var], [{#{type := key, value := Var}, Value} = KV | More], ResolvedValue) ->
+lookup([Var], [{#{?HOCON_T := key, ?HOCON_V := Var}, Value} = KV | More], ResolvedValue) ->
     case is_resolved(KV) of
         true ->
             lookup([Var], More, maybe_merge(ResolvedValue, Value));
         false ->
             lookup([Var], More, ResolvedValue)
     end;
-lookup([Path | MorePath] = Var, [{#{type := key, value := Path}, Value} | More], ResolvedValue) ->
+lookup([Path | MorePath] = Var,
+       [{#{?HOCON_T := key, ?HOCON_V := Path}, Value} | More], ResolvedValue) ->
     lookup(Var, More, lookup(MorePath, Value, ResolvedValue));
-lookup(Var, [#{type := T}=X | More], ResolvedValue) when T =:= concat orelse T =:= object ->
+lookup(Var, [#{?HOCON_T := T}=X | More], ResolvedValue) when T =:= concat orelse T =:= object ->
     lookup(Var, More, lookup(Var, value_of(X), ResolvedValue));
 lookup(Var, [_Other | More], ResolvedValue) ->
     lookup(Var, More, ResolvedValue);
 lookup(_Var, [], ResolvedValue) ->
     ResolvedValue.
 
-% reveal the type of "concat"
-is_object([#{type := concat}=C | _More]) ->
+% reveal the ?HOCON_T of "concat"
+is_object([#{?HOCON_T := concat}=C | _More]) ->
     is_object(value_of(C));
-is_object([#{type := object} | _]) ->
+is_object([#{?HOCON_T := object} | _]) ->
     true;
 is_object(_Other) ->
     false.
 
-maybe_merge(#{type := concat}=Old, #{type := concat}=New) ->
+maybe_merge(#{?HOCON_T := concat}=Old, #{?HOCON_T := concat}=New) ->
     case {is_object(value_of(Old)), is_object(value_of(New))} of
         {true, true} ->
-            New#{value =>lists:append([value_of(Old), value_of(New)])};
+            New#{?HOCON_V =>lists:append([value_of(Old), value_of(New)])};
         _Other ->
             New
     end;
@@ -249,14 +251,14 @@ maybe_merge(_Old, New) ->
     New.
 
 -spec concat(hocon_token:boxed()) -> hocon_token:boxed().
-concat(#{type := object}=O) ->
-    O#{value => lists:map(fun (E) -> verify_concat(E) end, value_of(O))}.
+concat(#{?HOCON_T := object}=O) ->
+    O#{?HOCON_V => lists:map(fun (E) -> verify_concat(E) end, value_of(O))}.
 
-verify_concat(#{type := concat}=C) ->
+verify_concat(#{?HOCON_T := concat}=C) ->
     do_concat(value_of(C), metadata_of(C));
-verify_concat({#{type := key, metadata := Metadata}=K, Value}) when is_map(Value) ->
-    {K, verify_concat(Value#{metadata => Metadata})};
-verify_concat({#{type := key}=K, Value}) ->
+verify_concat({#{?HOCON_T := key, ?METADATA := Metadata}=K, Value}) when is_map(Value) ->
+    {K, verify_concat(Value#{?METADATA => Metadata})};
+verify_concat({#{?HOCON_T := key}=K, Value}) ->
     {K, verify_concat(Value)};
 verify_concat(Other) ->
     Other.
@@ -266,74 +268,74 @@ do_concat(Concat, Location) ->
 
 do_concat([], _, []) ->
     nothing;
-do_concat([], MetaKey, [{#{metadata := MetaFirstElem}, _V} = F | _Fs] = Acc) when ?IS_FIELD(F) ->
+do_concat([], MetaKey, [{#{?METADATA := MetaFirstElem}, _V} = F | _Fs] = Acc) when ?IS_FIELD(F) ->
     Metadata = hocon_util:do_deep_merge(MetaFirstElem, MetaKey),
     case lists:all(fun (F0) -> ?IS_FIELD(F0) end, Acc) of
         true ->
-            #{type => object, value => lists:reverse(Acc), metadata => Metadata};
+            #{?HOCON_T => object, ?HOCON_V => lists:reverse(Acc), ?METADATA => Metadata};
         false ->
-            concat_error(lists:reverse(Acc), #{metadata => Metadata})
+            concat_error(lists:reverse(Acc), #{?METADATA => Metadata})
     end;
-do_concat([], MetaKey, [#{type := string, metadata := MetaFirstElem} | _] = Acc) ->
+do_concat([], MetaKey, [#{?HOCON_T := string, ?METADATA := MetaFirstElem} | _] = Acc) ->
     Metadata = hocon_util:do_deep_merge(MetaFirstElem, MetaKey),
     case lists:all(fun (A) -> type_of(A) =:= string end, Acc) of
         true ->
-            BinList = lists:map(fun(M) -> maps:get(value, M) end, lists:reverse(Acc)),
-            #{type => string, value => iolist_to_binary(BinList), metadata => Metadata};
+            BinList = lists:map(fun(M) -> maps:get(?HOCON_V , M) end, lists:reverse(Acc)),
+            #{?HOCON_T => string, ?HOCON_V => iolist_to_binary(BinList), ?METADATA => Metadata};
         false ->
-            concat_error(lists:reverse(Acc), #{metadata => Metadata})
+            concat_error(lists:reverse(Acc), #{?METADATA => Metadata})
     end;
-do_concat([], MetaKey, [#{type := array, metadata := MetaFirstElem} | _] = Acc) ->
+do_concat([], MetaKey, [#{?HOCON_T := array, ?METADATA := MetaFirstElem} | _] = Acc) ->
     Metadata = hocon_util:do_deep_merge(MetaFirstElem, MetaKey),
     case lists:all(fun (A) -> type_of(A) =:= array end, Acc) of
         true ->
             NewValue = lists:append(lists:reverse(lists:map(fun value_of/1, Acc))),
-            #{type => array, value => NewValue, metadata => Metadata};
+            #{?HOCON_T => array, ?HOCON_V => NewValue, ?METADATA => Metadata};
         false ->
-            concat_error(lists:reverse(Acc), #{metadata => Metadata})
+            concat_error(lists:reverse(Acc), #{?METADATA => Metadata})
     end;
 do_concat([], Metadata, Acc) when length(Acc) > 1 ->
-    concat_error(lists:reverse(Acc), #{metadata => Metadata});
+    concat_error(lists:reverse(Acc), #{?METADATA => Metadata});
 do_concat([], _, [Acc]) ->
     Acc;
 
-do_concat([#{type := array}=A | More], Metadata, Acc) ->
-    do_concat(More, Metadata, [A#{value => lists:map(fun verify_concat/1, value_of(A))} | Acc]);
-do_concat([#{type := object}=O | More], Metadata, Acc) ->
+do_concat([#{?HOCON_T := array}=A | More], Metadata, Acc) ->
+    do_concat(More, Metadata, [A#{?HOCON_V => lists:map(fun verify_concat/1, value_of(A))} | Acc]);
+do_concat([#{?HOCON_T := object}=O | More], Metadata, Acc) ->
     ConcatO = lists:map(fun verify_concat/1, value_of(O)),
     do_concat(More, Metadata, lists:reverse(ConcatO, Acc));
-do_concat([#{type:= string}=S | More], Metadata, Acc) ->
+do_concat([#{?HOCON_T := string}=S | More], Metadata, Acc) ->
     do_concat(More, Metadata, [S | Acc]);
-do_concat([#{type := concat}=C | More], Metadata, Acc) ->
+do_concat([#{?HOCON_T := concat}=C | More], Metadata, Acc) ->
     ConcatC = do_concat(value_of(C), Metadata#{line => line_of(C), filename => filename_of(C)}),
     do_concat([ConcatC | More], Metadata, Acc);
-do_concat([{#{type := key}=K, Value} | More], Metadata, Acc) ->
+do_concat([{#{?HOCON_T := key}=K, Value} | More], Metadata, Acc) ->
     do_concat(More, Metadata, [{K, verify_concat(Value)} | Acc]);
 do_concat([Other | More], Metadata, Acc) ->
     do_concat(More, Metadata, [Other | Acc]).
 
 -spec(transform(hocon_token:boxed(), map()) -> hocon:config()).
-transform(#{type := object, value := V} = O, #{format := richmap} = Opts) ->
+transform(#{?HOCON_T := object, ?HOCON_V := V} = O, #{format := richmap} = Opts) ->
     NewV = do_transform(remove_nothing(V), #{}, Opts),
-    O#{value => NewV};
-transform(#{type := object, value := V}, Opts) ->
+    O#{?HOCON_V => NewV};
+transform(#{?HOCON_T := object, ?HOCON_V := V}, Opts) ->
     do_transform(remove_nothing(V), #{}, Opts).
 
 do_transform([], Map, _Opts) -> Map;
 do_transform([{Key, Value} | More], Map, Opts) ->
     do_transform(More, merge(hd(paths(hocon_token:value_of(Key))), unpack(Value, Opts), Map), Opts).
 
-unpack(#{type := object, value := V} = O, #{format := richmap} = Opts) ->
-    O#{value => do_transform(remove_nothing(V), #{}, Opts)};
-unpack(#{type := object, value := V}, Opts) ->
+unpack(#{?HOCON_T := object, ?HOCON_V := V} = O, #{format := richmap} = Opts) ->
+    O#{?HOCON_V => do_transform(remove_nothing(V), #{}, Opts)};
+unpack(#{?HOCON_T := object, ?HOCON_V := V}, Opts) ->
     do_transform(remove_nothing(V), #{}, Opts);
-unpack(#{type := array, value := V} = A, #{format := richmap} = Opts) ->
+unpack(#{?HOCON_T := array, ?HOCON_V := V} = A, #{format := richmap} = Opts) ->
     NewV = [unpack(E, Opts) || E <- remove_nothing(V)],
-    A#{value => NewV};
-unpack(#{type := array, value := V}, Opts) ->
+    A#{?HOCON_V => NewV};
+unpack(#{?HOCON_T := array, ?HOCON_V := V}, Opts) ->
     [unpack(Val, Opts) || Val <- remove_nothing(V)];
 unpack(M, #{format := richmap}) -> M;
-unpack(#{value := V}, _Opts) -> V.
+unpack(#{?HOCON_V := V}, _Opts) -> V.
 
 remove_nothing(List) ->
     lists:filter(fun (nothing) -> false;
@@ -375,7 +377,7 @@ maybe_filename(Meta) ->
 % transforms tokens to values.
 format_tokens(List) when is_list(List) ->
     lists:map(fun format_tokens/1, List);
-format_tokens(#{type := array}=A) ->
+format_tokens(#{?HOCON_T := array}=A) ->
     lists:map(fun format_tokens/1, value_of(A));
 format_tokens({K, V}) ->
     {format_tokens(K), format_tokens(V)};
@@ -385,27 +387,27 @@ format_tokens(Token) ->
 value_of(Token) ->
     hocon_token:value_of(Token).
 
-line_of(#{metadata := #{line := Line}}) ->
+line_of(#{?METADATA := #{line := Line}}) ->
     Line;
 line_of(_Other) ->
     undefined.
 
-type_of(#{type := Type}) ->
+type_of(#{?HOCON_T := Type}) ->
     Type;
 type_of(_Other) ->
     undefined.
 
-filename_of(#{metadata := #{filename := Filename}}) ->
+filename_of(#{?METADATA := #{filename := Filename}}) ->
     Filename;
 filename_of(_Other) ->
     undefined.
 
-metadata_of(#{metadata := M}) ->
+metadata_of(#{?METADATA := M}) ->
     M;
 metadata_of(_Other) ->
     #{}.
 
-name_of(#{type := variable, name := N}) ->
+name_of(#{?HOCON_T := variable, name := N}) ->
     N.
 
 duration(X) ->

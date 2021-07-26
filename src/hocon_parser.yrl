@@ -62,30 +62,30 @@ value -> partials : make_concat('$1').
 
 Erlang code.
 
-make_object(Line, Object) -> #{type => object, value => Object, metadata => #{line => Line}}.
+make_object(Line, Object) -> #{'$hcTyp' => object, '$hcVal' => Object, '$hcMeta' => #{line => Line}}.
 
-make_array(Line, Array) -> #{type => array, value => Array, metadata => #{line => Line}}.
+make_array(Line, Array) -> #{'$hcTyp' => array, '$hcVal' => Array, '$hcMeta' => #{line => Line}}.
 
-make_primitive_value({endstr, Line, Value}) -> #{type => string, value => Value, metadata => #{line => Line}};
-make_primitive_value({T, Line, Value}) -> #{type => T, value => Value, metadata => #{line => Line}}.
+make_primitive_value({endstr, Line, Value}) -> #{'$hcTyp' => string, '$hcVal' => Value, '$hcMeta' => #{line => Line}};
+make_primitive_value({T, Line, Value}) -> #{'$hcTyp' => T, '$hcVal' => Value, '$hcMeta' => #{line => Line}}.
 
 make_variable({V, Line, {maybe, Value}}) when V =:= variable orelse V =:= endvar ->
-    #{type => variable, value => Value, name => Value, metadata => #{line => Line}, required => false};
+    #{'$hcTyp' => variable, '$hcVal' => Value, name => Value, '$hcMeta' => #{line => Line}, required => false};
 make_variable({V, Line, Value}) when V =:= variable orelse V =:= endvar ->
-    #{type => variable, value => Value, name => Value, metadata => #{line => Line}, required => true}.
+    #{'$hcTyp' => variable, '$hcVal' => Value, name => Value, '$hcMeta' => #{line => Line}, required => true}.
 
-make_include(String, true) ->  #{type => include,
-                                 value => bin(value_of(String)),
-                                 metadata => #{line => line_of(String)},
+make_include(String, true) ->  #{'$hcTyp' => include,
+                                 '$hcVal' => bin(value_of(String)),
+                                 '$hcMeta' => #{line => line_of(String)},
                                  required => true};
-make_include(String, false) ->  #{type => include,
-                                  value => bin(value_of(String)),
-                                  metadata => #{line => line_of(String)},
+make_include(String, false) ->  #{'$hcTyp' => include,
+                                  '$hcVal' => bin(value_of(String)),
+                                  '$hcMeta' => #{line => line_of(String)},
                                   required => false}.
 
-make_concat(S) -> #{type => concat, value => S}.
+make_concat(S) -> #{'$hcTyp' => concat, '$hcVal' => S}.
 
-str_to_bin(#{type := T, value := V} = M) when T =:= string -> M#{value => bin(V)}.
+str_to_bin(#{'$hcTyp' := T, '$hcVal' := V} = M) when T =:= string -> M#{'$hcVal' => bin(V)}.
 
 line_of(Token) -> element(2, Token).
 value_of(Token) -> element(3, Token).

@@ -80,8 +80,8 @@ setting(override_env) -> "MY_OVERRIDE";
 setting(_) -> undefined.
 
 range(Conf) ->
-    Min = hocon_schema:deep_get("foo.min", Conf, value),
-    Max = hocon_schema:deep_get("foo.max", Conf, value),
+    Min = hocon_schema:get_value("foo.min", Conf),
+    Max = hocon_schema:get_value("foo.max", Conf),
     case Min < Max of
         true ->
             {Min, Max};

@@ -28,13 +28,14 @@
 -export([translate/3]).
 -export([generate/2, generate/3, map_translate/3]).
 -export([check/2, check/3, check_plain/2, check_plain/3, check_plain/4]).
--export([deep_get/2, deep_get/3, deep_get/4, deep_put/3]).
--export([richmap_to_map/1, get_value/2]).
+-export([richmap_to_map/1, get_value/2, get_value/3]).
 -export([find_struct/2]).
 
 -include("hoconsc.hrl").
+-include("hocon_private.hrl").
 
 -ifdef(TEST).
+-export([deep_get/2, deep_put/3]).
 -export([nest/1]).
 -endif.
 
@@ -255,7 +256,7 @@ assert_integrity(Schema, [{Name, Validator} | Rest], Conf, Acc) ->
 
 %% @doc Check richmap input against schema.
 %% Returns a new config with:
-%% 1) default v#{atom_key := true}, Name) ->alues from schema if not found in input config
+%% 1) default values from schema if not found in input config
 %% 2) environment variable overrides applyed
 -spec(check(schema(), hocon:config()) -> hocon:config()).
 check(Schema, Conf) ->
@@ -655,13 +656,13 @@ unbox(#{is_richmap := false}, Value) -> Value;
 unbox(#{is_richmap := true}, Boxed) -> unbox(Boxed).
 
 unbox(Boxed) ->
-    case is_map(Boxed) andalso maps:is_key(value, Boxed) of
-        true -> maps:get(value, Boxed);
+    case is_map(Boxed) andalso maps:is_key(?HOCON_V, Boxed) of
+        true -> maps:get(?HOCON_V, Boxed);
         false -> error({bad_richmap, Boxed})
     end.
 
 safe_unbox(MaybeBox) ->
-    case maps:get(value, MaybeBox, undefined) of
+    case maps:get(?HOCON_V, MaybeBox, undefined) of
         undefined -> #{};
         Value -> Value
     end.
@@ -670,7 +671,7 @@ boxit(#{is_richmap := false}, Value, _OldValue) -> Value;
 boxit(#{is_richmap := true}, Value, undefined) -> boxit(Value, ?EMPTY_BOX);
 boxit(#{is_richmap := true}, Value, Box) -> boxit(Value, Box).
 
-boxit(Value, Box) -> Box#{value => Value}.
+boxit(Value, Box) -> Box#{?HOCON_V => Value}.
 
 %% nested boxing
 maybe_mkrich(#{is_richmap := false}, Value, _Box) ->
@@ -689,7 +690,7 @@ mkrich(Val) ->
 
 get_field(_Opts, ?VIRTUAL_ROOT, Value) -> Value;
 get_field(#{is_richmap := true}, Path, Conf) -> deep_get(Path, Conf);
-get_field(#{is_richmap := false}, Path, Conf) -> plain_get(Path, Conf).
+get_field(#{is_richmap := false}, Path, Conf) -> get_value(Path, Conf).
 
 %% put (maybe deep) value to map/richmap
 %% e.g. "path.to.my.value"
@@ -790,17 +791,6 @@ validation_errs(Opts, Context) ->
 plain_value(Value, #{is_richmap := false}) -> Value;
 plain_value(Value, #{is_richmap := true}) -> richmap_to_map(Value).
 
-%% @doc get a child node from map.
-plain_get(Path, Conf) ->
-    do_plain_get(split(Path), Conf).
-
-do_plain_get([], Conf) ->
-    %% value as-is
-    Conf;
-do_plain_get([H | T], Conf) ->
-    Child = maps:get(H, Conf, undefined),
-    do_plain_get(T, Child).
-
 %% @doc get a child node from richmap.
 %% Key (first arg) can be "foo.bar.baz" or ["foo.bar", "baz"] or ["foo", "bar", "baz"].
 -spec deep_get(string() | [string()], hocon:config()) -> hocon:config() | undefined.
@@ -813,7 +803,7 @@ do_deep_get([], Value) ->
 do_deep_get([H | T], EnclosingMap) ->
     %% `value` must exist, must be a richmap otherwise
     %% a bug in in the caller
-    Value = maps:get(value, EnclosingMap),
+    Value = maps:get(?HOCON_V, EnclosingMap),
     case is_map(Value) of
         true ->
             case maps:get(H, Value, undefined) of
@@ -825,17 +815,6 @@ do_deep_get([H | T], EnclosingMap) ->
             end;
         false ->
             undefined
-    end.
-
-%% @doc Get a child node from richmap and
-%% lookup the value of the given tag in the child node
-deep_get(Path, RichMap, Tag) ->
-    deep_get(Path, RichMap, Tag, undefined).
-
-deep_get(Path, RichMap, Tag, Default) ->
-    case deep_get(Path, RichMap) of
-        undefined -> Default;
-        Map -> maps:get(Tag, Map)
     end.
 
 -spec plain_put(opts(), [binary()], term(), hocon:confing()) -> hocon:config().
@@ -885,15 +864,15 @@ richmap_to_map(Other) ->
 
 richmap_to_map(Iter, Map) ->
     case maps:next(Iter) of
-        {metadata, _, I} ->
+        {?METADATA, _, I} ->
             richmap_to_map(I, Map);
-        {type, _, I} ->
+        {?HOCON_T, _, I} ->
             richmap_to_map(I, Map);
-        {value, M, _} when is_map(M) ->
+        {?HOCON_V, M, _} when is_map(M) ->
             richmap_to_map(maps:iterator(M), #{});
-        {value, A, _} when is_list(A) ->
+        {?HOCON_V, A, _} when is_list(A) ->
             [richmap_to_map(R) || R <- A];
-        {value, V, _} ->
+        {?HOCON_V, V, _} ->
             V;
         {K, V, I} ->
             richmap_to_map(I, Map#{K => richmap_to_map(V)});
@@ -902,9 +881,42 @@ richmap_to_map(Iter, Map) ->
     end.
 
 %% @doc Get (maybe nested) field value for the given path.
+%% This function works for both plain and rich map,
+%% And it always returns plain map.
 -spec get_value(string(), hocon:config()) -> term().
-get_value(Path, Config) ->
-    plain_get(Path, Config).
+get_value(Path, Conf) ->
+    %% ensure plain map
+    richmap_to_map(do_get(split(Path), Conf)).
+
+do_get(Path, #{?HOCON_V := V}) ->
+    do_get(Path, V);
+do_get([], Conf) ->
+    %% value as-is
+    Conf;
+do_get(_, undefined) ->
+    undefined;
+do_get([H | T], Conf) ->
+    do_get(T, try_get(H, Conf)).
+
+try_get(Key, Conf) when is_map(Conf) ->
+    case maps:get(Key, Conf, undefined) of
+        undefined ->
+            try binary_to_existing_atom(Key, utf8) of
+                AtomKey -> maps:get(AtomKey, Conf, undefined)
+            catch
+                error : badarg ->
+                    undefined
+            end;
+        Value ->
+            Value
+    end.
+
+-spec get_value(string(), hocon:config(), term()) -> term().
+get_value(Path, Config, Default) ->
+    case get_value(Path, Config) of
+        undefined -> Default;
+        V -> V
+    end.
 
 assert_no_error(Schema, List) ->
     case find_errors(List) of
