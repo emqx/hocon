@@ -255,7 +255,7 @@ assert_integrity(Schema, [{Name, Validator} | Rest], Conf, Acc) ->
 
 %% @doc Check richmap input against schema.
 %% Returns a new config with:
-%% 1) default values from schema if not found in input config
+%% 1) default v#{atom_key := true}, Name) ->alues from schema if not found in input config
 %% 2) environment variable overrides applyed
 -spec(check(schema(), hocon:config()) -> hocon:config()).
 check(Schema, Conf) ->
@@ -296,11 +296,6 @@ maybe_convert_to_plain_map(Conf, #{is_richmap := true, return_plain := true}) ->
 maybe_convert_to_plain_map(Conf, _Opts) ->
     Conf.
 
-maybe_covert_keys_to_atom(Conf, #{atom_key := true}) ->
-    atom_key_map(Conf);
-maybe_covert_keys_to_atom(Conf, _Opts) ->
-    Conf.
-
 -spec map(schema(), hocon:config()) -> {[proplists:property()], hocon:config()}.
 map(Schema, Conf) ->
     RootNames = structs(Schema),
@@ -338,8 +333,7 @@ map(Schema, Conf, RootNames, Opts0) ->
     {Mapped, NewConf} = lists:foldl(F, {[], Conf}, RootNames),
     ok = assert_no_error(Schema, Mapped),
     ok = assert_integrity(Schema, NewConf, Opts),
-    {Mapped, maybe_covert_keys_to_atom(
-                maybe_convert_to_plain_map(NewConf, Opts), Opts)}.
+    {Mapped, maybe_convert_to_plain_map(NewConf, Opts)}.
 
 %% Assert no dot in root struct name.
 %% This is because the dot will cause root name to be splited,
@@ -630,10 +624,11 @@ apply_env(Ns, [{VarName, V} | More], RootName, Conf, Opts) ->
                    (Path1 =/= [] andalso bin(RootName) =:= bin(hd(Path1))) of
                   true ->
                       Path = string:join(Path1, "."),
-                      %% it lacks schema info here, so we need to tag the value '$FROM_ENV_VAR'
-                      %% %% %% and the value will be logged later when checking against schema
-                      %% %% %% so we know if the value is sensitive or not
-                      put_value(Opts, Path, ?FROM_ENV_VAR(VarName, V), Conf);
+                      %% It lacks schema info here, so we need to tag the value '$FROM_ENV_VAR'
+                      %% and the value will be logged later when checking against schema
+                      %% so we know if the value is sensitive or not.
+                      %% NOTE: never translate to atom key here
+                      put_value(Opts#{atom_key => false}, Path, ?FROM_ENV_VAR(VarName, V), Conf);
                   false ->
                       Conf
               end,
@@ -700,10 +695,10 @@ get_field(#{is_richmap := false}, Path, Conf) -> plain_get(Path, Conf).
 %% e.g. "path.to.my.value"
 put_value(_Opts, _Path, undefined, Conf) ->
     Conf;
-put_value(#{is_richmap := true}, Path, V, Conf) ->
-    deep_put(Path, V, Conf);
-put_value(#{is_richmap := false}, Path, V, Conf) ->
-    plain_put(split(Path), V, Conf).
+put_value(#{is_richmap := true} = Opts, Path, V, Conf) ->
+    deep_put(Opts, Path, V, Conf);
+put_value(#{is_richmap := false} = Opts, Path, V, Conf) ->
+    plain_put(Opts, split(Path), V, Conf).
 
 split(Path) -> lists:flatten(do_split(str(Path))).
 
@@ -843,26 +838,41 @@ deep_get(Path, RichMap, Tag, Default) ->
         Map -> maps:get(Tag, Map)
     end.
 
--spec plain_put([binary()], term(), hocon:confing()) -> hocon:config().
-plain_put([], Value, _Old) -> Value;
-plain_put([Name | Path], Value, Conf) when is_map(Conf) ->
+-spec plain_put(opts(), [binary()], term(), hocon:confing()) -> hocon:config().
+plain_put(_Opts, [], Value, _Old) -> Value;
+plain_put(Opts, [Name | Path], Value, Conf) when is_map(Conf) ->
     FieldV = maps:get(Name, Conf, #{}),
-    NewFieldV = plain_put(Path, Value, FieldV),
-    Conf#{Name => NewFieldV}.
+    NewConf = maps:without([Name], Conf),
+    NewFieldV = plain_put(Opts, Path, Value, FieldV),
+    NewConf#{maybe_atom(Opts, Name) => NewFieldV}.
+
+maybe_atom(#{atom_key := true}, Name) when is_binary(Name) ->
+    try
+        binary_to_existing_atom(Name, utf8)
+    catch
+        _ : _ ->
+            error({non_existing_atom, Name})
+    end;
+maybe_atom(_Opts, Name) ->
+    Name.
+
+deep_put(Path, Value, Conf) ->
+    deep_put(#{atom_key => false}, Path, Value, Conf).
 
 %% put unboxed value to the richmap box
 %% this function is called places where there is no boxing context
 %% so it has to accept unboxed value.
-deep_put(Path, Value, Conf) ->
-    put_rich(split(Path), Value, Conf).
+deep_put(Opts, Path, Value, Conf) ->
+    put_rich(Opts, split(Path), Value, Conf).
 
-put_rich([], Value, Box) ->
+put_rich(_Opts, [], Value, Box) ->
     boxit(Value, Box);
-put_rich([Name | Path], Value, Box) ->
+put_rich(Opts, [Name | Path], Value, Box) ->
     BoxV = safe_unbox(Box),
     FieldV = maps:get(Name, BoxV, #{}),
-    NewFieldV = put_rich(Path, Value, FieldV),
-    NewBoxV = BoxV#{Name => NewFieldV},
+    NewFieldV = put_rich(Opts, Path, Value, FieldV),
+    TmpBoxV = maps:without([Name], BoxV),
+    NewBoxV = TmpBoxV#{maybe_atom(Opts, Name) => NewFieldV},
     boxit(NewBoxV, Box).
 
 %% @doc Convert richmap to plain-map.
@@ -915,15 +925,3 @@ do_find_error([{error, E} | More], Errors) ->
     do_find_error(More, [E | Errors]);
 do_find_error([_ | More], Errors) ->
     do_find_error(More, Errors).
-
-atom_key_map(BinKeyMap) when is_map(BinKeyMap) ->
-    maps:fold(
-        fun(K, V, Acc) when is_binary(K) ->
-              Acc#{binary_to_existing_atom(K, utf8) => atom_key_map(V)};
-           (K, V, Acc) when is_atom(K) ->
-              %% richmap keys
-              Acc#{K => atom_key_map(V)}
-        end, #{}, BinKeyMap);
-atom_key_map(ListV) when is_list(ListV) ->
-    [atom_key_map(V) || V <- ListV];
-atom_key_map(Val) -> Val.
