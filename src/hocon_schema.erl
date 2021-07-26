@@ -16,6 +16,8 @@
 
 -module(hocon_schema).
 
+-elvis([{elvis_style, god_modules, disable}]).
+
 %% behaviour APIs
 -export([ roots/1
         , fields/2
@@ -29,7 +31,8 @@
 -export([generate/2, generate/3, map_translate/3]).
 -export([check/2, check/3, check_plain/2, check_plain/3, check_plain/4]).
 -export([richmap_to_map/1, get_value/2, get_value/3]).
--export([resolve_struct_name/2, root_names/1]).
+-export([namespace/1, resolve_struct_name/2, root_names/1]).
+-export([field_schema/2]).
 
 -include("hoconsc.hrl").
 -include("hocon_private.hrl").
@@ -80,9 +83,10 @@
 -type root_type() :: name() | field().
 -type schema() :: module()
                 | #{ roots := [root_type()]
-                   , fields := #{name() => [field()]}
+                   , fields := #{name() => [field()]} | fun((name()) -> [field()])
                    , translations => #{name() => [translation()]} %% for config mappings
                    , validations => [validation()] %% for config integrity checks
+                   , namespace => atom()
                    }.
 
 -define(FROM_ENV_VAR(Name, Value), {'$FROM_ENV_VAR', Name, Value}).
@@ -139,8 +143,12 @@ do_roots(Mod) when is_atom(Mod) ->
 do_roots(#{roots := Names}) -> Names.
 
 -spec fields(schema(), name()) -> [field()].
-fields(Mod, Name) when is_atom(Mod) -> Mod:fields(Name);
-fields(#{fields := Fields}, Name) -> maps:get(Name, Fields).
+fields(Mod, Name) when is_atom(Mod) ->
+    Mod:fields(Name);
+fields(#{fields := Fields}, Name) when is_function(Fields) ->
+    Fields(Name);
+fields(#{fields := Fields}, Name) when is_map(Fields) ->
+    maps:get(Name, Fields).
 
 -spec translations(schema()) -> [name()].
 translations(Mod) when is_atom(Mod) ->
@@ -162,6 +170,14 @@ validations(Mod) when is_atom(Mod) ->
         true -> Mod:validations()
     end;
 validations(Sc) -> maps:get(validations, Sc, []).
+
+%% @doc Get full name of a struct.
+-spec namespace(schema()) -> undefined | binary().
+namespace(Schema) ->
+    case is_atom(Schema) of
+        true -> bin(Schema);
+        false -> maps:get(namespace, Schema, undefined)
+    end.
 
 %% @doc Resolve struct name from a guess.
 resolve_struct_name(Schema, StructName) ->
@@ -225,11 +241,11 @@ translate(Schema, Conf, Mapped) ->
     end.
 
 do_translate([], _Namespace, _Conf, Acc) -> Acc;
-do_translate([{MappedField, Translator} | More], Namespace, Conf, Acc) ->
-    MappedField0 = Namespace ++ "." ++ MappedField,
+do_translate([{MappedField, Translator} | More], TrNamespace, Conf, Acc) ->
+    MappedField0 = TrNamespace ++ "." ++ MappedField,
     try Translator(Conf) of
         Value ->
-            do_translate(More, Namespace, Conf, [{string:tokens(MappedField0, "."), Value} | Acc])
+            do_translate(More, TrNamespace, Conf, [{string:tokens(MappedField0, "."), Value} | Acc])
     catch
         Exception : Reason : St ->
             Error = {error, ?TRANSLATION_ERRS(#{reason => Reason,
@@ -237,7 +253,7 @@ do_translate([{MappedField, Translator} | More], Namespace, Conf, Acc) ->
                                                 value_path => MappedField0,
                                                 exception => Exception
                                                })},
-            do_translate(More, Namespace, Conf, [Error | Acc])
+            do_translate(More, TrNamespace, Conf, [Error | Acc])
     end.
 
 assert_integrity(Schema, Conf0, #{format := Format}) ->
