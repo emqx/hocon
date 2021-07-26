@@ -196,7 +196,7 @@ deep_get(Path, Conf, Param) ->
 deep_put_test_() ->
     F = fun(Str, Key, Value) ->
                 {ok, M} = hocon:binary(Str, #{format => richmap}),
-                NewM = hocon_schema:deep_put(Key, Value, M),
+                NewM = hocon_schema:deep_put(#{}, Key, Value, M),
                 deep_get(Key, NewM, ?HOCON_V)
         end,
     [ ?_assertEqual(2, F("a=1", "a", 2))

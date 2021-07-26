@@ -35,7 +35,7 @@
 -include("hocon_private.hrl").
 
 -ifdef(TEST).
--export([deep_get/2, deep_put/3]).
+-export([deep_get/2, deep_put/4]).
 -export([nest/1]).
 -endif.
 
@@ -834,9 +834,6 @@ maybe_atom(#{atom_key := true}, Name) when is_binary(Name) ->
     end;
 maybe_atom(_Opts, Name) ->
     Name.
-
-deep_put(Path, Value, Conf) ->
-    deep_put(#{atom_key => false}, Path, Value, Conf).
 
 %% put unboxed value to the richmap box
 %% this function is called places where there is no boxing context
