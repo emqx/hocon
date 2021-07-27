@@ -132,7 +132,7 @@ get(ParsedArgs, [Query | _]) ->
     %% do not log anything for `get` commands
     DummyLogger = #{logger => fun(_, _) -> ok end},
     {_, NewConf} = hocon_schema:map(Schema, Conf, [RootName], DummyLogger),
-    ?STDOUT("~p", [hocon_schema:deep_get(Query, NewConf, value)]),
+    ?STDOUT("~p", [hocon_schema:get_value(Query, NewConf)]),
     stop_ok().
 
 load_schema(ParsedArgs) ->

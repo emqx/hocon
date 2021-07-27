@@ -799,8 +799,8 @@ tr_modules(Conf) ->
     ]).
 
 tr_sysmon(Conf) ->
-    Keys = maps:to_list(conf_get("sysmon", Conf, #{})),
-    [{binary_to_atom(K), maps:get(value, V)} || {K, V} <- Keys].
+    SysmonConf = maps:to_list(conf_get("sysmon", Conf, #{})),
+    [{binary_to_atom(K), V} || {K, V} <- SysmonConf].
 
 tr_os_mon(Conf) ->
     [{cpu_check_interval, conf_get("os_mon.cpu_check_interval", Conf)}
@@ -988,13 +988,13 @@ map_zones("mountpoint", Val) ->
 map_zones("response_information", Val) ->
     {response_information, iolist_to_binary(Val)};
 map_zones("rate_limit", Conf) ->
-    Messages = case conf_get("conn_messages_in", #{value => Conf}) of
+    Messages = case conf_get("conn_messages_in", Conf) of
         undefined ->
             [];
         M ->
             [{conn_messages_in, rate_limit_num_dur(M)}]
     end,
-    Bytes = case conf_get("conn_bytes_in", #{value => Conf}) of
+    Bytes = case conf_get("conn_bytes_in", Conf) of
         undefined ->
             [];
         B ->
@@ -1002,13 +1002,13 @@ map_zones("rate_limit", Conf) ->
             end,
     {ratelimit, Messages ++ Bytes};
 map_zones("conn_congestion", Conf) ->
-    Alarm = case conf_get("alarm", #{value => Conf}) of
+    Alarm = case conf_get("alarm", Conf) of
                undefined ->
                    [];
                A ->
                    [{conn_congestion_alarm_enabled, A}]
            end,
-    MinAlarm = case conf_get("min_alarm_sustain_duration", #{value => Conf}) of
+    MinAlarm = case conf_get("min_alarm_sustain_duration", Conf) of
                 undefined ->
                     [];
                 M ->
@@ -1016,13 +1016,13 @@ map_zones("conn_congestion", Conf) ->
             end,
     Alarm ++ MinAlarm;
 map_zones("quota", Conf) ->
-    Conn = case conf_get("conn_messages_routing", #{value => Conf}) of
+    Conn = case conf_get("conn_messages_routing", Conf) of
                    undefined ->
                        [];
                    C ->
                        [{conn_messages_routing, rate_limit_num_dur(C)}]
                end,
-    Overall = case conf_get("overall_messages_routing", #{value => Conf}) of
+    Overall = case conf_get("overall_messages_routing", Conf) of
                 undefined ->
                     [];
                 O ->
@@ -1037,7 +1037,7 @@ map_zones(Opt, Val) ->
 
 -spec(conf_get(string() | [string()], hocon:config()) -> term()).
 conf_get(Key, Conf) ->
-    V = hocon_schema:deep_get(Key, Conf, value),
+    V = hocon_schema:get_value(Key, Conf),
     case is_binary(V) of
         true ->
             binary_to_list(V);
@@ -1046,7 +1046,7 @@ conf_get(Key, Conf) ->
     end.
 
 conf_get(Key, Conf, Default) ->
-    V = hocon_schema:deep_get(Key, Conf, value, Default),
+    V = hocon_schema:get_value(Key, Conf, Default),
     case is_binary(V) of
         true ->
             binary_to_list(V);

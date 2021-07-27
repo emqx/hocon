@@ -17,6 +17,7 @@
 -module(hocon_tests).
 
 -include_lib("eunit/include/eunit.hrl").
+-include("hocon_private.hrl").
 
 %% try to load all sample files
 %% expect no crash
@@ -406,58 +407,66 @@ duration_test_() ->
 
 richmap_binary_test() ->
     {ok, M0} = hocon:binary("a=1", #{format => richmap}),
-    ?assertEqual(#{metadata => #{filename => undefined, line => 0},
-                   type => object,
-                   value =>
+    ?assertEqual(#{?METADATA => #{filename => undefined, line => 0},
+                   ?HOCON_T => object,
+                   ?HOCON_V =>
                    #{<<"a">> =>
-                     #{metadata => #{filename => undefined, line => 1},
-                       type => integer, value => 1}}}, M0),
+                     #{?METADATA => #{filename => undefined, line => 1},
+                       ?HOCON_T => integer,
+                       ?HOCON_V => 1}}}, M0),
     {ok, M1} = hocon:binary("a=[1,2]", #{format => richmap}),
-    ?assertEqual(#{metadata => #{filename => undefined, line => 0},
-                   type => object,
-                   value =>
+    ?assertEqual(#{?METADATA => #{filename => undefined, line => 0},
+                   ?HOCON_T => object,
+                   ?HOCON_V =>
                    #{<<"a">> =>
-                     #{metadata => #{filename => undefined, line => 1},
-                       type => array,
-                       value =>
-                       [#{metadata =>
+                     #{?METADATA => #{filename => undefined, line => 1},
+                       ?HOCON_T => array,
+                       ?HOCON_V =>
+                       [#{?METADATA =>
                           #{filename => undefined, line => 1},
-                          type => integer, value => 1},
-                        #{metadata =>
+                          ?HOCON_T => integer,
+                          ?HOCON_V => 1},
+                        #{?METADATA =>
                           #{filename => undefined, line => 1},
-                          type => integer, value => 2}]}}}, M1),
+                          ?HOCON_T => integer,
+                          ?HOCON_V => 2}]}}}, M1),
     {ok, M2} = hocon:binary("a\n{b=foo}", #{format => richmap}),
-    ?assertEqual(#{metadata => #{filename => undefined, line => 0},
-                   type => object,
-                   value =>
+    ?assertEqual(#{?METADATA => #{filename => undefined, line => 0},
+                   ?HOCON_T => object,
+                   ?HOCON_V =>
                    #{<<"a">> =>
-                     #{metadata => #{filename => undefined, line => 1},
-                       type => object,
-                       value =>
+                     #{?METADATA => #{filename => undefined, line => 1},
+                       ?HOCON_T => object,
+                       ?HOCON_V =>
                        #{<<"b">> =>
-                         #{metadata =>
+                         #{?METADATA =>
                            #{filename => undefined,
                              line => 2},
-                           type => string,
-                           value => <<"foo">>}}}}}, M2).
+                           ?HOCON_T => string,
+                           ?HOCON_V => <<"foo">>}}}}}, M2).
 
 richmap_file_test() ->
     {ok, Map} = hocon:load("etc/node.conf", #{format => richmap}),
-    #{value :=
+    #{?HOCON_V :=
       #{<<"cluster">> :=
-        #{value :=
+        #{?HOCON_V :=
           #{<<"autoclean">> :=
-            #{metadata := #{filename := F, line := 7}, value := <<"5m">>}}}}} = Map,
+            #{?METADATA := #{filename := F, line := 7},
+              ?HOCON_V := <<"5m">>}}}}} = Map,
     ?assertEqual("node.conf", filename:basename(F)).
 
 files_test() ->
     Filename = fun (Metadata) -> filename:basename(maps:get(filename, Metadata)) end,
     {ok, Conf} = hocon:files(["sample-configs/a_1.conf", "sample-configs/b_2.conf"],
                              #{format => richmap}),
-    ?assertEqual(1, hocon_schema:deep_get("a", Conf, value)),
-    ?assertEqual("a_1.conf", Filename(hocon_schema:deep_get("a", Conf, metadata))),
-    ?assertEqual(2, hocon_schema:deep_get("b", Conf, value)),
-    ?assertEqual("b_2.conf", Filename(hocon_schema:deep_get("b", Conf, metadata))).
+    ?assertEqual(1, deep_get("a", Conf, ?HOCON_V)),
+    ?assertEqual("a_1.conf", Filename(deep_get("a", Conf, ?METADATA))),
+    ?assertEqual(2, deep_get("b", Conf, ?HOCON_V)),
+    ?assertEqual("b_2.conf", Filename(deep_get("b", Conf, ?METADATA))).
+
+deep_get(Key, Conf, Tag) ->
+    Map = hocon_schema:deep_get(Key, Conf),
+    maps:get(Tag, Map).
 
 utf8_test() ->
     %todo support unicode
