@@ -675,3 +675,18 @@ default_value_map_field_test() ->
                                 <<"b">> => "bar"},
                    <<"x">> => "y"},
                  hocon_schema:richmap_to_map(hocon_schema:check(Sc, RichMap))).
+
+default_value_for_null_enclosing_struct_test() ->
+    Sc = #{structs => [?VIRTUAL_ROOT],
+           fields => #{?VIRTUAL_ROOT => [ {"l1", #{type => hoconsc:ref("l2")}} ],
+                       "l2" => [{"l2", #{type => integer(), default => 22}},
+                                {"l3", #{type => integer()}}
+                               ]
+                      }},
+    Conf = "",
+    {ok, PlainMap} = hocon:binary(Conf, #{}),
+    {ok, RichMap} = hocon:binary(Conf, #{format => richmap}),
+    ?assertEqual(#{<<"l1">> => #{<<"l2">> => 22}},
+                 hocon_schema:check_plain(Sc, PlainMap, #{nullable => true})),
+    ?assertEqual(#{<<"l1">> => #{<<"l2">> => 22}},
+                 hocon_schema:check(Sc, RichMap, #{nullable => true, return_plain => true})).
