@@ -677,7 +677,7 @@ boxit(Value, Box) -> Box#{?HOCON_V => Value}.
 maybe_mkrich(#{is_richmap := false}, Value, _Box) ->
     Value;
 maybe_mkrich(#{is_richmap := true}, Value, Box) ->
-    hocon_util:do_deep_merge(mkrich(Value), Box).
+    hocon_util:deep_merge(mkrich(Value), Box).
 
 mkrich(Arr) when is_list(Arr) ->
     NewArr = [mkrich(I) || I <- Arr],

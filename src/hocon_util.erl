@@ -16,21 +16,21 @@
 
 -module(hocon_util).
 
--export([do_deep_merge/2]).
+-export([deep_merge/2]).
 -export([pipeline_fun/1, pipeline/3]).
 -export([stack_multiple_push/2, stack_push/2, get_stack/2, top_stack/2]).
 -export([is_same_file/2, real_file_name/1]).
 
-do_deep_merge(M1, M2) when is_map(M1), is_map(M2) ->
+deep_merge(M1, M2) when is_map(M1), is_map(M2) ->
     maps:fold(fun(K, V2, Acc) ->
         case Acc of
             #{K := V1} ->
-                Acc#{K => do_deep_merge(V1, V2)};
+                Acc#{K => deep_merge(V1, V2)};
             _ ->
                 Acc#{K => V2}
         end
               end, M1, M2);
-do_deep_merge(_, Override) ->
+deep_merge(_, Override) ->
     Override.
 
 pipeline_fun(Steps) ->
