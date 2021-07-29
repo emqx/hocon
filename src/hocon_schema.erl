@@ -819,6 +819,8 @@ do_deep_get([H | T], EnclosingMap) ->
 
 -spec plain_put(opts(), [binary()], term(), hocon:confing()) -> hocon:config().
 plain_put(_Opts, [], Value, _Old) -> Value;
+plain_put(Opts, Path, Value, undefined) ->
+    plain_put(Opts, Path, Value, #{});
 plain_put(Opts, [Name | Path], Value, Conf) when is_map(Conf) ->
     FieldV = maps:get(Name, Conf, #{}),
     NewConf = maps:without([Name], Conf),
