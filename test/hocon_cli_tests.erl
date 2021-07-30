@@ -74,6 +74,16 @@ generate_config_test_() ->
       end
     ].
 
+generate_config_failure_test() ->
+    Gen = fun(T, Sc) ->
+             hocon_cli:main(["-c", etc("demo-schema-failure.conf")]
+                             ++ generate_opts(T) ++ Sc)
+          end,
+    Time = now_time(),
+    SchemaModule = "demo_schema", %% not demo_schema, so the check will fail
+    ?assertThrow(stop_deactivate, Gen(Time, ["-s", SchemaModule])).
+
+
 generate_multiple_input_config_test() ->
     Time = now_time(),
     hocon_cli:main(["-s", "demo_schema",

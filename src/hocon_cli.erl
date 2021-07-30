@@ -228,7 +228,8 @@ generate(ParsedArgs) ->
                     stop_deactivate()
             end
     catch
-        throw : Errors ->
+        throw : {Schema, Errors} ->
+            log(error, "failed_to_check_schema: ~p", [Schema]),
             lists:foreach(fun(E) -> log(error, "~p", [E]) end, Errors),
             stop_deactivate()
     end.
