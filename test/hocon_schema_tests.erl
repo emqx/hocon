@@ -484,15 +484,12 @@ validation_error_if_not_nullable_test() ->
     ?VALIDATION_ERR(#{reason := not_nullable},
                     hocon_schema:check_plain(Sc, Data, #{nullable => false})).
 
-unknown_fields_test() ->
+unknown_fields_test_() ->
     Conf = "person.id.num=123,person.name=mike",
     {ok, M} = hocon:binary(Conf, #{format => richmap}),
     ?GEN_VALIDATION_ERR(#{reason := unknown_fields,
-                          unknown := [<<"name">>]},
-                        begin
-                            {Mapped, _} = hocon_schema:map(demo_schema, M, all),
-                            Mapped
-                        end).
+                          unknown := [{<<"name">>, #{filename := undefined, line := 1}}]
+                         }, hocon_schema:map(demo_schema, M, all)).
 
 nullable_field_test() ->
     Sc = #{structs => [?VIRTUAL_ROOT],

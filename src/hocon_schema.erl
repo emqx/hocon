@@ -398,8 +398,8 @@ do_map2([{[$$ | _] = _Wildcard, Schema}], Conf, Opts) ->
     do_map(Fields, Conf, Opts); %% start over
 do_map2(Fields, Value, Opts) ->
     SchemaFieldNames = [N || {N, _Schema} <- Fields],
-    DataFieldNames = maps_keys(unbox(Opts, Value)),
-    case check_unknown_fields(Opts, SchemaFieldNames, DataFieldNames) of
+    DataFields = unbox(Opts, Value),
+    case check_unknown_fields(Opts, SchemaFieldNames, DataFields) of
         ok -> map_fields(Fields, Value, [], Opts);
         Errors -> {Errors, Value}
     end.
@@ -487,16 +487,27 @@ map_field(Type, Schema, Value0, Opts) ->
 maps_keys(undefined) -> [];
 maps_keys(Map) -> maps:keys(Map).
 
-check_unknown_fields(Opts, SchemaFieldNames0, DataFieldNames) ->
-    SchemaFieldNames = lists:map(fun bin/1, SchemaFieldNames0),
-    case DataFieldNames -- SchemaFieldNames of
+check_unknown_fields(Opts, SchemaFieldNames, DataFields) ->
+    DataFieldNames = maps_keys(DataFields),
+    IsInvalidName =
+        fun(N) -> not lists:any(fun(SN) -> bin(N) =:= bin(SN) end, SchemaFieldNames) end,
+    case lists:filter(IsInvalidName, DataFieldNames) of
         [] ->
             ok;
         UnknownFileds ->
-            validation_errs(Opts, #{reason => unknown_fields,
-                                    path => path(Opts),
-                                    unknown=> UnknownFileds,
-                                    expected => SchemaFieldNames})
+            Unknowns =
+                lists:map(fun(FN) ->
+                                  case meta(maps:get(FN, DataFields)) of
+                                      undefined -> FN;
+                                      Meta -> {FN, Meta}
+                                  end
+                          end, UnknownFileds),
+            Err = #{reason => unknown_fields,
+                    path => path(Opts),
+                    expected => SchemaFieldNames,
+                    unknown => Unknowns
+                   },
+            validation_errs(Opts, Err)
     end.
 
 is_nullable(Opts, Schema) ->
@@ -651,6 +662,9 @@ log(#{logger := Logger}, Level, Msg) ->
 log(_Opts, Level, Msg) ->
     logger:log(Level, Msg).
 
+meta(#{?METADATA := M}) -> M;
+meta(_) -> undefined.
+
 unbox(_, undefined) -> undefined;
 unbox(#{is_richmap := false}, Value) -> Value;
 unbox(#{is_richmap := true}, Boxed) -> unbox(Boxed).
@@ -783,7 +797,11 @@ do_validate(Opts, Schema, Value, [H | T]) ->
     end.
 
 validation_errs(Opts, Reason, Value) ->
-    validation_errs(Opts, #{reason => Reason, value => Value}).
+    Err = case meta(Value) of
+              undefined -> #{reason => Reason, value => Value};
+              Meta -> #{reason => Reason, value => richmap_to_map(Value), location => Meta}
+          end,
+    validation_errs(Opts, Err).
 
 validation_errs(Opts, Context) ->
     [{error, ?VALIDATION_ERRS(Context#{path => path(Opts)})}].
