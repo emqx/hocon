@@ -118,7 +118,8 @@
 
 -define(DEFAULT_NULLABLE, true).
 
--define(EMPTY_BOX, #{}).
+-define(META_BOX(Tag, Metadata), #{?METADATA => #{Tag => Metadata}}).
+-define(NULL_BOX, #{?METADATA => #{made_for => null_value}}).
 
 %% behaviour APIs
 -spec structs(schema()) -> [name()].
@@ -364,7 +365,7 @@ do_map(Fields, Value, Opts) ->
     case unbox(Opts, Value) of
         undefined ->
             case maps:get(nullable, Opts, ?DEFAULT_NULLABLE) of
-                true -> do_map2(Fields, boxit(Opts, undefined, ?EMPTY_BOX), Opts);
+                true -> do_map2(Fields, boxit(Opts, undefined, undefined), Opts);
                 false -> {validation_errs(Opts, not_nullable, undefined), undefined}
             end;
         V when is_map(V) ->
@@ -488,20 +489,10 @@ maps_keys(undefined) -> [];
 maps_keys(Map) -> maps:keys(Map).
 
 check_unknown_fields(Opts, SchemaFieldNames, DataFields) ->
-    DataFieldNames = maps_keys(DataFields),
-    IsInvalidName =
-        fun(N) -> not lists:any(fun(SN) -> bin(N) =:= bin(SN) end, SchemaFieldNames) end,
-    case lists:filter(IsInvalidName, DataFieldNames) of
+    case find_unknown_fields(Opts, SchemaFieldNames, DataFields) of
         [] ->
             ok;
-        UnknownFileds ->
-            Unknowns =
-                lists:map(fun(FN) ->
-                                  case meta(maps:get(FN, DataFields)) of
-                                      undefined -> FN;
-                                      Meta -> {FN, Meta}
-                                  end
-                          end, UnknownFileds),
+        Unknowns ->
             Err = #{reason => unknown_fields,
                     path => path(Opts),
                     expected => SchemaFieldNames,
@@ -509,6 +500,35 @@ check_unknown_fields(Opts, SchemaFieldNames, DataFields) ->
                    },
             validation_errs(Opts, Err)
     end.
+
+find_unknown_fields(_Opts, _SchemaFieldNames, undefined) -> [];
+find_unknown_fields(Opts, SchemaFieldNames0, DataFields) ->
+    SchemaFieldNames = lists:map(fun bin/1, SchemaFieldNames0),
+    maps:fold(fun(DfName, DfValue, Acc) ->
+                      case is_known_field(Opts, DfName, DfValue, SchemaFieldNames) of
+                          true ->
+                              Acc;
+                          false ->
+                              Unknown = case meta(DfValue) of
+                                            undefined -> DfName;
+                                            Meta -> {DfName, Meta}
+                                        end,
+                              [Unknown | Acc]
+                      end
+              end, [], DataFields).
+
+is_known_field(Opts, Name, Value, ExpectedNames) ->
+    is_known_name(Name, ExpectedNames) orelse
+    case Value of
+        #{?HOCON_V := ?FROM_ENV_VAR(EnvName, _)} ->
+            log(Opts, warning, "unknown_environment_variable_discarded: " ++ EnvName),
+            true;
+        _ ->
+            false
+    end.
+
+is_known_name(Name, ExpectedNames) ->
+    lists:any(fun(N) -> N =:= bin(Name) end, ExpectedNames).
 
 is_nullable(Opts, Schema) ->
     case field_schema(Schema, nullable) of
@@ -573,15 +593,15 @@ resolve_field_value(Schema, FieldValue, Opts) ->
     case get_override_env(Schema, Opts) of
         undefined ->
             resolve_default_override(Schema, FieldValue, Opts);
-        EnvValue ->
-            maybe_mkrich(Opts, EnvValue, ?EMPTY_BOX)
+        {Name, EnvValue} ->
+            maybe_mkrich(Opts, EnvValue, ?META_BOX(from_env, Name))
     end.
 
 resolve_default_override(Schema, FieldValue, Opts) ->
     case unbox(Opts, FieldValue) of
         ?FROM_ENV_VAR(EnvName, EnvValue) ->
             log_env_override(Schema, Opts, EnvName, path(Opts), EnvValue),
-            maybe_mkrich(Opts, EnvValue, ?EMPTY_BOX);
+            maybe_mkrich(Opts, EnvValue, ?META_BOX(from_env, EnvName));
         _ ->
             maybe_use_default(field_schema(Schema, default), FieldValue, Opts)
     end.
@@ -589,7 +609,7 @@ resolve_default_override(Schema, FieldValue, Opts) ->
 %% use default value if field value is 'undefined'
 maybe_use_default(undefined, Value, _Opts) -> Value;
 maybe_use_default(Default, undefined, Opts) ->
-    maybe_mkrich(Opts, Default, ?EMPTY_BOX);
+    maybe_mkrich(Opts, Default, ?META_BOX(made_for, default_value));
 maybe_use_default(_, Value, _Opts) -> Value.
 
 collect_envs(Opts) ->
@@ -682,7 +702,7 @@ safe_unbox(MaybeBox) ->
     end.
 
 boxit(#{is_richmap := false}, Value, _OldValue) -> Value;
-boxit(#{is_richmap := true}, Value, undefined) -> boxit(Value, ?EMPTY_BOX);
+boxit(#{is_richmap := true}, Value, undefined) -> boxit(Value, ?NULL_BOX);
 boxit(#{is_richmap := true}, Value, Box) -> boxit(Value, Box).
 
 boxit(Value, Box) -> Box#{?HOCON_V => Value}.
@@ -691,16 +711,17 @@ boxit(Value, Box) -> Box#{?HOCON_V => Value}.
 maybe_mkrich(#{is_richmap := false}, Value, _Box) ->
     Value;
 maybe_mkrich(#{is_richmap := true}, Value, Box) ->
-    hocon_util:deep_merge(mkrich(Value), Box).
+    hocon_util:deep_merge(mkrich(Value, Box), Box).
 
-mkrich(Arr) when is_list(Arr) ->
-    NewArr = [mkrich(I) || I <- Arr],
-    boxit(NewArr, ?EMPTY_BOX);
-mkrich(Map) when is_map(Map) ->
+mkrich(Arr, Box) when is_list(Arr) ->
+    NewArr = [mkrich(I, Box) || I <- Arr],
+    boxit(NewArr, Box);
+mkrich(Map, Box) when is_map(Map) ->
     boxit(maps:from_list(
-            [{Name, mkrich(Value)} || {Name, Value} <- maps:to_list(Map)]), ?EMPTY_BOX);
-mkrich(Val) ->
-    boxit(Val, ?EMPTY_BOX).
+            [{Name, mkrich(Value, Box)} || {Name, Value} <- maps:to_list(Map)]),
+          Box);
+mkrich(Val, Box) ->
+    boxit(Val, Box).
 
 get_field(_Opts, ?VIRTUAL_ROOT, Value) -> Value;
 get_field(#{is_richmap := true}, Path, Conf) -> deep_get(Path, Conf);
@@ -733,7 +754,7 @@ get_override_env(Schema, Opts) ->
                     undefined;
                 V ->
                     log_env_override(Schema, Opts, Var, path(Opts), V),
-                    read_hocon_val(V, Opts)
+                    {str(Var), read_hocon_val(V, Opts)}
             end
     end.
 
