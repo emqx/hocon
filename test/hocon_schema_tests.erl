@@ -512,7 +512,7 @@ unknown_fields_test_() ->
     Conf = "person.id.num=123,person.name=mike",
     {ok, M} = hocon:binary(Conf, #{format => richmap}),
     ?GEN_VALIDATION_ERR(#{reason := unknown_fields,
-                          unknown := [{<<"name">>, #{filename := undefined, line := 1}}]
+                          unknown := [{<<"name">>, #{line := 1}}]
                          }, hocon_schema:map(demo_schema, M, all)).
 
 nullable_field_test() ->

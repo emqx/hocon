@@ -407,41 +407,40 @@ duration_test_() ->
 
 richmap_binary_test() ->
     {ok, M0} = hocon:binary("a=1", #{format => richmap}),
-    ?assertEqual(#{?METADATA => #{filename => undefined, line => 0},
+    ?assertEqual(#{?METADATA => #{line => 0},
                    ?HOCON_T => object,
                    ?HOCON_V =>
                    #{<<"a">> =>
-                     #{?METADATA => #{filename => undefined, line => 1},
+                     #{?METADATA => #{line => 1},
                        ?HOCON_T => integer,
                        ?HOCON_V => 1}}}, M0),
     {ok, M1} = hocon:binary("a=[1,2]", #{format => richmap}),
-    ?assertEqual(#{?METADATA => #{filename => undefined, line => 0},
+    ?assertEqual(#{?METADATA => #{line => 0},
                    ?HOCON_T => object,
                    ?HOCON_V =>
                    #{<<"a">> =>
-                     #{?METADATA => #{filename => undefined, line => 1},
+                     #{?METADATA => #{line => 1},
                        ?HOCON_T => array,
                        ?HOCON_V =>
                        [#{?METADATA =>
-                          #{filename => undefined, line => 1},
+                          #{line => 1},
                           ?HOCON_T => integer,
                           ?HOCON_V => 1},
                         #{?METADATA =>
-                          #{filename => undefined, line => 1},
+                          #{line => 1},
                           ?HOCON_T => integer,
                           ?HOCON_V => 2}]}}}, M1),
     {ok, M2} = hocon:binary("a\n{b=foo}", #{format => richmap}),
-    ?assertEqual(#{?METADATA => #{filename => undefined, line => 0},
+    ?assertEqual(#{?METADATA => #{line => 0},
                    ?HOCON_T => object,
                    ?HOCON_V =>
                    #{<<"a">> =>
-                     #{?METADATA => #{filename => undefined, line => 1},
+                     #{?METADATA => #{line => 1},
                        ?HOCON_T => object,
                        ?HOCON_V =>
                        #{<<"b">> =>
                          #{?METADATA =>
-                           #{filename => undefined,
-                             line => 2},
+                           #{line => 2},
                            ?HOCON_T => string,
                            ?HOCON_V => <<"foo">>}}}}}, M2).
 
