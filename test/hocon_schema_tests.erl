@@ -106,7 +106,7 @@ unknown_env_test() ->
     receive
         {Ref, Level, Msg} ->
             ?assertEqual(warning, Level),
-            ?assertEqual("unknown_environment_variable_discarded: EMQX_BAR__UNKNOWNx", Msg)
+            ?assertEqual(<<"unknown_environment_variable_discarded: EMQX_BAR__UNKNOWNx">>, Msg)
     end.
 
 check(Str) ->

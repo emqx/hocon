@@ -521,7 +521,7 @@ is_known_field(Opts, Name, Value, ExpectedNames) ->
     is_known_name(Name, ExpectedNames) orelse
     case Value of
         #{?HOCON_V := ?FROM_ENV_VAR(EnvName, _)} ->
-            log(Opts, warning, "unknown_environment_variable_discarded: " ++ EnvName),
+            log(Opts, warning, bin(["unknown_environment_variable_discarded: ", EnvName])),
             true;
         _ ->
             false
@@ -676,9 +676,10 @@ obfuscate(Schema, Value) ->
         _ -> Value
     end.
 
-
 log(#{logger := Logger}, Level, Msg) ->
     Logger(Level, Msg);
+log(_Opts, Level, Msg) when is_binary(Msg) ->
+    logger:log(Level, "~s", [Msg]);
 log(_Opts, Level, Msg) ->
     logger:log(Level, Msg).
 

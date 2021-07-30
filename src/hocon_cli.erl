@@ -286,10 +286,14 @@ stringify_line(K, V) when is_list(V) ->
 stringify_line(K, V) ->
     io_lib:format("~s ~w", [K, V]).
 
+log_for_generator(_Level, #{hocon_env_var_name := Var, path := P, value := V}) when is_binary(V) ->
+    ?STDOUT("~s = ~s = ~s", [P, Var, V]);
 log_for_generator(_Level, #{hocon_env_var_name := Var, path := P, value := V}) ->
-    ?STDOUT("~s = ~0p -> ~s", [Var, V, P]);
+    ?STDOUT("~s = ~s = ~0p", [P, Var, V]);
 log_for_generator(debug, _Args) -> ok;
 log_for_generator(info, _Args) -> ok;
+log_for_generator(Level, Msg) when is_binary(Msg) ->
+    io:format(standard_error, "[~0p] ~s~n", [Level, Msg]);
 log_for_generator(Level, Args) ->
     io:format(standard_error, "[~0p] ~0p~n", [Level, Args]).
 
