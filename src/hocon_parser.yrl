@@ -62,6 +62,8 @@ value -> partials : make_concat('$1').
 
 Erlang code.
 
+-ignore_xref({return_error,2}).
+
 make_object(Line, Object) -> #{'$hcTyp' => object, '$hcVal' => Object, '$hcMeta' => #{line => Line}}.
 
 make_array(Line, Array) -> #{'$hcTyp' => array, '$hcVal' => Array, '$hcMeta' => #{line => Line}}.

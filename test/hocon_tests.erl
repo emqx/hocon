@@ -86,11 +86,11 @@ test_interop("test04", Conf, Json) ->
         {error, _} ->
             ok;
         {ok, Res} ->
-            IntRes = hocon_util:do_deep_merge(Res, #{<<"akka">> =>
-                                                     #{<<"actor">> =>
-                                                       #{<<"default-dispatcher">> =>
-                                                         #{<<"core-pool-size-factor">> => 8,
-                                                           <<"max-pool-size-factor">> => 8 }}}}),
+            IntRes = hocon:deep_merge(Res, #{<<"akka">> =>
+                                             #{<<"actor">> =>
+                                               #{<<"default-dispatcher">> =>
+                                                 #{<<"core-pool-size-factor">> => 8,
+                                                   <<"max-pool-size-factor">> => 8 }}}}),
             ?assertEqual(hocon:load(Json), {ok, IntRes})
     end;
 % hoc2js does not support include syntax
