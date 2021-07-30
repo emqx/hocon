@@ -371,7 +371,7 @@ atom_key_array_test() ->
     ?assertEqual(#{arr => [#{id => 1}, #{id => 2}]},
                  hocon_schema:check_plain(Sc, PlainMap, #{atom_key => true})),
     ?assertMatch({_, #{arr := [#{id := 1}, #{id := 2}]}},
-                 hocon_schema:map(Sc, PlainMap, all, #{is_richmap => false, atom_key => true})).
+                 hocon_schema:map(Sc, PlainMap, all, #{format => map, atom_key => true})).
 
 %% if convert to non-existing atom
 atom_key_failure_test() ->
@@ -382,7 +382,7 @@ atom_key_failure_test() ->
     Conf = "non_existing_atom_as_key=1",
     {ok, PlainMap} = hocon:binary(Conf, #{}),
     ?assertError({non_existing_atom, <<"non_existing_atom_as_key">>},
-                 hocon_schema:map(Sc, PlainMap, all, #{is_richmap => false, atom_key => true})).
+                 hocon_schema:map(Sc, PlainMap, all, #{format => map, atom_key => true})).
 
 return_plain_test_() ->
     Sc = #{structs => [?VIRTUAL_ROOT],

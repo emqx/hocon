@@ -97,7 +97,7 @@
                  , nullable => boolean() %% default: true for map, false for check
 
                  %% below options are generated internally and should not be passed in by callers
-                 , is_richmap => boolean()
+                 , format => map | richmap
                  , stack => [name()]
                  , schema => schema()
                  }.
@@ -226,10 +226,10 @@ do_translate([{MappedField, Translator} | More], Namespace, Conf, Acc) ->
             do_translate(More, Namespace, Conf, [Error | Acc])
     end.
 
-assert_integrity(Schema, Conf0, #{is_richmap := IsRichMap}) ->
-    Conf = case IsRichMap of
-               true -> richmap_to_map(Conf0);
-               false -> Conf0
+assert_integrity(Schema, Conf0, #{format := Format}) ->
+    Conf = case Format of
+               richmap -> richmap_to_map(Conf0);
+               map -> Conf0
            end,
     Names = validations(Schema),
     Errors = assert_integrity(Schema, Names, Conf, []),
@@ -264,7 +264,7 @@ check(Schema, Conf) ->
     check(Schema, Conf, #{}).
 
 check(Schema, Conf, Opts0) ->
-    Opts = maps:merge(#{is_richmap => true, atom_key => false}, Opts0),
+    Opts = maps:merge(#{format => richmap, atom_key => false}, Opts0),
     do_check(Schema, Conf, Opts, all).
 
 %% @doc Check plain-map input against schema.
@@ -276,13 +276,13 @@ check_plain(Schema, Conf) ->
     check_plain(Schema, Conf, #{}).
 
 check_plain(Schema, Conf, Opts0) ->
-    Opts = maps:merge(#{is_richmap => false,
+    Opts = maps:merge(#{format => map,
                         atom_key => false
                        }, Opts0),
     check_plain(Schema, Conf, Opts, all).
 
 check_plain(Schema, Conf, Opts0, RootNames) ->
-    Opts = maps:merge(#{is_richmap => false,
+    Opts = maps:merge(#{format => map,
                         atom_key => false
                        }, Opts0),
     do_check(Schema, Conf, Opts, RootNames).
@@ -293,7 +293,7 @@ do_check(Schema, Conf, Opts0, RootNames) ->
     {_DiscardMappings, NewConf} = map(Schema, Conf, RootNames, Opts),
     NewConf.
 
-maybe_convert_to_plain_map(Conf, #{is_richmap := true, return_plain := true}) ->
+maybe_convert_to_plain_map(Conf, #{format := richmap, return_plain := true}) ->
     richmap_to_map(Conf);
 maybe_convert_to_plain_map(Conf, _Opts) ->
     Conf.
@@ -314,7 +314,7 @@ map(Schema, Conf, all, Opts) ->
     map(Schema, Conf, structs(Schema), Opts);
 map(Schema, Conf, RootNames, Opts0) ->
     Opts = maps:merge(#{schema => Schema,
-                        is_richmap => true
+                        format => richmap
                         }, Opts0),
     {EnvNamespace, Envs} = collect_envs(Opts0),
     F =
@@ -686,8 +686,8 @@ meta(#{?METADATA := M}) -> M;
 meta(_) -> undefined.
 
 unbox(_, undefined) -> undefined;
-unbox(#{is_richmap := false}, Value) -> Value;
-unbox(#{is_richmap := true}, Boxed) -> unbox(Boxed).
+unbox(#{format := map}, Value) -> Value;
+unbox(#{format := richmap}, Boxed) -> unbox(Boxed).
 
 unbox(Boxed) ->
     case is_map(Boxed) andalso maps:is_key(?HOCON_V, Boxed) of
@@ -701,16 +701,16 @@ safe_unbox(MaybeBox) ->
         Value -> Value
     end.
 
-boxit(#{is_richmap := false}, Value, _OldValue) -> Value;
-boxit(#{is_richmap := true}, Value, undefined) -> boxit(Value, ?NULL_BOX);
-boxit(#{is_richmap := true}, Value, Box) -> boxit(Value, Box).
+boxit(#{format := map}, Value, _OldValue) -> Value;
+boxit(#{format := richmap}, Value, undefined) -> boxit(Value, ?NULL_BOX);
+boxit(#{format := richmap}, Value, Box) -> boxit(Value, Box).
 
 boxit(Value, Box) -> Box#{?HOCON_V => Value}.
 
 %% nested boxing
-maybe_mkrich(#{is_richmap := false}, Value, _Box) ->
+maybe_mkrich(#{format := map}, Value, _Box) ->
     Value;
-maybe_mkrich(#{is_richmap := true}, Value, Box) ->
+maybe_mkrich(#{format := richmap}, Value, Box) ->
     hocon_util:deep_merge(mkrich(Value, Box), Box).
 
 mkrich(Arr, Box) when is_list(Arr) ->
@@ -724,16 +724,16 @@ mkrich(Val, Box) ->
     boxit(Val, Box).
 
 get_field(_Opts, ?VIRTUAL_ROOT, Value) -> Value;
-get_field(#{is_richmap := true}, Path, Conf) -> deep_get(Path, Conf);
-get_field(#{is_richmap := false}, Path, Conf) -> get_value(Path, Conf).
+get_field(#{format := richmap}, Path, Conf) -> deep_get(Path, Conf);
+get_field(#{format := map}, Path, Conf) -> get_value(Path, Conf).
 
 %% put (maybe deep) value to map/richmap
 %% e.g. "path.to.my.value"
 put_value(_Opts, _Path, undefined, Conf) ->
     Conf;
-put_value(#{is_richmap := true} = Opts, Path, V, Conf) ->
+put_value(#{format := richmap} = Opts, Path, V, Conf) ->
     deep_put(Opts, Path, V, Conf);
-put_value(#{is_richmap := false} = Opts, Path, V, Conf) ->
+put_value(#{format := map} = Opts, Path, V, Conf) ->
     plain_put(Opts, split(Path), V, Conf).
 
 split(Path) -> lists:flatten(do_split(str(Path))).
@@ -827,8 +827,8 @@ validation_errs(Opts, Reason, Value) ->
 validation_errs(Opts, Context) ->
     [{error, ?VALIDATION_ERRS(Context#{path => path(Opts)})}].
 
-plain_value(Value, #{is_richmap := false}) -> Value;
-plain_value(Value, #{is_richmap := true}) -> richmap_to_map(Value).
+plain_value(Value, #{format := map}) -> Value;
+plain_value(Value, #{format := richmap}) -> richmap_to_map(Value).
 
 %% @doc get a child node from richmap.
 %% Key (first arg) can be "foo.bar.baz" or ["foo.bar", "baz"] or ["foo", "bar", "baz"].
