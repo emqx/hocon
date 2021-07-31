@@ -97,7 +97,7 @@
                  , nullable => boolean() %% default: true for map, false for check
 
                  %% below options are generated internally and should not be passed in by callers
-                 , is_richmap => boolean()
+                 , format => map | richmap
                  , stack => [name()]
                  , schema => schema()
                  }.
@@ -118,7 +118,8 @@
 
 -define(DEFAULT_NULLABLE, true).
 
--define(EMPTY_BOX, #{}).
+-define(META_BOX(Tag, Metadata), #{?METADATA => #{Tag => Metadata}}).
+-define(NULL_BOX, #{?METADATA => #{made_for => null_value}}).
 
 %% behaviour APIs
 -spec structs(schema()) -> [name()].
@@ -225,10 +226,10 @@ do_translate([{MappedField, Translator} | More], Namespace, Conf, Acc) ->
             do_translate(More, Namespace, Conf, [Error | Acc])
     end.
 
-assert_integrity(Schema, Conf0, #{is_richmap := IsRichMap}) ->
-    Conf = case IsRichMap of
-               true -> richmap_to_map(Conf0);
-               false -> Conf0
+assert_integrity(Schema, Conf0, #{format := Format}) ->
+    Conf = case Format of
+               richmap -> richmap_to_map(Conf0);
+               map -> Conf0
            end,
     Names = validations(Schema),
     Errors = assert_integrity(Schema, Names, Conf, []),
@@ -263,7 +264,7 @@ check(Schema, Conf) ->
     check(Schema, Conf, #{}).
 
 check(Schema, Conf, Opts0) ->
-    Opts = maps:merge(#{is_richmap => true, atom_key => false}, Opts0),
+    Opts = maps:merge(#{format => richmap, atom_key => false}, Opts0),
     do_check(Schema, Conf, Opts, all).
 
 %% @doc Check plain-map input against schema.
@@ -275,13 +276,13 @@ check_plain(Schema, Conf) ->
     check_plain(Schema, Conf, #{}).
 
 check_plain(Schema, Conf, Opts0) ->
-    Opts = maps:merge(#{is_richmap => false,
+    Opts = maps:merge(#{format => map,
                         atom_key => false
                        }, Opts0),
     check_plain(Schema, Conf, Opts, all).
 
 check_plain(Schema, Conf, Opts0, RootNames) ->
-    Opts = maps:merge(#{is_richmap => false,
+    Opts = maps:merge(#{format => map,
                         atom_key => false
                        }, Opts0),
     do_check(Schema, Conf, Opts, RootNames).
@@ -292,7 +293,7 @@ do_check(Schema, Conf, Opts0, RootNames) ->
     {_DiscardMappings, NewConf} = map(Schema, Conf, RootNames, Opts),
     NewConf.
 
-maybe_convert_to_plain_map(Conf, #{is_richmap := true, return_plain := true}) ->
+maybe_convert_to_plain_map(Conf, #{format := richmap, return_plain := true}) ->
     richmap_to_map(Conf);
 maybe_convert_to_plain_map(Conf, _Opts) ->
     Conf.
@@ -313,7 +314,7 @@ map(Schema, Conf, all, Opts) ->
     map(Schema, Conf, structs(Schema), Opts);
 map(Schema, Conf, RootNames, Opts0) ->
     Opts = maps:merge(#{schema => Schema,
-                        is_richmap => true
+                        format => richmap
                         }, Opts0),
     {EnvNamespace, Envs} = collect_envs(Opts0),
     F =
@@ -364,7 +365,7 @@ do_map(Fields, Value, Opts) ->
     case unbox(Opts, Value) of
         undefined ->
             case maps:get(nullable, Opts, ?DEFAULT_NULLABLE) of
-                true -> do_map2(Fields, boxit(Opts, undefined, ?EMPTY_BOX), Opts);
+                true -> do_map2(Fields, boxit(Opts, undefined, undefined), Opts);
                 false -> {validation_errs(Opts, not_nullable, undefined), undefined}
             end;
         V when is_map(V) ->
@@ -398,8 +399,8 @@ do_map2([{[$$ | _] = _Wildcard, Schema}], Conf, Opts) ->
     do_map(Fields, Conf, Opts); %% start over
 do_map2(Fields, Value, Opts) ->
     SchemaFieldNames = [N || {N, _Schema} <- Fields],
-    DataFieldNames = maps_keys(unbox(Opts, Value)),
-    case check_unknown_fields(Opts, SchemaFieldNames, DataFieldNames) of
+    DataFields = unbox(Opts, Value),
+    case check_unknown_fields(Opts, SchemaFieldNames, DataFields) of
         ok -> map_fields(Fields, Value, [], Opts);
         Errors -> {Errors, Value}
     end.
@@ -487,17 +488,47 @@ map_field(Type, Schema, Value0, Opts) ->
 maps_keys(undefined) -> [];
 maps_keys(Map) -> maps:keys(Map).
 
-check_unknown_fields(Opts, SchemaFieldNames0, DataFieldNames) ->
-    SchemaFieldNames = lists:map(fun bin/1, SchemaFieldNames0),
-    case DataFieldNames -- SchemaFieldNames of
+check_unknown_fields(Opts, SchemaFieldNames, DataFields) ->
+    case find_unknown_fields(Opts, SchemaFieldNames, DataFields) of
         [] ->
             ok;
-        UnknownFileds ->
-            validation_errs(Opts, #{reason => unknown_fields,
-                                    path => path(Opts),
-                                    unknown=> UnknownFileds,
-                                    expected => SchemaFieldNames})
+        Unknowns ->
+            Err = #{reason => unknown_fields,
+                    path => path(Opts),
+                    expected => SchemaFieldNames,
+                    unknown => Unknowns
+                   },
+            validation_errs(Opts, Err)
     end.
+
+find_unknown_fields(_Opts, _SchemaFieldNames, undefined) -> [];
+find_unknown_fields(Opts, SchemaFieldNames0, DataFields) ->
+    SchemaFieldNames = lists:map(fun bin/1, SchemaFieldNames0),
+    maps:fold(fun(DfName, DfValue, Acc) ->
+                      case is_known_field(Opts, DfName, DfValue, SchemaFieldNames) of
+                          true ->
+                              Acc;
+                          false ->
+                              Unknown = case meta(DfValue) of
+                                            undefined -> DfName;
+                                            Meta -> {DfName, Meta}
+                                        end,
+                              [Unknown | Acc]
+                      end
+              end, [], DataFields).
+
+is_known_field(Opts, Name, Value, ExpectedNames) ->
+    is_known_name(Name, ExpectedNames) orelse
+    case Value of
+        #{?HOCON_V := ?FROM_ENV_VAR(EnvName, _)} ->
+            log(Opts, warning, bin(["unknown_environment_variable_discarded: ", EnvName])),
+            true;
+        _ ->
+            false
+    end.
+
+is_known_name(Name, ExpectedNames) ->
+    lists:any(fun(N) -> N =:= bin(Name) end, ExpectedNames).
 
 is_nullable(Opts, Schema) ->
     case field_schema(Schema, nullable) of
@@ -562,15 +593,15 @@ resolve_field_value(Schema, FieldValue, Opts) ->
     case get_override_env(Schema, Opts) of
         undefined ->
             resolve_default_override(Schema, FieldValue, Opts);
-        EnvValue ->
-            maybe_mkrich(Opts, EnvValue, ?EMPTY_BOX)
+        {Name, EnvValue} ->
+            maybe_mkrich(Opts, EnvValue, ?META_BOX(from_env, Name))
     end.
 
 resolve_default_override(Schema, FieldValue, Opts) ->
     case unbox(Opts, FieldValue) of
         ?FROM_ENV_VAR(EnvName, EnvValue) ->
             log_env_override(Schema, Opts, EnvName, path(Opts), EnvValue),
-            maybe_mkrich(Opts, EnvValue, ?EMPTY_BOX);
+            maybe_mkrich(Opts, EnvValue, ?META_BOX(from_env, EnvName));
         _ ->
             maybe_use_default(field_schema(Schema, default), FieldValue, Opts)
     end.
@@ -578,7 +609,7 @@ resolve_default_override(Schema, FieldValue, Opts) ->
 %% use default value if field value is 'undefined'
 maybe_use_default(undefined, Value, _Opts) -> Value;
 maybe_use_default(Default, undefined, Opts) ->
-    maybe_mkrich(Opts, Default, ?EMPTY_BOX);
+    maybe_mkrich(Opts, Default, ?META_BOX(made_for, default_value));
 maybe_use_default(_, Value, _Opts) -> Value.
 
 collect_envs(Opts) ->
@@ -645,15 +676,19 @@ obfuscate(Schema, Value) ->
         _ -> Value
     end.
 
-
 log(#{logger := Logger}, Level, Msg) ->
     Logger(Level, Msg);
+log(_Opts, Level, Msg) when is_binary(Msg) ->
+    logger:log(Level, "~s", [Msg]);
 log(_Opts, Level, Msg) ->
     logger:log(Level, Msg).
 
+meta(#{?METADATA := M}) -> M;
+meta(_) -> undefined.
+
 unbox(_, undefined) -> undefined;
-unbox(#{is_richmap := false}, Value) -> Value;
-unbox(#{is_richmap := true}, Boxed) -> unbox(Boxed).
+unbox(#{format := map}, Value) -> Value;
+unbox(#{format := richmap}, Boxed) -> unbox(Boxed).
 
 unbox(Boxed) ->
     case is_map(Boxed) andalso maps:is_key(?HOCON_V, Boxed) of
@@ -667,38 +702,39 @@ safe_unbox(MaybeBox) ->
         Value -> Value
     end.
 
-boxit(#{is_richmap := false}, Value, _OldValue) -> Value;
-boxit(#{is_richmap := true}, Value, undefined) -> boxit(Value, ?EMPTY_BOX);
-boxit(#{is_richmap := true}, Value, Box) -> boxit(Value, Box).
+boxit(#{format := map}, Value, _OldValue) -> Value;
+boxit(#{format := richmap}, Value, undefined) -> boxit(Value, ?NULL_BOX);
+boxit(#{format := richmap}, Value, Box) -> boxit(Value, Box).
 
 boxit(Value, Box) -> Box#{?HOCON_V => Value}.
 
 %% nested boxing
-maybe_mkrich(#{is_richmap := false}, Value, _Box) ->
+maybe_mkrich(#{format := map}, Value, _Box) ->
     Value;
-maybe_mkrich(#{is_richmap := true}, Value, Box) ->
-    hocon_util:deep_merge(mkrich(Value), Box).
+maybe_mkrich(#{format := richmap}, Value, Box) ->
+    hocon_util:deep_merge(mkrich(Value, Box), Box).
 
-mkrich(Arr) when is_list(Arr) ->
-    NewArr = [mkrich(I) || I <- Arr],
-    boxit(NewArr, ?EMPTY_BOX);
-mkrich(Map) when is_map(Map) ->
+mkrich(Arr, Box) when is_list(Arr) ->
+    NewArr = [mkrich(I, Box) || I <- Arr],
+    boxit(NewArr, Box);
+mkrich(Map, Box) when is_map(Map) ->
     boxit(maps:from_list(
-            [{Name, mkrich(Value)} || {Name, Value} <- maps:to_list(Map)]), ?EMPTY_BOX);
-mkrich(Val) ->
-    boxit(Val, ?EMPTY_BOX).
+            [{Name, mkrich(Value, Box)} || {Name, Value} <- maps:to_list(Map)]),
+          Box);
+mkrich(Val, Box) ->
+    boxit(Val, Box).
 
 get_field(_Opts, ?VIRTUAL_ROOT, Value) -> Value;
-get_field(#{is_richmap := true}, Path, Conf) -> deep_get(Path, Conf);
-get_field(#{is_richmap := false}, Path, Conf) -> get_value(Path, Conf).
+get_field(#{format := richmap}, Path, Conf) -> deep_get(Path, Conf);
+get_field(#{format := map}, Path, Conf) -> get_value(Path, Conf).
 
 %% put (maybe deep) value to map/richmap
 %% e.g. "path.to.my.value"
 put_value(_Opts, _Path, undefined, Conf) ->
     Conf;
-put_value(#{is_richmap := true} = Opts, Path, V, Conf) ->
+put_value(#{format := richmap} = Opts, Path, V, Conf) ->
     deep_put(Opts, Path, V, Conf);
-put_value(#{is_richmap := false} = Opts, Path, V, Conf) ->
+put_value(#{format := map} = Opts, Path, V, Conf) ->
     plain_put(Opts, split(Path), V, Conf).
 
 split(Path) -> lists:flatten(do_split(str(Path))).
@@ -719,7 +755,7 @@ get_override_env(Schema, Opts) ->
                     undefined;
                 V ->
                     log_env_override(Schema, Opts, Var, path(Opts), V),
-                    read_hocon_val(V, Opts)
+                    {str(Var), read_hocon_val(V, Opts)}
             end
     end.
 
@@ -783,13 +819,17 @@ do_validate(Opts, Schema, Value, [H | T]) ->
     end.
 
 validation_errs(Opts, Reason, Value) ->
-    validation_errs(Opts, #{reason => Reason, value => Value}).
+    Err = case meta(Value) of
+              undefined -> #{reason => Reason, value => Value};
+              Meta -> #{reason => Reason, value => richmap_to_map(Value), location => Meta}
+          end,
+    validation_errs(Opts, Err).
 
 validation_errs(Opts, Context) ->
     [{error, ?VALIDATION_ERRS(Context#{path => path(Opts)})}].
 
-plain_value(Value, #{is_richmap := false}) -> Value;
-plain_value(Value, #{is_richmap := true}) -> richmap_to_map(Value).
+plain_value(Value, #{format := map}) -> Value;
+plain_value(Value, #{format := richmap}) -> richmap_to_map(Value).
 
 %% @doc get a child node from richmap.
 %% Key (first arg) can be "foo.bar.baz" or ["foo.bar", "baz"] or ["foo", "bar", "baz"].

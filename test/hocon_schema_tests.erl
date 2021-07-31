@@ -85,6 +85,30 @@ env_override_test() ->
             {"EMQX_bar__field1", ""}
            ]).
 
+unknown_env_test() ->
+    Tester = self(),
+    Ref = make_ref(),
+    with_envs(
+      fun() ->
+              Conf = "{\"bar.field1\": \"foo\"}",
+              Opts = #{logger => fun(Level, Msg) ->
+                                         Tester ! {Ref, Level, Msg},
+                                         ok
+                                 end
+                      },
+              {ok, RichMap} = hocon:binary(Conf, #{format => richmap}),
+              hocon_schema:check(?MODULE, RichMap, Opts)
+      end, [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"},
+            {"EMQX_BAR__UNION_WITH_DEFAULT__VAL", "111"},
+            {"EMQX_bar__field1", ""},
+            {"EMQX_BAR__UNKNOWNx", "x"}
+           ]),
+    receive
+        {Ref, Level, Msg} ->
+            ?assertEqual(warning, Level),
+            ?assertEqual(<<"unknown_environment_variable_discarded: EMQX_BAR__UNKNOWNx">>, Msg)
+    end.
+
 check(Str) ->
     Opts = #{format => richmap},
     {ok, RichMap} = hocon:binary(Str, Opts),
@@ -347,7 +371,7 @@ atom_key_array_test() ->
     ?assertEqual(#{arr => [#{id => 1}, #{id => 2}]},
                  hocon_schema:check_plain(Sc, PlainMap, #{atom_key => true})),
     ?assertMatch({_, #{arr := [#{id := 1}, #{id := 2}]}},
-                 hocon_schema:map(Sc, PlainMap, all, #{is_richmap => false, atom_key => true})).
+                 hocon_schema:map(Sc, PlainMap, all, #{format => map, atom_key => true})).
 
 %% if convert to non-existing atom
 atom_key_failure_test() ->
@@ -358,7 +382,7 @@ atom_key_failure_test() ->
     Conf = "non_existing_atom_as_key=1",
     {ok, PlainMap} = hocon:binary(Conf, #{}),
     ?assertError({non_existing_atom, <<"non_existing_atom_as_key">>},
-                 hocon_schema:map(Sc, PlainMap, all, #{is_richmap => false, atom_key => true})).
+                 hocon_schema:map(Sc, PlainMap, all, #{format => map, atom_key => true})).
 
 return_plain_test_() ->
     Sc = #{structs => [?VIRTUAL_ROOT],
@@ -484,15 +508,12 @@ validation_error_if_not_nullable_test() ->
     ?VALIDATION_ERR(#{reason := not_nullable},
                     hocon_schema:check_plain(Sc, Data, #{nullable => false})).
 
-unknown_fields_test() ->
+unknown_fields_test_() ->
     Conf = "person.id.num=123,person.name=mike",
     {ok, M} = hocon:binary(Conf, #{format => richmap}),
     ?GEN_VALIDATION_ERR(#{reason := unknown_fields,
-                          unknown := [<<"name">>]},
-                        begin
-                            {Mapped, _} = hocon_schema:map(demo_schema, M, all),
-                            Mapped
-                        end).
+                          unknown := [{<<"name">>, #{line := 1}}]
+                         }, hocon_schema:map(demo_schema, M, all)).
 
 nullable_field_test() ->
     Sc = #{structs => [?VIRTUAL_ROOT],

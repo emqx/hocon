@@ -313,7 +313,7 @@ do_concat([#{?HOCON_T := object}=O | More], Metadata, Acc) ->
 do_concat([#{?HOCON_T := string}=S | More], Metadata, Acc) ->
     do_concat(More, Metadata, [S | Acc]);
 do_concat([#{?HOCON_T := concat}=C | More], Metadata, Acc) ->
-    ConcatC = do_concat(value_of(C), Metadata#{line => line_of(C), filename => filename_of(C)}),
+    ConcatC = do_concat(value_of(C), new_meta(Metadata, filename_of(C), line_of(C))),
     do_concat([ConcatC | More], Metadata, Acc);
 do_concat([{#{?HOCON_T := key}=K, Value} | More], Metadata, Acc) ->
     do_concat(More, Metadata, [{K, verify_concat(Value)} | Acc]);
@@ -418,3 +418,8 @@ name_of(#{?HOCON_T := variable, name := N}) ->
 
 duration(X) ->
     hocon_postprocess:duration(X).
+
+new_meta(Meta, Filename, Line) ->
+    L = [{filename, Filename}, {line, Line}],
+    NewMeta = maps:from_list([{N, V} || {N, V} <- L, V =/= undefined]),
+    maps:merge(Meta, NewMeta).

@@ -25,7 +25,6 @@
 
 -define(STDERR(Str, Args), io:format(standard_error, Str ++ "~n", Args)).
 -define(STDOUT(Str, Args), io:format(Str ++ "~n", Args)).
--define(FORMAT(Str, Args), io_lib:format(Str, Args)).
 -define(FORMAT_TEMPLATE, [time, " [", level, "] ", msg, "\n"]).
 
 -type file_error() :: file:posix()  %% copied from file:format_error/1
@@ -112,7 +111,7 @@ main(Args) ->
 %% equav command: date -u +"%Y.%m.%d.%H.%M.%S"
 now_time() ->
     {{Y, M, D}, {HH, MM, SS}} = calendar:local_time(),
-    ?STDOUT("~p.~2..0b.~2..0b.~2..0b.~2..0b.~2..0b", [Y, M, D, HH, MM, SS]).
+    ?STDOUT("~0p.~2..0b.~2..0b.~2..0b.~2..0b.~2..0b", [Y, M, D, HH, MM, SS]).
 
 is_valid_now_time(T) ->
     re:run(T, "^[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[0-9]{2}\.[0-9]{2}\.[0-9]{2}$") =/= nomatch.
@@ -132,7 +131,7 @@ get(ParsedArgs, [Query | _]) ->
     %% do not log anything for `get` commands
     DummyLogger = #{logger => fun(_, _) -> ok end},
     {_, NewConf} = hocon_schema:map(Schema, Conf, [RootName], DummyLogger),
-    ?STDOUT("~p", [hocon_schema:get_value(Query, NewConf)]),
+    ?STDOUT("~0p", [hocon_schema:get_value(Query, NewConf)]),
     stop_ok().
 
 load_schema(ParsedArgs) ->
@@ -149,10 +148,10 @@ load_schema(ParsedArgs) ->
 -spec load_conf([proplists:property()], function()) -> hocon:config() | no_return().
 load_conf(ParsedArgs, LogFunc) ->
     ConfFiles = proplists:get_all_values(conf_file, ParsedArgs),
-    LogFunc(debug, "ConfFiles: ~p", [ConfFiles]),
+    LogFunc(debug, "ConfFiles: ~0p", [ConfFiles]),
     case hocon:files(ConfFiles, #{format => richmap}) of
         {error, E} ->
-            LogFunc(error, "~p~n", [E]),
+            LogFunc(error, "~0p~n", [E]),
             stop_deactivate();
         {ok, Conf} ->
             Conf
@@ -200,7 +199,7 @@ generate(ParsedArgs) ->
 
     DestinationVMArgsFilename = filename_maker("vm", NowTime, "args"),
     DestinationVMArgs = filename:join(AbsPath, DestinationVMArgsFilename),
-    log(debug, "Generating config in: ~p", [Destination]),
+    log(debug, "Generating config in: ~0p", [Destination]),
 
     Schema = load_schema(ParsedArgs),
     Conf = load_conf(ParsedArgs, fun log/3),
@@ -229,8 +228,8 @@ generate(ParsedArgs) ->
             end
     catch
         throw : {Schema, Errors} ->
-            log(error, "failed_to_check_schema: ~p", [Schema]),
-            lists:foreach(fun(E) -> log(error, "~p", [E]) end, Errors),
+            log(error, "failed_to_check_schema: ~0p", [Schema]),
+            lists:foreach(fun(E) -> log(error, "~0p", [E]) end, Errors),
             stop_deactivate()
     end.
 
@@ -260,7 +259,7 @@ do_delete([File | Files], Left) ->
     case file:delete(File) of
         ok -> ok;
         {error, Reason} ->
-            log(error, "Could not delete ~s, ~p", [File, Reason])
+            log(error, "Could not delete ~s, ~0p", [File, Reason])
     end,
     do_delete(Files, Left - 1).
 
@@ -287,12 +286,16 @@ stringify_line(K, V) when is_list(V) ->
 stringify_line(K, V) ->
     io_lib:format("~s ~w", [K, V]).
 
+log_for_generator(_Level, #{hocon_env_var_name := Var, path := P, value := V}) when is_binary(V) ->
+    ?STDOUT("~s = ~s = ~s", [P, Var, V]);
 log_for_generator(_Level, #{hocon_env_var_name := Var, path := P, value := V}) ->
-    ?STDOUT("~s = ~p -> ~s", [Var, V, P]);
+    ?STDOUT("~s = ~s = ~0p", [P, Var, V]);
 log_for_generator(debug, _Args) -> ok;
 log_for_generator(info, _Args) -> ok;
+log_for_generator(Level, Msg) when is_binary(Msg) ->
+    io:format(standard_error, "[~0p] ~s~n", [Level, Msg]);
 log_for_generator(Level, Args) ->
-    io:format(standard_error, "[~p] ~p~n", [Level, Args]).
+    io:format(standard_error, "[~0p] ~0p~n", [Level, Args]).
 
 -ifndef(TEST).
 stop_deactivate() ->
@@ -321,8 +324,8 @@ log(Level, Fmt, Args) ->
 %% log to stderr for 'get' command
 log_for_get(L, Fmt, Args) when L =:= debug orelse L =:= info ->
     case os:getenv("DEBUG") of
-        "1" -> ?STDERR("[~p]: " ++ Fmt, [L | Args]);
+        "1" -> ?STDERR("[~0p]: " ++ Fmt, [L | Args]);
         _ -> ok
     end;
 log_for_get(L, Fmt, Args) ->
-    ?STDERR("[~p]: " ++ Fmt, [L | Args]).
+    ?STDERR("[~0p]: " ++ Fmt, [L | Args]).

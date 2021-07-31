@@ -115,8 +115,8 @@ generate_with_env_logging_test() ->
                              [{"ZZZ_FOO__MIN", "42"}, {"ZZZ_FOO__MAX", "43"},
                               {"HOCON_ENV_OVERRIDE_PREFIX", "ZZZ_"}]),
                    {ok, Stdout} = cuttlefish_test_group_leader:get_output(),
-                   ?assertEqual([<<"ZZZ_FOO__MAX = 43 -> foo.max">>,
-                                 <<"ZZZ_FOO__MIN = 42 -> foo.min">>],
+                   ?assertEqual([<<"foo.max = ZZZ_FOO__MAX = 43">>,
+                                 <<"foo.min = ZZZ_FOO__MIN = 42">>],
                                 lists:sort(binary:split(iolist_to_binary(Stdout),
                                                         <<"\n">>, [global, trim])))
                end).
