@@ -88,6 +88,7 @@
 -define(IS_NON_EMPTY_STRING(X), (is_list(X) andalso X =/= [] andalso is_integer(hd(X)))).
 -type loggerfunc() :: fun((atom(), map()) -> ok).
 -type opts() :: #{ logger => loggerfunc()
+                 , no_conversion => boolean()
                  , atom_key => boolean()
                  , return_plain => boolean()
                    %% By default allow all fields to be undefined.
@@ -476,7 +477,10 @@ map_field(Type, Schema, Value0, Opts) ->
         ConvertedValue ->
             Validators = add_default_validator(field_schema(Schema, validator), Type),
             ValidationResult = validate(Opts, Schema, ConvertedValue, Validators),
-            {ValidationResult, boxit(Opts, ConvertedValue, Value0)}
+            case Opts of
+                #{no_conversion := true} -> {ValidationResult, Value0};
+                _ -> {ValidationResult, boxit(Opts, ConvertedValue, Value0)}
+            end
     catch
         C : E : St ->
             {validation_errs(Opts, #{reason => converter_crashed,

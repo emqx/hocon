@@ -711,3 +711,18 @@ default_value_for_null_enclosing_struct_test() ->
                  hocon_schema:check_plain(Sc, PlainMap, #{nullable => true})),
     ?assertEqual(#{<<"l1">> => #{<<"l2">> => 22}},
                  hocon_schema:check(Sc, RichMap, #{nullable => true, return_plain => true})).
+
+fill_defaults_test() ->
+    Sc = #{structs => ["a"],
+           fields => #{"a" =>
+               [ {b, hoconsc:t(integer(), #{default => 888})}
+               , {c, hoconsc:t(integer(), #{
+                   default => "15s",
+                   converter => fun (Dur) -> hocon_postprocess:duration(Dur) end})}
+               ]}
+          },
+    ?assertMatch(#{<<"a">> := #{<<"b">> := 888, <<"c">> := 15000}},
+        hocon_schema:check_plain(Sc, #{}, #{nullable => true})),
+    ?assertMatch(#{<<"a">> := #{<<"b">> := 888, <<"c">> := "15s"}},
+        hocon_schema:check_plain(Sc, #{}, #{nullable => true, no_conversion => true})),
+    ok.
