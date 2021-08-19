@@ -318,25 +318,28 @@ map(Schema, Conf, RootNames, Opts0) ->
                         format => richmap
                         }, Opts0),
     {EnvNamespace, Envs} = collect_envs(Opts0),
-    F =
-        fun (RootName, {MappedAcc, ConfAcc0}) ->
+    F = fun (RootName, {MappedAcc, ConfAcc0}) ->
                 ok = assert_no_dot(Schema, RootName),
-                ConfAcc = apply_env(EnvNamespace, Envs, RootName, ConfAcc0, Opts),
-                RootValue = get_field(Opts, RootName, ConfAcc),
-                {Mapped, NewRootValue} =
-                    do_map(fields(Schema, RootName), RootValue,
-                           Opts#{stack => [RootName || RootName =/= ?VIRTUAL_ROOT]}),
-                NewConfAcc =
-                    case NewRootValue of
-                        undefined -> ConfAcc;
-                        _ -> put_value(Opts, RootName, unbox(Opts, NewRootValue), ConfAcc)
-                    end,
-                {lists:append(MappedAcc, Mapped), NewConfAcc}
+                ConfAcc1 = apply_env(EnvNamespace, Envs, RootName, ConfAcc0, Opts),
+                {Mapped, ConfAcc} = map_per_root(Schema, RootName, ConfAcc1, Opts),
+                {lists:append(MappedAcc, Mapped), ConfAcc}
         end,
     {Mapped, NewConf} = lists:foldl(F, {[], Conf}, RootNames),
     ok = assert_no_error(Schema, Mapped),
     ok = assert_integrity(Schema, NewConf, Opts),
     {Mapped, maybe_convert_to_plain_map(NewConf, Opts)}.
+
+map_per_root(Schema, RootName, Conf0, Opts) ->
+    RootValue = get_field(Opts, RootName, Conf0),
+    {Mapped, NewRootValue} =
+        do_map(fields(Schema, RootName), RootValue,
+               Opts#{stack => [RootName || RootName =/= ?VIRTUAL_ROOT]}),
+    Conf =
+        case NewRootValue of
+            undefined -> Conf0;
+            _ -> put_value(Opts, RootName, unbox(Opts, NewRootValue), Conf0)
+        end,
+    {Mapped, Conf}.
 
 %% Assert no dot in root struct name.
 %% This is because the dot will cause root name to be splited,
