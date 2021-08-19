@@ -77,8 +77,9 @@
 -type field() :: {name(), typefunc() | field_schema()}.
 -type translation() :: {name(), translationfunc()}.
 -type validation() :: {name(), validationfun()}.
+-type struct_type() :: name() | ?ARRAY(name()).
 -type schema() :: module()
-                | #{ structs := [name()]
+                | #{ structs := [struct_type()]
                    , fileds := #{name() => [field()]}
                    , translations => #{name() => [translation()]} %% for config mappings
                    , validations => [validation()] %% for config integrity checks
@@ -103,7 +104,7 @@
                  , schema => schema()
                  }.
 
--callback structs() -> [name()].
+-callback structs() -> [struct_type()].
 -callback fields(name()) -> [field()].
 -callback translations() -> [name()].
 -callback translation(name()) -> [translation()].
@@ -320,8 +321,9 @@ map(Schema, Conf, RootNames, Opts0) ->
     {EnvNamespace, Envs} = collect_envs(Opts0),
     F = fun (RootName, {MappedAcc, ConfAcc0}) ->
                 ok = assert_no_dot(Schema, RootName),
-                ConfAcc1 = apply_env(EnvNamespace, Envs, RootName, ConfAcc0, Opts),
-                {Mapped, ConfAcc} = map_per_root(Schema, RootName, ConfAcc1, Opts),
+                ConfAcc1 = ensure_indexed_map(Opts, RootName, ConfAcc0),
+                ConfAcc2 = apply_env(EnvNamespace, Envs, RootName, ConfAcc1, Opts),
+                {Mapped, ConfAcc} = map_per_root(Schema, RootName, ConfAcc2, Opts),
                 {lists:append(MappedAcc, Mapped), ConfAcc}
         end,
     {Mapped, NewConf} = lists:foldl(F, {[], Conf}, RootNames),
@@ -329,8 +331,50 @@ map(Schema, Conf, RootNames, Opts0) ->
     ok = assert_integrity(Schema, NewConf, Opts),
     {Mapped, maybe_convert_to_plain_map(NewConf, Opts)}.
 
+%% ensure indexed root values are converted from an array (list) to a map
+%% e.g. [#{a => b}, #{a => c}] is turned into
+%% #{<<"1">> => #{a => b}, <<"2">> => #{a => c}}
+%% this is to make environment variable overrides work for arrays
+ensure_indexed_map(Opts, ?ARRAY(RootName), Conf) ->
+    RootValues0 = get_field(Opts, RootName, Conf),
+    RootValues = case RootValues0 =:= undefined of
+                     true ->
+                         [];
+                     false ->
+                         %% assert
+                         RootValues1 = unbox(Opts, RootValues0),
+                         is_list(RootValues1) orelse error({not_a_list, RootName}),
+                         RootValues1
+                 end,
+    {_, RootValuesMap} =
+        lists:foldl(
+            fun(Item, {Index, Map}) ->
+                NewMap = put_value(Opts, integer_to_binary(Index), unbox(Opts, Item), Map),
+                {Index + 1, NewMap}
+            end, {1, #{}}, RootValues),
+    put_value(Opts, RootName, unbox(Opts, RootValuesMap), Conf);
+ensure_indexed_map(_Opts, _RootName, Conf) ->
+    Conf.
+
+map_per_root(Schema, ?ARRAY(RootName), Conf0, Opts) ->
+    RootValues0 = get_field(Opts, RootName, Conf0),
+    RootValues1 = lists:keysort(1, maps:to_list(unbox(Opts, RootValues0))),
+    RootValues =
+        lists:foldl(
+            fun({_, RootValue}, Acc) ->
+                    {Mapped, Value} =
+                        map_per_root_value(Schema, RootName, RootValue, RootValue, Opts),
+                    %% there is no way to support mapping for indexed roots
+                    [] = Mapped, %% assert
+                    [get_value(RootName, Value) | Acc]
+            end, [], RootValues1),
+    Conf = put_value(Opts, RootName, lists:reverse(RootValues), Conf0),
+    {[], Conf};
 map_per_root(Schema, RootName, Conf0, Opts) ->
     RootValue = get_field(Opts, RootName, Conf0),
+    map_per_root_value(Schema, RootName, RootValue, Conf0, Opts).
+
+map_per_root_value(Schema, RootName, RootValue, Conf0, Opts) ->
     {Mapped, NewRootValue} =
         do_map(fields(Schema, RootName), RootValue,
                Opts#{stack => [RootName || RootName =/= ?VIRTUAL_ROOT]}),
@@ -352,6 +396,7 @@ map_per_root(Schema, RootName, Conf0, Opts) ->
 %% In this case if a non map value is assigned, such as `a.b=1`,
 %% the check code will crash rather than reporting a useful error reason.
 assert_no_dot(_, ?VIRTUAL_ROOT) -> ok;
+assert_no_dot(Schema, ?ARRAY(Name)) -> assert_no_dot(Schema, Name);
 assert_no_dot(Schema, RootName) ->
     case split(RootName) of
         [_] -> ok;
@@ -392,7 +437,7 @@ do_map2([{[$$ | _] = _Wildcard, Schema}], Conf, Opts) ->
     %%      {"external", #{type => "val"}}]
     %%
     %% This will not allow us to add more fields without changing
-    %% the schema (source code). So, wildcard is for the rescue:
+    %% the schema (source code). So, wildcard is to the rescue:
     %% The enclosing field name can be defined with a leading $
     %% e.g.
     %%     [{"$name", #{type => "val"}}].
@@ -654,6 +699,8 @@ read_informal_hocon_val(Value, Opts) ->
             Value
     end.
 
+apply_env(Ns, Vars, ?ARRAY(RootName), Conf, Opts) ->
+    apply_env(Ns, Vars, RootName, Conf, Opts);
 apply_env(_Ns, [], _RootName, Conf, _Opts) -> Conf;
 apply_env(Ns, [{VarName, V} | More], RootName, Conf, Opts) ->
     K = string:prefix(VarName, Ns),

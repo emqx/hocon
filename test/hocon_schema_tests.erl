@@ -726,3 +726,52 @@ fill_defaults_test() ->
     ?assertMatch(#{<<"a">> := #{<<"b">> := 888, <<"c">> := "15s"}},
         hocon_schema:check_plain(Sc, #{}, #{nullable => true, no_conversion => true})),
     ok.
+
+root_array_test_() ->
+    Sc = #{structs => [{array, foo}],
+           fields => #{foo => [ {"kling", hoconsc:t(integer())},
+                                {"klang", hoconsc:t(integer())}
+                              ]
+                      }
+          },
+    Conf = "foo = [{kling = 1, klang=2},
+                   {kling = 2, klang=4},
+                   {kling = 3, klang=6}]",
+    [{"richmap",
+      fun() ->
+              {ok, RichMap} = hocon:binary(Conf, #{format => richmap}),
+              ?assertEqual(#{<<"foo">> => [#{<<"kling">> => 1, <<"klang">> => 2},
+                                           #{<<"kling">> => 2, <<"klang">> => 4},
+                                           #{<<"kling">> => 3, <<"klang">> => 6}]},
+                           hocon_schema:richmap_to_map(hocon_schema:check(Sc, RichMap)))
+      end},
+     {"plainmap",
+      fun() ->
+              {ok, PlainMap} = hocon:binary(Conf, #{}),
+              ?assertEqual(#{<<"foo">> => [#{<<"kling">> => 1, <<"klang">> => 2},
+                                           #{<<"kling">> => 2, <<"klang">> => 4},
+                                           #{<<"kling">> => 3, <<"klang">> => 6}]},
+                           hocon_schema:check(Sc, PlainMap, #{format => map}))
+      end}
+    ].
+
+root_array_env_override_test() ->
+    Sc = #{structs => [{array, foo}],
+           fields => #{foo => [ {"kling", hoconsc:t(integer())},
+                                {"klang", hoconsc:t(integer())}
+                              ]
+                      }
+          },
+    with_envs(
+      fun() ->
+              Conf = "",
+              {ok, PlainMap} = hocon:binary(Conf, #{}),
+              Opts = #{format => map, nullable => true},
+              ?assertEqual(#{<<"foo">> => [#{<<"kling">> => 111},
+                                           #{<<"klang">> => 222}
+                                          ]},
+                           hocon_schema:check(Sc, PlainMap, Opts))
+      end, [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"},
+            {"EMQX_FOO__1__KLING", "111"},
+            {"EMQX_FOO__2__KLANG", "222"}
+           ]).
