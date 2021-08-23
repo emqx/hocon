@@ -155,6 +155,20 @@ get_env() ->
                    ?assertPrinted("\"hi\"")
                    end).
 
+get_array_test() ->
+    ?CAPTURING(begin
+                   hocon_cli:main(["-c", etc("demo_schema2.conf"),
+                                   "-s", "demo_schema2", "get", "foo.1.int"]),
+                   ?assertPrinted("1\n")
+               end).
+
+get_array_fail_test() ->
+    ?CAPTURING(begin
+                   hocon_cli:main(["-c", etc("demo_schema2.conf"),
+                                   "-s", "demo_schema2", "get", "foo.x.int"]),
+                   ?assertPrinted("undefined\n")
+               end).
+
 prune_test() ->
     GenDir = out(),
     case file:list_dir(out()) of
