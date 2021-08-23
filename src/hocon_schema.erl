@@ -156,8 +156,12 @@ validations(Sc) -> maps:get(validations, Sc, []).
 
 %% @doc Find struct name from a guess.
 find_struct(Schema, StructName) ->
-    Names = [{bin(N), N} || N <- structs(Schema)],
-    case lists:keyfind(bin(StructName), 1, Names) of
+    Names = lists:map(
+              fun(?ARRAY(N)) -> {bin(N), N};
+                 (N) -> {bin(N), N}
+              end,
+              structs(Schema)),
+   case lists:keyfind(bin(StructName), 1, Names) of
         false -> throw({unknown_struct_name, Schema, StructName});
         {_, N} -> N
     end.
@@ -351,7 +355,7 @@ ensure_indexed_map(Opts, ?ARRAY(RootName), Conf) ->
             fun(Item, {Index, Map}) ->
                 NewMap = put_value(Opts, integer_to_binary(Index), unbox(Opts, Item), Map),
                 {Index + 1, NewMap}
-            end, {1, #{}}, RootValues),
+            end, {1, boxit(Opts, #{}, undefined)}, RootValues),
     put_value(Opts, RootName, unbox(Opts, RootValuesMap), Conf);
 ensure_indexed_map(_Opts, _RootName, Conf) ->
     Conf.
