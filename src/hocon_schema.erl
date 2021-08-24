@@ -69,7 +69,7 @@
                          , override_env => string()
                            %% set true if a field is allowed to be `undefined`
                            %% NOTE: has no point setting it to `true` if field has a default value
-                         , nullable => boolean() % default = true
+                         , nullable => true | false | {true, recursively} % default = true
                            %% for sensitive data obfuscation (password, token)
                          , sensitive => boolean()
                          }.
@@ -381,7 +381,8 @@ map_per_root(Schema, RootName, Conf0, Opts) ->
 map_per_root_value(Schema, RootName, RootValue, Conf0, Opts) ->
     {Mapped, NewRootValue} =
         do_map(fields(Schema, RootName), RootValue,
-               Opts#{stack => [RootName || RootName =/= ?VIRTUAL_ROOT]}),
+               Opts#{stack => [RootName || RootName =/= ?VIRTUAL_ROOT]},
+              root),
     Conf =
         case NewRootValue of
             undefined -> Conf0;
@@ -414,21 +415,26 @@ str(S) when is_list(S) -> S.
 bin(A) when is_atom(A) -> atom_to_binary(A, utf8);
 bin(S) -> iolist_to_binary(S).
 
-do_map(Fields, Value, Opts) ->
+do_map(Fields, Value, Opts, FieldSchema) ->
     case unbox(Opts, Value) of
         undefined ->
-            case maps:get(nullable, Opts, ?DEFAULT_NULLABLE) of
-                true -> do_map2(Fields, boxit(Opts, undefined, undefined), Opts);
-                false -> {validation_errs(Opts, not_nullable, undefined), undefined}
+            case is_nullable(Opts, FieldSchema) of
+                {true, recursively} ->
+                    {[], boxit(Opts, undefined, undefined)};
+                true ->
+                    do_map2(Fields, boxit(Opts, undefined, undefined), Opts,
+                            FieldSchema);
+                false ->
+                    {validation_errs(Opts, not_nullable, undefined), undefined}
             end;
         V when is_map(V) ->
-            do_map2(Fields, Value, Opts);
+            do_map2(Fields, Value, Opts, FieldSchema);
         _ ->
             {validation_errs(Opts, bad_value_for_struct, Value), Value}
     end.
 
 %% Conf must be a map from here on
-do_map2([{[$$ | _] = _Wildcard, Schema}], Conf, Opts) ->
+do_map2([{[$$ | _] = _Wildcard, Schema}], Conf, Opts, FieldSchema) ->
     %% wildcard: support dynamic filed names.
     %% e.g. in this config:
     %%     #{config => #{internal => #{val => 1},
@@ -449,8 +455,8 @@ do_map2([{[$$ | _] = _Wildcard, Schema}], Conf, Opts) ->
     FieldNames = [str(K) || K <- Keys],
     % All objects in this map should share the same schema.
     Fields = [{FieldName, Schema} || FieldName <- FieldNames],
-    do_map(Fields, Conf, Opts); %% start over
-do_map2(Fields, Value, Opts) ->
+    do_map(Fields, Conf, Opts, FieldSchema); %% start over
+do_map2(Fields, Value, Opts, _FieldSchema) ->
     SchemaFieldNames = [N || {N, _Schema} <- Fields],
     DataFields = unbox(Opts, Value),
     case check_unknown_fields(Opts, SchemaFieldNames, DataFields) of
@@ -480,15 +486,15 @@ map_one_field(FieldType, FieldSchema, FieldValue, Opts) ->
             {Acc, FieldValue}
     end.
 
-map_field({ref, Module, Ref}, _FieldSchema, Value, Opts) ->
+map_field({ref, Module, Ref}, FieldSchema, Value, Opts) ->
     %% Switching to another module, good luck.
-    do_map(Module:fields(Ref), Value, Opts#{schema := Module});
-map_field({ref, Ref}, _FieldSchema, Value, #{schema := Schema} = Opts) ->
+    do_map(Module:fields(Ref), Value, Opts#{schema := Module}, FieldSchema);
+map_field({ref, Ref}, FieldSchema, Value, #{schema := Schema} = Opts) ->
     Fields = fields(Schema, Ref),
-    do_map(Fields, Value, Opts);
-map_field(Ref, _FieldSchema, Value, #{schema := Schema} = Opts) when is_list(Ref) ->
+    do_map(Fields, Value, Opts, FieldSchema);
+map_field(Ref, FieldSchema, Value, #{schema := Schema} = Opts) when is_list(Ref) ->
     Fields = fields(Schema, Ref),
-    do_map(Fields, Value, Opts);
+    do_map(Fields, Value, Opts, FieldSchema);
 map_field(?UNION(Types), Schema0, Value, Opts) ->
     %% union is not a boxed value
     F = fun(Type) ->
@@ -586,10 +592,12 @@ is_known_field(Opts, Name, Value, ExpectedNames) ->
 is_known_name(Name, ExpectedNames) ->
     lists:any(fun(N) -> N =:= bin(Name) end, ExpectedNames).
 
+is_nullable(Opts, root) ->
+    maps:get(nullable, Opts, ?DEFAULT_NULLABLE);
 is_nullable(Opts, Schema) ->
     case field_schema(Schema, nullable) of
         undefined -> maps:get(nullable, Opts, ?DEFAULT_NULLABLE);
-        Bool when is_boolean(Bool) -> Bool
+        Maybe -> Maybe
     end.
 
 field_schema(Type, SchemaKey) when ?IS_TYPEREFL(Type) ->
