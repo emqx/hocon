@@ -156,8 +156,12 @@ validations(Sc) -> maps:get(validations, Sc, []).
 
 %% @doc Find struct name from a guess.
 find_struct(Schema, StructName) ->
-    Names = [{bin(N), N} || N <- structs(Schema)],
-    case lists:keyfind(bin(StructName), 1, Names) of
+    Names = lists:map(
+              fun(?ARRAY(N)) -> {bin(N), ?ARRAY(N)};
+                 (N) -> {bin(N), N}
+              end,
+              structs(Schema)),
+   case lists:keyfind(bin(StructName), 1, Names) of
         false -> throw({unknown_struct_name, Schema, StructName});
         {_, N} -> N
     end.
@@ -351,7 +355,7 @@ ensure_indexed_map(Opts, ?ARRAY(RootName), Conf) ->
             fun(Item, {Index, Map}) ->
                 NewMap = put_value(Opts, integer_to_binary(Index), unbox(Opts, Item), Map),
                 {Index + 1, NewMap}
-            end, {1, #{}}, RootValues),
+            end, {1, boxit(Opts, #{}, undefined)}, RootValues),
     put_value(Opts, RootName, unbox(Opts, RootValuesMap), Conf);
 ensure_indexed_map(_Opts, _RootName, Conf) ->
     Conf.
@@ -979,10 +983,8 @@ richmap_to_map(Iter, Map) ->
 -spec get_value(string(), hocon:config()) -> term().
 get_value(Path, Conf) ->
     %% ensure plain map
-    richmap_to_map(do_get(split(Path), Conf)).
+    do_get(split(Path), richmap_to_map(Conf)).
 
-do_get(Path, #{?HOCON_V := V}) ->
-    do_get(Path, V);
 do_get([], Conf) ->
     %% value as-is
     Conf;
@@ -1002,7 +1004,16 @@ try_get(Key, Conf) when is_map(Conf) ->
             end;
         Value ->
             Value
+    end;
+try_get(Key, Conf) when is_list(Conf) ->
+    try binary_to_integer(Key) of
+        N ->
+            lists:nth(N, Conf)
+    catch
+        error : badarg ->
+            undefined
     end.
+
 
 -spec get_value(string(), hocon:config(), term()) -> term().
 get_value(Path, Config, Default) ->

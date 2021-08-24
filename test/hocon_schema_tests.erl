@@ -752,6 +752,13 @@ root_array_test_() ->
                                            #{<<"kling">> => 2, <<"klang">> => 4},
                                            #{<<"kling">> => 3, <<"klang">> => 6}]},
                            hocon_schema:check(Sc, PlainMap, #{format => map}))
+      end},
+     {"empty",
+      fun() ->
+              {ok, Map} = hocon:binary("foo = []", #{format => richmap}),
+              ?assertEqual(#{<<"foo">> => []},
+                           hocon_schema:richmap_to_map(
+                                hocon_schema:check(Sc, Map, #{format => richmap})))
       end}
     ].
 
