@@ -527,6 +527,8 @@ map_field(?ARRAY(Type), _FieldSchema, Value0, Opts) ->
         false ->
             {validation_errs(Opts, not_array, Value0), Value0}
     end;
+map_field(?LAZY(_HintType), _Schema, Value, _Opts) ->
+    {[], Value};
 map_field(Type, Schema, Value0, Opts) ->
     %% primitive type
     Value = unbox(Opts, Value0),

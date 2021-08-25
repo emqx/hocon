@@ -796,3 +796,15 @@ ref_nullable_test() ->
     {ok, RichMap} = hocon:binary(Conf, #{format => richmap}),
     ?assertEqual(#{<<"x">> => "y"},
                  hocon_schema:richmap_to_map(hocon_schema:check(Sc, RichMap))).
+
+lazy_test() ->
+    Sc = #{structs => [?VIRTUAL_ROOT],
+           fields => #{?VIRTUAL_ROOT => [ {k, #{type => hoconsc:lazy(integer())}}
+                                        , {x, string()}
+                                        ]
+                      }
+          },
+    Conf = "x = y, k=whatever",
+    {ok, RichMap} = hocon:binary(Conf, #{format => richmap}),
+    ?assertEqual(#{<<"x">> => "y", <<"k">> => <<"whatever">>},
+                 hocon_schema:richmap_to_map(hocon_schema:check(Sc, RichMap))).
