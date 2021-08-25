@@ -20,6 +20,7 @@
 -export([t/1, t/2]).
 -export([ref/1, ref/2]).
 -export([array/1, union/1, enum/1]).
+-export([lazy/1]).
 
 -include("hoconsc.hrl").
 
@@ -43,3 +44,5 @@ union(OfTypes) when is_list(OfTypes) -> ?UNION(OfTypes).
 
 %% @doc make a enum type.
 enum(OfSymbols) when is_list(OfSymbols) -> ?ENUM(OfSymbols).
+
+lazy(HintType) -> ?LAZY(HintType).
