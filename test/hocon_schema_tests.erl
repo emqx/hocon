@@ -685,7 +685,7 @@ default_value_map_field_test() ->
            fields => #{?VIRTUAL_ROOT => [ {k, #{type => hoconsc:ref(sub),
                                                 default => #{<<"a">> => <<"foo">>,
                                                              <<"b">> => <<"bar">>}}}
-                                          , {x, string()}
+                                        , {x, string()}
                                         ],
                        sub => [{a, string()}, {b, string()}]
                       }
@@ -782,3 +782,17 @@ root_array_env_override_test() ->
             {"EMQX_FOO__1__KLING", "111"},
             {"EMQX_FOO__2__KLANG", "222"}
            ]).
+
+ref_nullable_test() ->
+    Sc = #{structs => [?VIRTUAL_ROOT],
+           fields => #{?VIRTUAL_ROOT => [ {k, #{type => hoconsc:ref(sub),
+                                                nullable => {true, recursively}}}
+                                        , {x, string()}
+                                        ],
+                       sub => [{a, string()}, {b, string()}]
+                      }
+          },
+    Conf = "x = y",
+    {ok, RichMap} = hocon:binary(Conf, #{format => richmap}),
+    ?assertEqual(#{<<"x">> => "y"},
+                 hocon_schema:richmap_to_map(hocon_schema:check(Sc, RichMap))).
