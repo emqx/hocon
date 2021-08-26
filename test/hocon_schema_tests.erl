@@ -23,7 +23,6 @@
 
 -export([structs/0, fields/1, validations/0]).
 
--define(VIRTUAL_ROOT, "").
 -define(GEN_VALIDATION_ERR(Reason, Expr),
         ?_assertThrow({_, [{validation_error, Reason}]}, Expr)).
 -define(VALIDATION_ERR(Reason, Expr),
@@ -269,9 +268,7 @@ env_object_val_test() ->
             ])).
 
 env_array_val_test() ->
-    Sc = #{structs => [?VIRTUAL_ROOT],
-           fields => [{"val", hoconsc:array(string())}]
-          },
+    Sc = #{structs => [{"val", hoconsc:array(string())}]},
     Conf = "val = [a,b]",
     {ok, PlainMap} = hocon:binary(Conf, #{}),
     ?assertEqual(#{<<"val">> => ["c", "d"]},
@@ -281,9 +278,7 @@ env_array_val_test() ->
             ])).
 
 env_ip_port_test() ->
-    Sc = #{structs => [?VIRTUAL_ROOT],
-           fields => [{"val", string()}]
-          },
+    Sc = #{structs => [{"val", string()}]},
     Conf = "val = \"127.0.0.1:1990\"",
     {ok, PlainMap} = hocon:binary(Conf, #{}),
     ?assertEqual(#{<<"val">> => "192.168.0.1:1991"},
@@ -314,17 +309,14 @@ with_envs(Fun, Envs) -> hocon_test_lib:with_envs(Fun, Envs).
 with_envs(Fun, Args, Envs) -> hocon_test_lib:with_envs(Fun, Args, Envs).
 
 union_as_enum_test() ->
-    Sc = #{structs => [?VIRTUAL_ROOT],
-           fields => [{enum, hoconsc:union([a, b, c])}]
-          },
+    Sc = #{structs => [{enum, hoconsc:union([a, b, c])}]},
     ?assertEqual(#{<<"enum">> => a},
                  hocon_schema:check_plain(Sc, #{<<"enum">> => a})),
     ?VALIDATION_ERR(#{reason := matched_no_union_member},
                     hocon_schema:check_plain(Sc, #{<<"enum">> => x})).
 
 real_enum_test() ->
-    Sc = #{structs => [?VIRTUAL_ROOT],
-           fields => [{val, hoconsc:enum([a, b, c])}]
+    Sc = #{structs => [{val, hoconsc:enum([a, b, c])}]
           },
     ?assertEqual(#{<<"val">> => a},
                  hocon_schema:check_plain(Sc, #{<<"val">> => <<"a">>})),
@@ -337,17 +329,13 @@ real_enum_test() ->
                     hocon_schema:check_plain(Sc, #{<<"val">> => {"badvalue"}})).
 
 array_of_enum_test() ->
-    Sc = #{structs => [?VIRTUAL_ROOT],
-           fields => [{val, hoconsc:array(hoconsc:enum([a, b, c]))}]
-          },
+    Sc = #{structs => [{val, hoconsc:array(hoconsc:enum([a, b, c]))}]},
     Conf = "val = [a,b]",
     {ok, PlainMap} = hocon:binary(Conf, #{}),
     ?assertEqual(#{<<"val">> => [a, b]}, hocon_schema:check_plain(Sc, PlainMap)).
 
 atom_key_test() ->
-    Sc = #{structs => [?VIRTUAL_ROOT],
-           fields => [{val, binary()}]
-          },
+    Sc = #{structs => [{val, binary()}]},
     Conf = "val = a",
     {ok, PlainMap} = hocon:binary(Conf, #{}),
     {ok, RichMap} = hocon:binary(Conf, #{format => richmap}),
@@ -361,10 +349,8 @@ atom_key_test() ->
                  hocon_schema:richmap_to_map(hocon_schema:check(Sc, RichMap, #{atom_key => true}))).
 
 atom_key_array_test() ->
-   Sc = #{structs => [?VIRTUAL_ROOT],
-          fields => #{?VIRTUAL_ROOT => [{arr, hoconsc:array("sub")}],
-                      "sub" => [{id, integer()}]
-                     }
+   Sc = #{structs => [{arr, hoconsc:array("sub")}],
+          fields => #{"sub" => [{id, integer()}]}
          },
     Conf = "arr = [{id = 1}, {id = 2}]",
     {ok, PlainMap} = hocon:binary(Conf, #{}),
@@ -375,21 +361,17 @@ atom_key_array_test() ->
 
 %% if convert to non-existing atom
 atom_key_failure_test() ->
-   Sc = #{structs => [?VIRTUAL_ROOT],
-           fields => #{?VIRTUAL_ROOT => [{<<"non_existing_atom_as_key">>, hoconsc:t(integer())}]
-                      }
-          },
+   Sc = #{structs => [{<<"non_existing_atom_as_key">>, hoconsc:t(integer())}]},
     Conf = "non_existing_atom_as_key=1",
     {ok, PlainMap} = hocon:binary(Conf, #{}),
     ?assertError({non_existing_atom, <<"non_existing_atom_as_key">>},
                  hocon_schema:map(Sc, PlainMap, all, #{format => map, atom_key => true})).
 
 return_plain_test_() ->
-    Sc = #{structs => [?VIRTUAL_ROOT],
-           fields => [ {metadata, hoconsc:t(string())}
-                     , {type, hoconsc:t(string())}
-                     , {value, hoconsc:t(string())}
-                     ]},
+    Sc = #{structs => [ {metadata, hoconsc:t(string())}
+                      , {type, hoconsc:t(string())}
+                      , {value, hoconsc:t(string())}
+                      ]},
     StrConf = "type=t, metadata=m, value=v",
     {ok, Conf} = hocon:binary(StrConf, #{format => richmap}),
     Opts = #{atom_key => true, return_plain => true},
@@ -400,27 +382,22 @@ return_plain_test_() ->
     ].
 
 validator_test() ->
-    Sc = #{structs => [?VIRTUAL_ROOT],
-           fields => [{f1, hoconsc:t(integer(), #{validator => fun(X) -> X < 10 end})}]
-          },
+    Sc = #{ structs => [{f1, hoconsc:t(integer(), #{validator => fun(X) -> X < 10 end})}]},
     ?assertEqual(#{<<"f1">> => 1}, hocon_schema:check_plain(Sc, #{<<"f1">> => 1})),
     ?VALIDATION_ERR(_, hocon_schema:check_plain(Sc, #{<<"f1">> => 11})),
     ok.
 
 validator_crash_test() ->
-    Sc = #{structs => [?VIRTUAL_ROOT],
-           fields => [{f1, hoconsc:t(integer(), #{validator => [fun(_) -> error(always) end]})}]
-          },
+    Sc = #{ structs => [{f1, hoconsc:t(integer(), #{validator => [fun(_) -> error(always) end]})}]},
     ?VALIDATION_ERR(#{reason := #{exception := {error, always}}},
                     hocon_schema:check_plain(Sc, #{<<"f1">> => 11})),
     ok.
 
 nullable_test() ->
-    Sc = #{structs => [?VIRTUAL_ROOT],
-           fields => [{f1, hoconsc:t(integer())},
-                      {f2, hoconsc:t(string())},
-                      {f3, hoconsc:t(integer(), #{default => 0})}
-                     ]
+    Sc = #{ structs => [{f1, hoconsc:t(integer())},
+                       {f2, hoconsc:t(string())},
+                       {f3, hoconsc:t(integer(), #{default => 0})}
+                      ]
           },
     ?assertEqual(#{<<"f2">> => "string", <<"f3">> => 0},
                  hocon_schema:check_plain(Sc, #{<<"f2">> => <<"string">>},
@@ -466,16 +443,14 @@ no_translation_test() ->
     ?assertEqual(Mapped, hocon_schema:translate(?MODULE, Conf, Mapped)).
 
 no_translation2_test() ->
-    Sc = #{structs => [?VIRTUAL_ROOT],
-           fields => [{f1, integer()}]
+    Sc = #{structs => [{f1, integer()}]
           },
     ?assertEqual([], hocon_schema:translate(Sc, #{}, [])).
 
 translation_crash_test() ->
-    Sc = #{structs => [?VIRTUAL_ROOT],
-           fields => [{f1, hoconsc:t(integer())},
-                      {f2, hoconsc:t(string())}
-                     ],
+    Sc = #{structs => [{f1, hoconsc:t(integer())},
+                       {f2, hoconsc:t(string())}
+                      ],
            translations => #{"tr1" => [{"f3", fun(_Conf) -> error(always) end}]}
           },
     {ok, Data} = hocon:binary("f1=12,f2=foo", #{format => richmap}),
@@ -516,33 +491,29 @@ unknown_fields_test_() ->
                          }, hocon_schema:map(demo_schema, M, all)).
 
 nullable_field_test() ->
-    Sc = #{structs => [?VIRTUAL_ROOT],
-           fields => [{f1, hoconsc:t(integer(), #{nullable => false})}]
+    Sc = #{structs => [{f1, hoconsc:t(integer(), #{nullable => false})}]
           },
     ?VALIDATION_ERR(#{reason := not_nullable, path := "f1"},
                     hocon_schema:check_plain(Sc, #{})),
     ok.
 
 bad_input_test() ->
-    Sc = #{structs => [?VIRTUAL_ROOT],
-           fields => [{f1, integer()}]
+    Sc = #{structs => [{f1, integer()}]
           },
     %% NOTE: this is not a valid richmap, intended to test a crash
     BadInput = #{?HOCON_V => #{<<"f1">> => 1}},
     ?assertError({bad_richmap, 1}, hocon_schema:map(Sc, BadInput)).
 
 not_array_test() ->
-    Sc = #{structs => [?VIRTUAL_ROOT],
-           fields => [{f1, hoconsc:array(integer())}]
+    Sc = #{structs => [{f1, hoconsc:array(integer())}]
           },
     BadInput = #{<<"f1">> => 1},
     ?VALIDATION_ERR(#{reason := not_array},
                     hocon_schema:check_plain(Sc, BadInput)).
 
 converter_test() ->
-    Sc = #{structs => [?VIRTUAL_ROOT],
-           fields => [{f1, hoconsc:t(integer(),
-                                     #{converter => fun(<<"one">>) -> 1 end})}]
+    Sc = #{structs => [{f1, hoconsc:t(integer(),
+                                      #{converter => fun(<<"one">>) -> 1 end})}]
           },
     Input = #{<<"f1">> => <<"one">>},
     BadIn = #{<<"f1">> => <<"two">>},
@@ -558,9 +529,8 @@ no_dot_in_root_name_test() ->
                 hocon_schema:check(Sc, #{<<"a">> => 1})).
 
 union_of_structs_test() ->
-    Sc = #{structs => [?VIRTUAL_ROOT],
-           fields => #{?VIRTUAL_ROOT => [{f1, hoconsc:union([dummy, "m1", "m2"])}],
-                       "m1" => [{m1, integer()}],
+    Sc = #{structs => [{f1, hoconsc:union([dummy, "m1", "m2"])}],
+           fields => #{"m1" => [{m1, integer()}],
                        "m2" => [{m2, integer()}]
                       }
           },
@@ -574,9 +544,7 @@ union_of_structs_test() ->
     ok.
 
 multiple_errors_test() ->
-    Sc = #{structs => [?VIRTUAL_ROOT],
-           fields => #{?VIRTUAL_ROOT => [{m1, integer()}, {m2, integer()}]}
-          },
+    Sc = #{structs => [{m1, integer()}, {m2, integer()}]},
     ?assertThrow({_, [{validation_error, #{path := "m1"}},
                       {validation_error, #{path := "m2"}}]},
                  check_return_atom_keys(Sc, "m1=a,m2=b")),
@@ -592,13 +560,10 @@ resolve_struct_name_test() ->
                  hocon_schema:resolve_struct_name(demo_schema, "noexist")).
 
 sensitive_data_obfuscation_test() ->
-    Sc = #{structs => [?VIRTUAL_ROOT],
-           fields => #{?VIRTUAL_ROOT =>
-                       [{secret, hoconsc:t(string(),
-                                           #{sensitive => true,
-                                             override_env => "OBFUSCATION_TEST"
-                                            })}]}
-          },
+    Sc = #{structs => [{secret, hoconsc:t(string(),
+                                          #{sensitive => true,
+                                            override_env => "OBFUSCATION_TEST"
+                                           })}]},
     Self = self(),
     with_envs(
       fun() ->
@@ -669,10 +634,9 @@ check_plain_bin(Sc, Data, Opts) ->
     hocon_schema:check_plain(Sc, Conf, Opts).
 
 default_value_for_array_field_test() ->
-    Sc = #{structs => [?VIRTUAL_ROOT],
-           fields => [ {k, hoconsc:t(hoconsc:array(string()), #{default => [<<"a">>, <<"b">>]})}
-                     , {x, string()}
-                     ]
+    Sc = #{structs => [ {k, hoconsc:t(hoconsc:array(string()), #{default => [<<"a">>, <<"b">>]})}
+                      , {x, string()}
+                      ]
           },
     Conf = "x = y",
     {ok, RichMap} = hocon:binary(Conf, #{format => richmap}),
@@ -680,14 +644,12 @@ default_value_for_array_field_test() ->
        hocon_schema:check(Sc, RichMap))).
 
 default_value_map_field_test() ->
-    Sc = #{structs => [?VIRTUAL_ROOT],
-           fields => #{?VIRTUAL_ROOT => [ {k, #{type => hoconsc:ref(sub),
-                                                default => #{<<"a">> => <<"foo">>,
-                                                             <<"b">> => <<"bar">>}}}
-                                        , {x, string()}
-                                        ],
-                       sub => [{a, string()}, {b, string()}]
-                      }
+    Sc = #{structs => [ {k, #{type => hoconsc:ref(sub),
+                              default => #{<<"a">> => <<"foo">>,
+                                           <<"b">> => <<"bar">>}}}
+                      , {x, string()}
+                      ],
+           fields => #{sub => [{a, string()}, {b, string()}]}
           },
     Conf = "x = y",
     {ok, RichMap} = hocon:binary(Conf, #{format => richmap}),
@@ -697,9 +659,8 @@ default_value_map_field_test() ->
                  hocon_schema:richmap_to_map(hocon_schema:check(Sc, RichMap))).
 
 default_value_for_null_enclosing_struct_test() ->
-    Sc = #{structs => [?VIRTUAL_ROOT],
-           fields => #{?VIRTUAL_ROOT => [ {"l1", #{type => hoconsc:ref("l2")}} ],
-                       "l2" => [{"l2", #{type => integer(), default => 22}},
+    Sc = #{structs => [ {"l1", #{type => hoconsc:ref("l2")}} ],
+           fields => #{"l2" => [{"l2", #{type => integer(), default => 22}},
                                 {"l3", #{type => integer()}}
                                ]
                       }},
@@ -783,13 +744,11 @@ root_array_test_() ->
 %            ]).
 
 ref_nullable_test() ->
-    Sc = #{structs => [?VIRTUAL_ROOT],
-           fields => #{?VIRTUAL_ROOT => [ {k, #{type => hoconsc:ref(sub),
-                                                nullable => {true, recursively}}}
-                                        , {x, string()}
-                                        ],
-                       sub => [{a, string()}, {b, string()}]
-                      }
+    Sc = #{structs => [ {k, #{type => hoconsc:ref(sub),
+                              nullable => {true, recursively}}}
+                      , {x, string()}
+                      ],
+           fields =>  #{sub => [{a, string()}, {b, string()}]}
           },
     Conf = "x = y",
     {ok, RichMap} = hocon:binary(Conf, #{format => richmap}),
@@ -797,12 +756,9 @@ ref_nullable_test() ->
                  hocon_schema:richmap_to_map(hocon_schema:check(Sc, RichMap))).
 
 % lazy_test() ->
-%     Sc = #{structs => [?VIRTUAL_ROOT],
-%            fields => #{?VIRTUAL_ROOT => [ {k, #{type => hoconsc:lazy(integer())}}
-%                                         , {x, string()}
-%                                         ]
-%                       }
-%           },
+%     Sc = #{structs => [ {k, #{type => hoconsc:lazy(integer())}}
+%                       , {x, string()}
+%                       ]},
 %     Conf = "x = y, k=whatever",
 %     {ok, RichMap} = hocon:binary(Conf, #{format => richmap}),
 %     ?assertEqual(#{<<"x">> => "y", <<"k">> => <<"whatever">>},

@@ -113,7 +113,6 @@
 
 -optional_callbacks([translations/0, translation/1, validations/0]).
 
--define(VIRTUAL_ROOT, "").
 -define(ERR(Code, Context), {Code, Context}).
 -define(ERRS(Code, Context), [?ERR(Code, Context)]).
 -define(VALIDATION_ERRS(Context), ?ERRS(validation_error, Context)).
@@ -125,18 +124,18 @@
 -define(NULL_BOX, #{?METADATA => #{made_for => null_value}}).
 
 %% behaviour APIs
--spec structs(schema()) -> [root_type()].
+-spec structs(schema()) -> #{name() => {name(), field_schema()}}.
 structs(Schema) ->
-    lists:map(fun({N, T}) -> {N, T};
-                 (N) -> {N, ?REF(N)}
-              end, do_structs(Schema)).
+    maps:from_list(
+      lists:map(fun({N, T}) -> {bin(N), {N, T}};
+                   (N) -> {bin(N), {N, ?REF(N)}}
+                end, do_structs(Schema))).
 
 do_structs(Mod) when is_atom(Mod) -> Mod:structs();
 do_structs(#{structs := Names}) -> Names.
 
 -spec fields(schema(), name()) -> [field()].
 fields(Mod, Name) when is_atom(Mod) -> Mod:fields(Name);
-fields(#{fields := Fields}, ?VIRTUAL_ROOT) when is_list(Fields) -> Fields;
 fields(#{fields := Fields}, Name) -> maps:get(Name, Fields).
 
 -spec translations(schema()) -> [name()].
@@ -162,14 +161,9 @@ validations(Sc) -> maps:get(validations, Sc, []).
 
 %% @doc Resolve struct name from a guess.
 resolve_struct_name(Schema, StructName) ->
-    Names = lists:map(
-              fun({N, _Type}) -> {bin(N), N};
-                 (N) -> {bin(N), N}
-              end,
-              structs(Schema)),
-   case lists:keyfind(bin(StructName), 1, Names) of
-        false -> throw({unknown_struct_name, Schema, StructName});
-        {_, N} -> N
+    case maps:find(bin(StructName), structs(Schema)) of
+        {ok, {N, _Sc}} -> N;
+        error -> throw({unknown_struct_name, Schema, StructName})
     end.
 
 %% @doc generates application env from a parsed .conf and a schema module.
@@ -312,7 +306,7 @@ maybe_convert_to_plain_map(Conf, _Opts) ->
 
 -spec map(schema(), hocon:config()) -> {[proplists:property()], hocon:config()}.
 map(Schema, Conf) ->
-    Roots = structs(Schema),
+    Roots = maps:keys(structs(Schema)),
     map(Schema, Conf, Roots, #{}).
 
 -spec map(schema(), hocon:config(), all | [name()]) ->
@@ -323,14 +317,10 @@ map(Schema, Conf, RootNames) ->
 -spec map(schema(), hocon:config(), all | [name()], opts()) ->
         {[proplists:property()], hocon:config()}.
 map(Schema, Conf, all, Opts) ->
-    map(Schema, Conf, structs(Schema), Opts);
+    map(Schema, Conf, maps:keys(structs(Schema)), Opts);
 map(Schema, Conf0, Roots0, Opts0) ->
-    Roots = case Roots0 of
-                [{?VIRTUAL_ROOT, _}] -> fields(Schema, ?VIRTUAL_ROOT);
-                _ -> resolve_root_types(Roots0)
-            end,
-    io:format(user, "~p\nxxxxxxxxxxxxxxxxx ~p\n", [Schema, Roots]),
     Opts = maps:merge(#{schema => Schema, format => richmap}, Opts0),
+    Roots = resolve_root_types(structs(Schema), Roots0),
     {EnvNamespace, Envs} = collect_envs(Opts0),
     F = fun ({RootName, _RootSc}, ConfAcc0) ->
                 ok = assert_no_dot(Schema, RootName),
@@ -342,11 +332,15 @@ map(Schema, Conf0, Roots0, Opts0) ->
     ok = assert_integrity(Schema, NewConf, Opts),
     {Mapped, maybe_convert_to_plain_map(NewConf, Opts)}.
 
-resolve_root_types([]) -> [];
-resolve_root_types([{Name, Schema} | Rest]) ->
-    [{Name, Schema} | resolve_root_types(Rest)];
-resolve_root_types([Name | Rest]) ->
-    [{Name, hoconsc:ref(Name)} | resolve_root_types(Rest)].
+resolve_root_types(_Roots, []) -> [];
+resolve_root_types(Roots, [Name | Rest]) ->
+    case maps:find(bin(Name), Roots) of
+        {ok, {N, Sc}} ->
+            [{N, Sc} | resolve_root_types(Roots, Rest)];
+        error ->
+            %% maybe a private struct which is not exposed in structs/0
+            [{Name, hoconsc:ref(Name)} | resolve_root_types(Roots, Rest)]
+    end.
 
 %% Assert no dot in root struct name.
 %% This is because the dot will cause root name to be splited,
@@ -358,7 +352,6 @@ resolve_root_types([Name | Rest]) ->
 %%
 %% In this case if a non map value is assigned, such as `a.b=1`,
 %% the check code will crash rather than reporting a useful error reason.
-assert_no_dot(_, ?VIRTUAL_ROOT) -> ok;
 assert_no_dot(Schema, RootName) ->
     case split(RootName) of
         [_] -> ok;
@@ -581,7 +574,6 @@ maybe_mapping(_, undefined) -> []; % no value retrieved for this field
 maybe_mapping(MappedPath, PlainValue) ->
     [{string:tokens(MappedPath, "."), PlainValue}].
 
-push_stack(X, ?VIRTUAL_ROOT) -> X;
 push_stack(#{stack := Stack} = X, New) ->
     X#{stack := [New | Stack]};
 push_stack(X, New) ->
@@ -683,8 +675,7 @@ apply_env(Ns, [{VarName, V} | More], RootName, Conf, Opts) ->
     K = string:prefix(VarName, Ns),
     Path0 = string:split(string:lowercase(K), "__", all),
     Path1 = lists:filter(fun(N) -> N =/= [] end, Path0),
-    NewConf = case RootName =:= ?VIRTUAL_ROOT orelse
-                   (Path1 =/= [] andalso bin(RootName) =:= bin(hd(Path1))) of
+    NewConf = case Path1 =/= [] andalso bin(RootName) =:= bin(hd(Path1)) of
                   true ->
                       Path = string:join(Path1, "."),
                       %% It lacks schema info here, so we need to tag the value '$FROM_ENV_VAR'
@@ -755,7 +746,6 @@ mkrich(Map, Box) when is_map(Map) ->
 mkrich(Val, Box) ->
     boxit(Val, Box).
 
-get_field(_Opts, ?VIRTUAL_ROOT, Value) -> Value;
 get_field(#{format := richmap}, Path, Conf) -> deep_get(Path, Conf);
 get_field(#{format := map}, Path, Conf) -> get_value(Path, Conf).
 
