@@ -591,7 +591,6 @@ find_struct_test() ->
     ?assertThrow({unknown_struct_name, _, "noexist"},
                  hocon_schema:find_struct(demo_schema, "noexist")).
 
-
 sensitive_data_obfuscation_test() ->
     Sc = #{structs => [?VIRTUAL_ROOT],
            fields => #{?VIRTUAL_ROOT =>
@@ -820,3 +819,22 @@ lazy_root_test() ->
     {ok, RichMap} = hocon:binary(Conf, #{format => richmap}),
     ?assertEqual(#{<<"x">> => <<"y">>, <<"k">> => <<"whatever">>},
                  hocon_schema:richmap_to_map(hocon_schema:check(Sc, RichMap))).
+
+lazy_root_env_override_test() ->
+    Sc = #{structs => [hoconsc:lazy(foo)],
+           fields => #{foo => [ {"kling", hoconsc:t(integer())},
+                                {"klang", hoconsc:t(integer())}
+                              ]
+                      }
+          },
+    with_envs(
+      fun() ->
+              Conf = "foo = {kling = 1}",
+              {ok, PlainMap} = hocon:binary(Conf, #{}),
+              Opts = #{format => map, nullable => true},
+              ?assertEqual(#{<<"foo">> => #{<<"kling">> => 1}},
+                           hocon_schema:check(Sc, PlainMap, Opts))
+      end, [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"},
+            {"EMQX_FOO__KLING", "111"},
+            {"EMQX_FOO__KLANG", "222"}
+           ]).
