@@ -156,10 +156,10 @@ validations(Sc) -> maps:get(validations, Sc, []).
 
 %% @doc Find struct name from a guess.
 find_struct(Schema, StructName) ->
-    Names = lists:map(
-              fun(?ARRAY(N)) -> {bin(N), ?ARRAY(N)};
-                 (?LAZY(N)) -> {bin(N), ?LAZY(N)};
-                 (N) -> {bin(N), N}
+    Names = lists:filtermap(
+              fun(?ARRAY(N)) -> {true, {bin(N), ?ARRAY(N)}};
+                 (?LAZY(_N)) -> false;
+                 (N) -> {true, {bin(N), N}}
               end,
               structs(Schema)),
    case lists:keyfind(bin(StructName), 1, Names) of
@@ -717,6 +717,9 @@ read_informal_hocon_val(Value, Opts) ->
             Value
     end.
 
+apply_env(_Ns, _Vars, ?LAZY(_RootName), Conf, _Opts) ->
+    %% skip lazy
+    Conf;
 apply_env(Ns, Vars, ?ARRAY(RootName), Conf, Opts) ->
     apply_env(Ns, Vars, RootName, Conf, Opts);
 apply_env(_Ns, [], _RootName, Conf, _Opts) -> Conf;

@@ -6,8 +6,12 @@
 
 -export([structs/0, fields/1]).
 
-structs() -> [{array, foo}].
+structs() -> [hoconsc:array(foo), hoconsc:lazy(hoconsc:union([bar, "kak"]))].
 
 fields(foo) ->
     [ {int, integer()}
-    ].
+    ];
+fields(bar) ->
+    [{bint, integer()}];
+fields("kak") ->
+    [{kint, integer()}].
