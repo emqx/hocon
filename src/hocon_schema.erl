@@ -158,6 +158,7 @@ validations(Sc) -> maps:get(validations, Sc, []).
 find_struct(Schema, StructName) ->
     Names = lists:map(
               fun(?ARRAY(N)) -> {bin(N), ?ARRAY(N)};
+                 (?LAZY(N)) -> {bin(N), ?LAZY(N)};
                  (N) -> {bin(N), N}
               end,
               structs(Schema)),
@@ -360,6 +361,8 @@ ensure_indexed_map(Opts, ?ARRAY(RootName), Conf) ->
 ensure_indexed_map(_Opts, _RootName, Conf) ->
     Conf.
 
+map_per_root(_Schema, ?LAZY(_RootName), Conf, _Opts) ->
+    {[], Conf};
 map_per_root(Schema, ?ARRAY(RootName), Conf0, Opts) ->
     RootValues0 = get_field(Opts, RootName, Conf0),
     RootValues1 = lists:keysort(1, maps:to_list(unbox(Opts, RootValues0))),
@@ -401,6 +404,7 @@ map_per_root_value(Schema, RootName, RootValue, Conf0, Opts) ->
 %% In this case if a non map value is assigned, such as `a.b=1`,
 %% the check code will crash rather than reporting a useful error reason.
 assert_no_dot(_, ?VIRTUAL_ROOT) -> ok;
+assert_no_dot(Schema, ?LAZY(Name)) -> assert_no_dot(Schema, Name);
 assert_no_dot(Schema, ?ARRAY(Name)) -> assert_no_dot(Schema, Name);
 assert_no_dot(Schema, RootName) ->
     case split(RootName) of

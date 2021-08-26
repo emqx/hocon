@@ -808,3 +808,15 @@ lazy_test() ->
     {ok, RichMap} = hocon:binary(Conf, #{format => richmap}),
     ?assertEqual(#{<<"x">> => "y", <<"k">> => <<"whatever">>},
                  hocon_schema:richmap_to_map(hocon_schema:check(Sc, RichMap))).
+
+lazy_root_test() ->
+    Sc = #{structs => [hoconsc:lazy("foo")],
+           fields => #{"foo" => [ {k, #{type => integer()}}
+                                , {x, string()}
+                                ]
+                      }
+          },
+    Conf = "x = y, k=whatever",
+    {ok, RichMap} = hocon:binary(Conf, #{format => richmap}),
+    ?assertEqual(#{<<"x">> => <<"y">>, <<"k">> => <<"whatever">>},
+                 hocon_schema:richmap_to_map(hocon_schema:check(Sc, RichMap))).
