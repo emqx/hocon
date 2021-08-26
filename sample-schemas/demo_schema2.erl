@@ -6,7 +6,10 @@
 
 -export([structs/0, fields/1]).
 
-structs() -> [hoconsc:array(foo), hoconsc:lazy(hoconsc:union([bar, "kak"]))].
+structs() ->
+    [ {foo, hoconsc:array(hoconsc:ref(foo))}
+    , {"kek", hoconsc:lazy(hoconsc:union([bar, "kak"]))}
+    ].
 
 fields(foo) ->
     [ {int, integer()}
