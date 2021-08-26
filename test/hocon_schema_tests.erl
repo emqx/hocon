@@ -28,8 +28,10 @@
 -define(VALIDATION_ERR(Reason, Expr),
         ?assertThrow({_, [{validation_error, Reason}]}, Expr)).
 
+structs() -> roots().
+
 %% root names
-structs() -> [bar].
+roots() -> [bar].
 
 fields(bar) ->
     [ {union_with_default, fun union_with_default/1}
@@ -254,7 +256,7 @@ env_test_() ->
     ].
 
 env_object_val_test() ->
-    Sc = #{structs => [root],
+    Sc = #{roots => [root],
            fields => #{root => [{"val", hoconsc:t(hoconsc:ref(sub))}],
                        sub => [{"f1", integer()}]
                       }
@@ -268,7 +270,7 @@ env_object_val_test() ->
             ])).
 
 env_array_val_test() ->
-    Sc = #{structs => [{"val", hoconsc:array(string())}]},
+    Sc = #{roots => [{"val", hoconsc:array(string())}]},
     Conf = "val = [a,b]",
     {ok, PlainMap} = hocon:binary(Conf, #{}),
     ?assertEqual(#{<<"val">> => ["c", "d"]},
@@ -278,7 +280,7 @@ env_array_val_test() ->
             ])).
 
 env_ip_port_test() ->
-    Sc = #{structs => [{"val", string()}]},
+    Sc = #{roots => [{"val", string()}]},
     Conf = "val = \"127.0.0.1:1990\"",
     {ok, PlainMap} = hocon:binary(Conf, #{}),
     ?assertEqual(#{<<"val">> => "192.168.0.1:1991"},
@@ -309,14 +311,14 @@ with_envs(Fun, Envs) -> hocon_test_lib:with_envs(Fun, Envs).
 with_envs(Fun, Args, Envs) -> hocon_test_lib:with_envs(Fun, Args, Envs).
 
 union_as_enum_test() ->
-    Sc = #{structs => [{enum, hoconsc:union([a, b, c])}]},
+    Sc = #{roots => [{enum, hoconsc:union([a, b, c])}]},
     ?assertEqual(#{<<"enum">> => a},
                  hocon_schema:check_plain(Sc, #{<<"enum">> => a})),
     ?VALIDATION_ERR(#{reason := matched_no_union_member},
                     hocon_schema:check_plain(Sc, #{<<"enum">> => x})).
 
 real_enum_test() ->
-    Sc = #{structs => [{val, hoconsc:enum([a, b, c])}]
+    Sc = #{roots => [{val, hoconsc:enum([a, b, c])}]
           },
     ?assertEqual(#{<<"val">> => a},
                  hocon_schema:check_plain(Sc, #{<<"val">> => <<"a">>})),
@@ -329,13 +331,13 @@ real_enum_test() ->
                     hocon_schema:check_plain(Sc, #{<<"val">> => {"badvalue"}})).
 
 array_of_enum_test() ->
-    Sc = #{structs => [{val, hoconsc:array(hoconsc:enum([a, b, c]))}]},
+    Sc = #{roots => [{val, hoconsc:array(hoconsc:enum([a, b, c]))}]},
     Conf = "val = [a,b]",
     {ok, PlainMap} = hocon:binary(Conf, #{}),
     ?assertEqual(#{<<"val">> => [a, b]}, hocon_schema:check_plain(Sc, PlainMap)).
 
 atom_key_test() ->
-    Sc = #{structs => [{val, binary()}]},
+    Sc = #{roots => [{val, binary()}]},
     Conf = "val = a",
     {ok, PlainMap} = hocon:binary(Conf, #{}),
     {ok, RichMap} = hocon:binary(Conf, #{format => richmap}),
@@ -349,7 +351,7 @@ atom_key_test() ->
                  hocon_schema:richmap_to_map(hocon_schema:check(Sc, RichMap, #{atom_key => true}))).
 
 atom_key_array_test() ->
-   Sc = #{structs => [{arr, hoconsc:array("sub")}],
+   Sc = #{roots => [{arr, hoconsc:array("sub")}],
           fields => #{"sub" => [{id, integer()}]}
          },
     Conf = "arr = [{id = 1}, {id = 2}]",
@@ -361,14 +363,14 @@ atom_key_array_test() ->
 
 %% if convert to non-existing atom
 atom_key_failure_test() ->
-   Sc = #{structs => [{<<"non_existing_atom_as_key">>, hoconsc:t(integer())}]},
+   Sc = #{roots => [{<<"non_existing_atom_as_key">>, hoconsc:t(integer())}]},
     Conf = "non_existing_atom_as_key=1",
     {ok, PlainMap} = hocon:binary(Conf, #{}),
     ?assertError({non_existing_atom, <<"non_existing_atom_as_key">>},
                  hocon_schema:map(Sc, PlainMap, all, #{format => map, atom_key => true})).
 
 return_plain_test_() ->
-    Sc = #{structs => [ {metadata, hoconsc:t(string())}
+    Sc = #{roots => [ {metadata, hoconsc:t(string())}
                       , {type, hoconsc:t(string())}
                       , {value, hoconsc:t(string())}
                       ]},
@@ -382,19 +384,19 @@ return_plain_test_() ->
     ].
 
 validator_test() ->
-    Sc = #{ structs => [{f1, hoconsc:t(integer(), #{validator => fun(X) -> X < 10 end})}]},
+    Sc = #{ roots => [{f1, hoconsc:t(integer(), #{validator => fun(X) -> X < 10 end})}]},
     ?assertEqual(#{<<"f1">> => 1}, hocon_schema:check_plain(Sc, #{<<"f1">> => 1})),
     ?VALIDATION_ERR(_, hocon_schema:check_plain(Sc, #{<<"f1">> => 11})),
     ok.
 
 validator_crash_test() ->
-    Sc = #{ structs => [{f1, hoconsc:t(integer(), #{validator => [fun(_) -> error(always) end]})}]},
+    Sc = #{ roots => [{f1, hoconsc:t(integer(), #{validator => [fun(_) -> error(always) end]})}]},
     ?VALIDATION_ERR(#{reason := #{exception := {error, always}}},
                     hocon_schema:check_plain(Sc, #{<<"f1">> => 11})),
     ok.
 
 nullable_test() ->
-    Sc = #{ structs => [{f1, hoconsc:t(integer())},
+    Sc = #{ roots => [{f1, hoconsc:t(integer())},
                        {f2, hoconsc:t(string())},
                        {f3, hoconsc:t(integer(), #{default => 0})}
                       ]
@@ -408,7 +410,7 @@ nullable_test() ->
     ok.
 
 bad_root_test() ->
-    Sc = #{structs => ["ab"],
+    Sc = #{roots => ["ab"],
            fields => #{"ab" => [{f1, hoconsc:t(integer(), #{default => 888})}]}
           },
     Input1 = "ab=1",
@@ -426,16 +428,6 @@ bad_value_test() ->
                         Mapped
                     end).
 
-multiple_structs_test() ->
-    Sc = #{structs => [root],
-           fields => #{root => [{f1, hoconsc:t(integer())},
-                                {f2, hoconsc:t(string())}
-                               ]}
-          },
-    Data = #{<<"root">> => #{<<"f2">> => <<"string">>, <<"f1">> => 1}},
-    ?assertEqual(#{<<"root">> => #{<<"f2">> => "string", <<"f1">> => 1}},
-                 hocon_schema:check_plain(Sc, Data, #{nullable => false})).
-
 no_translation_test() ->
     ConfIn = "bar={field1=w}",
     {ok, M} = hocon:binary(ConfIn, #{format => richmap}),
@@ -443,14 +435,14 @@ no_translation_test() ->
     ?assertEqual(Mapped, hocon_schema:translate(?MODULE, Conf, Mapped)).
 
 no_translation2_test() ->
-    Sc = #{structs => [{f1, integer()}]
+    Sc = #{roots => [{f1, integer()}]
           },
     ?assertEqual([], hocon_schema:translate(Sc, #{}, [])).
 
 translation_crash_test() ->
-    Sc = #{structs => [{f1, hoconsc:t(integer())},
-                       {f2, hoconsc:t(string())}
-                      ],
+    Sc = #{roots => [{f1, hoconsc:t(integer())},
+                     {f2, hoconsc:t(string())}
+                    ],
            translations => #{"tr1" => [{"f3", fun(_Conf) -> error(always) end}]}
           },
     {ok, Data} = hocon:binary("f1=12,f2=foo", #{format => richmap}),
@@ -458,12 +450,12 @@ translation_crash_test() ->
     ?assertThrow({_, [{translation_error, #{reason := always, exception := error}}]},
                  hocon_schema:translate(Sc, Conf, Mapped)).
 
-%% a schema module may have multiple root names (which the structs/0 returns)
+%% a schema module may have multiple root names (which the roots/0 returns)
 %% map/2 checks maps all the roots
 %% map/3 allows to pass in the names as the thrid arg.
 %% this test is to cover map/3 API
 map_just_one_root_test() ->
-    Sc = #{structs => [root],
+    Sc = #{roots => [root],
            fields => #{root => [{f1, hoconsc:t(integer())},
                                 {f2, hoconsc:t(string())}
                                ]}
@@ -474,10 +466,10 @@ map_just_one_root_test() ->
                  hocon_schema:richmap_to_map(NewData)).
 
 validation_error_if_not_nullable_test() ->
-  Sc = #{structs => [root],
-           fields => #{root => [{f1, hoconsc:t(integer())},
-                                {f2, hoconsc:t(string())}
-                               ]}
+  Sc = #{roots => [root],
+         fields => #{root => [{f1, hoconsc:t(integer())},
+                              {f2, hoconsc:t(string())}
+                             ]}
         },
     Data = #{},
     ?VALIDATION_ERR(#{reason := not_nullable},
@@ -491,28 +483,28 @@ unknown_fields_test_() ->
                          }, hocon_schema:map(demo_schema, M, all)).
 
 nullable_field_test() ->
-    Sc = #{structs => [{f1, hoconsc:t(integer(), #{nullable => false})}]
+    Sc = #{roots => [{f1, hoconsc:t(integer(), #{nullable => false})}]
           },
     ?VALIDATION_ERR(#{reason := not_nullable, path := "f1"},
                     hocon_schema:check_plain(Sc, #{})),
     ok.
 
 bad_input_test() ->
-    Sc = #{structs => [{f1, integer()}]
+    Sc = #{roots => [{f1, integer()}]
           },
     %% NOTE: this is not a valid richmap, intended to test a crash
     BadInput = #{?HOCON_V => #{<<"f1">> => 1}},
     ?assertError({bad_richmap, 1}, hocon_schema:map(Sc, BadInput)).
 
 not_array_test() ->
-    Sc = #{structs => [{f1, hoconsc:array(integer())}]
+    Sc = #{roots => [{f1, hoconsc:array(integer())}]
           },
     BadInput = #{<<"f1">> => 1},
     ?VALIDATION_ERR(#{reason := not_array},
                     hocon_schema:check_plain(Sc, BadInput)).
 
 converter_test() ->
-    Sc = #{structs => [{f1, hoconsc:t(integer(),
+    Sc = #{roots => [{f1, hoconsc:t(integer(),
                                       #{converter => fun(<<"one">>) -> 1 end})}]
           },
     Input = #{<<"f1">> => <<"one">>},
@@ -522,14 +514,14 @@ converter_test() ->
                     hocon_schema:check_plain(Sc, BadIn)).
 
 no_dot_in_root_name_test() ->
-    Sc = #{structs => ["a.b"],
+    Sc = #{roots => ["a.b"],
            fields => [{f1, hoconsc:t(integer())}]
           },
     ?assertError({bad_root_name, _, "a.b"},
                 hocon_schema:check(Sc, #{<<"whateverbi">> => 1})).
 
-union_of_structs_test() ->
-    Sc = #{structs => [{f1, hoconsc:union([dummy, "m1", "m2"])}],
+union_of_roots_test() ->
+    Sc = #{roots => [{f1, hoconsc:union([dummy, "m1", "m2"])}],
            fields => #{"m1" => [{m1, integer()}],
                        "m2" => [{m2, integer()}]
                       }
@@ -544,7 +536,7 @@ union_of_structs_test() ->
     ok.
 
 multiple_errors_test() ->
-    Sc = #{structs => [{m1, integer()}, {m2, integer()}]},
+    Sc = #{roots => [{m1, integer()}, {m2, integer()}]},
     ?assertThrow({_, [{validation_error, #{path := "m1"}},
                       {validation_error, #{path := "m2"}}]},
                  check_return_atom_keys(Sc, "m1=a,m2=b")),
@@ -560,10 +552,10 @@ resolve_struct_name_test() ->
                  hocon_schema:resolve_struct_name(demo_schema, "noexist")).
 
 sensitive_data_obfuscation_test() ->
-    Sc = #{structs => [{secret, hoconsc:t(string(),
-                                          #{sensitive => true,
-                                            override_env => "OBFUSCATION_TEST"
-                                           })}]},
+    Sc = #{roots => [{secret, hoconsc:t(string(),
+                                        #{sensitive => true,
+                                          override_env => "OBFUSCATION_TEST"
+                                         })}]},
     Self = self(),
     with_envs(
       fun() ->
@@ -578,7 +570,7 @@ sensitive_data_obfuscation_test() ->
     ok.
 
 remote_ref_test() ->
-    Sc = #{structs => [root],
+    Sc = #{roots => [root],
            fields => #{root => [{f1, hoconsc:ref(?MODULE, bar)}
                                ]}
           },
@@ -595,7 +587,7 @@ local_ref_test() ->
     ok.
 
 integrity_check_test() ->
-    Sc = #{structs => [root],
+    Sc = #{roots => [root],
            fields => #{root => [{f1, integer()},
                                 {f2, integer()}
                                ]},
@@ -618,7 +610,7 @@ integrity_check_test() ->
     ok.
 
 integrity_crash_test() ->
-    Sc = #{structs => [root],
+    Sc = #{roots => [root],
            fields => #{root => [{f1, integer()}]},
            validations => [{"always-crash", fun(_) -> error(always) end}]
           },
@@ -634,9 +626,9 @@ check_plain_bin(Sc, Data, Opts) ->
     hocon_schema:check_plain(Sc, Conf, Opts).
 
 default_value_for_array_field_test() ->
-    Sc = #{structs => [ {k, hoconsc:t(hoconsc:array(string()), #{default => [<<"a">>, <<"b">>]})}
-                      , {x, string()}
-                      ]
+    Sc = #{roots => [ {k, hoconsc:t(hoconsc:array(string()), #{default => [<<"a">>, <<"b">>]})}
+                    , {x, string()}
+                    ]
           },
     Conf = "x = y",
     {ok, RichMap} = hocon:binary(Conf, #{format => richmap}),
@@ -644,7 +636,7 @@ default_value_for_array_field_test() ->
        hocon_schema:check(Sc, RichMap))).
 
 default_value_map_field_test() ->
-    Sc = #{structs => [ {k, #{type => hoconsc:ref(sub),
+    Sc = #{roots => [ {k, #{type => hoconsc:ref(sub),
                               default => #{<<"a">> => <<"foo">>,
                                            <<"b">> => <<"bar">>}}}
                       , {x, string()}
@@ -659,7 +651,7 @@ default_value_map_field_test() ->
                  hocon_schema:richmap_to_map(hocon_schema:check(Sc, RichMap))).
 
 default_value_for_null_enclosing_struct_test() ->
-    Sc = #{structs => [ {"l1", #{type => hoconsc:ref("l2")}} ],
+    Sc = #{roots => [ {"l1", #{type => hoconsc:ref("l2")}} ],
            fields => #{"l2" => [{"l2", #{type => integer(), default => 22}},
                                 {"l3", #{type => integer()}}
                                ]
@@ -673,7 +665,7 @@ default_value_for_null_enclosing_struct_test() ->
                  hocon_schema:check(Sc, RichMap, #{nullable => true, return_plain => true})).
 
 fill_defaults_test() ->
-    Sc = #{structs => ["a"],
+    Sc = #{roots => ["a"],
            fields => #{"a" =>
                [ {b, hoconsc:t(integer(), #{default => 888})}
                , {c, hoconsc:t(integer(), #{
@@ -688,7 +680,7 @@ fill_defaults_test() ->
     ok.
 
 root_array_test_() ->
-    Sc = #{structs => [{foo, hoconsc:array(hoconsc:ref(foo))}],
+    Sc = #{roots => [{foo, hoconsc:array(hoconsc:ref(foo))}],
            fields => #{foo => [ {"kling", hoconsc:t(integer())},
                                 {"klang", hoconsc:t(integer())}
                               ]
@@ -723,7 +715,7 @@ root_array_test_() ->
     ].
 
 % root_array_env_override_test() ->
-%     Sc = #{structs => [{array, foo}],
+%     Sc = #{roots => [{array, foo}],
 %            fields => #{foo => [ {"kling", hoconsc:t(integer())},
 %                                 {"klang", hoconsc:t(integer())}
 %                               ]
@@ -744,10 +736,10 @@ root_array_test_() ->
 %            ]).
 
 ref_nullable_test() ->
-    Sc = #{structs => [ {k, #{type => hoconsc:ref(sub),
+    Sc = #{roots => [ {k, #{type => hoconsc:ref(sub),
                               nullable => {true, recursively}}}
-                      , {x, string()}
-                      ],
+                    , {x, string()}
+                    ],
            fields =>  #{sub => [{a, string()}, {b, string()}]}
           },
     Conf = "x = y",
@@ -756,16 +748,16 @@ ref_nullable_test() ->
                  hocon_schema:richmap_to_map(hocon_schema:check(Sc, RichMap))).
 
 lazy_test() ->
-    Sc = #{structs => [ {k, #{type => hoconsc:lazy(integer())}}
-                      , {x, string()}
-                      ]},
+    Sc = #{roots => [ {k, #{type => hoconsc:lazy(integer())}}
+                    , {x, string()}
+                    ]},
     Conf = "x = y, k=whatever",
     {ok, RichMap} = hocon:binary(Conf, #{format => richmap}),
     ?assertEqual(#{<<"x">> => "y", <<"k">> => <<"whatever">>},
                  hocon_schema:richmap_to_map(hocon_schema:check(Sc, RichMap))).
 
 lazy_root_test() ->
-    Sc = #{structs => [{foo, hoconsc:lazy(hoconsc:ref(foo))}],
+    Sc = #{roots => [{foo, hoconsc:lazy(hoconsc:ref(foo))}],
            fields => #{foo => [ {k, #{type => integer()}}
                               , {x, string()}
                               ]
@@ -777,7 +769,7 @@ lazy_root_test() ->
                  hocon_schema:richmap_to_map(hocon_schema:check(Sc, RichMap))).
 
 lazy_root_env_override_test() ->
-    Sc = #{structs => [{foo, hoconsc:lazy(hoconsc:ref(bar))}],
+    Sc = #{roots => [{foo, hoconsc:lazy(hoconsc:ref(bar))}],
            fields => #{bar => [ {"kling", hoconsc:t(integer())},
                                 {"klang", hoconsc:t(integer())}
                               ]

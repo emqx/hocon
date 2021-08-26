@@ -17,7 +17,7 @@
 -module(hocon_schema).
 
 %% behaviour APIs
--export([ structs/1
+-export([ roots/1
         , fields/2
         , translations/1
         , translation/2
@@ -79,7 +79,7 @@
 -type validation() :: {name(), validationfun()}.
 -type root_type() :: name() | field().
 -type schema() :: module()
-                | #{ structs := [root_type()]
+                | #{ roots := [root_type()]
                    , fileds := #{name() => [field()]}
                    , translations => #{name() => [translation()]} %% for config mappings
                    , validations => [validation()] %% for config integrity checks
@@ -106,13 +106,14 @@
                  }.
 
 
--callback structs() -> [root_type()].
+-callback structs() -> [root_type()]. %% deprecated
+-callback roots() -> [root_type()].
 -callback fields(name()) -> [field()].
 -callback translations() -> [name()].
 -callback translation(name()) -> [translation()].
 -callback validations() -> [validation()].
 
--optional_callbacks([translations/0, translation/1, validations/0]).
+-optional_callbacks([roots/0, translations/0, translation/1, validations/0]).
 
 -define(ERR(Code, Context), {Code, Context}).
 -define(ERRS(Code, Context), [?ERR(Code, Context)]).
@@ -125,15 +126,18 @@
 -define(NULL_BOX, #{?METADATA => #{made_for => null_value}}).
 
 %% behaviour APIs
--spec structs(schema()) -> #{name() => {name(), field_schema()}}.
-structs(Schema) ->
+-spec roots(schema()) -> #{name() => {name(), field_schema()}}.
+roots(Schema) ->
     maps:from_list(
       lists:map(fun({N, T}) -> {bin(N), {N, T}};
                    (N) -> {bin(N), {N, ?REF(N)}}
-                end, do_structs(Schema))).
+                end, do_roots(Schema))).
 
-do_structs(Mod) when is_atom(Mod) -> Mod:structs();
-do_structs(#{structs := Names}) -> Names.
+do_roots(Mod) when is_atom(Mod) ->
+    try Mod:roots()
+    catch error : undef -> Mod:structs()
+    end;
+do_roots(#{roots := Names}) -> Names.
 
 -spec fields(schema(), name()) -> [field()].
 fields(Mod, Name) when is_atom(Mod) -> Mod:fields(Name);
@@ -162,7 +166,7 @@ validations(Sc) -> maps:get(validations, Sc, []).
 
 %% @doc Resolve struct name from a guess.
 resolve_struct_name(Schema, StructName) ->
-    case maps:find(bin(StructName), structs(Schema)) of
+    case maps:find(bin(StructName), roots(Schema)) of
         {ok, {N, _Sc}} -> N;
         error -> throw({unknown_struct_name, Schema, StructName})
     end.
@@ -307,7 +311,7 @@ maybe_convert_to_plain_map(Conf, _Opts) ->
 
 -spec map(schema(), hocon:config()) -> {[proplists:property()], hocon:config()}.
 map(Schema, Conf) ->
-    Roots = maps:keys(structs(Schema)),
+    Roots = maps:keys(roots(Schema)),
     map(Schema, Conf, Roots, #{}).
 
 -spec map(schema(), hocon:config(), all | [name()]) ->
@@ -318,10 +322,10 @@ map(Schema, Conf, RootNames) ->
 -spec map(schema(), hocon:config(), all | [name()], opts()) ->
         {[proplists:property()], hocon:config()}.
 map(Schema, Conf, all, Opts) ->
-    map(Schema, Conf, maps:keys(structs(Schema)), Opts);
+    map(Schema, Conf, maps:keys(roots(Schema)), Opts);
 map(Schema, Conf0, Roots0, Opts0) ->
     Opts = maps:merge(#{schema => Schema, format => richmap}, Opts0),
-    Roots = resolve_root_types(structs(Schema), Roots0),
+    Roots = resolve_root_types(roots(Schema), Roots0),
     %% assert
     lists:foreach(fun({RootName, _RootSc}) ->
                           ok = assert_no_dot(Schema, RootName)
@@ -358,7 +362,7 @@ resolve_root_types(Roots, [Name | Rest]) ->
         {ok, {N, Sc}} ->
             [{N, Sc} | resolve_root_types(Roots, Rest)];
         error ->
-            %% maybe a private struct which is not exposed in structs/0
+            %% maybe a private struct which is not exposed in roots/0
             [{Name, hoconsc:ref(Name)} | resolve_root_types(Roots, Rest)]
     end.
 
@@ -368,7 +372,7 @@ resolve_root_types(Roots, [Name | Rest]) ->
 %%
 %% e.g. if a root name is 'a.b.c', the schema is only defined
 %% for data below `c` level.
-%% `a` and `b` are implicitly single-filed structs.
+%% `a` and `b` are implicitly single-filed roots.
 %%
 %% In this case if a non map value is assigned, such as `a.b=1`,
 %% the check code will crash rather than reporting a useful error reason.
