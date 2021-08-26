@@ -526,7 +526,7 @@ no_dot_in_root_name_test() ->
            fields => [{f1, hoconsc:t(integer())}]
           },
     ?assertError({bad_root_name, _, "a.b"},
-                hocon_schema:check(Sc, #{<<"a">> => 1})).
+                hocon_schema:check(Sc, #{<<"whateverbi">> => 1})).
 
 union_of_structs_test() ->
     Sc = #{structs => [{f1, hoconsc:union([dummy, "m1", "m2"])}],
@@ -579,7 +579,7 @@ sensitive_data_obfuscation_test() ->
 
 remote_ref_test() ->
     Sc = #{structs => [root],
-           fields => #{root => [{f1, hoconsc:t(hoconsc:ref(?MODULE, bar))}
+           fields => #{root => [{f1, hoconsc:ref(?MODULE, bar)}
                                ]}
           },
     {ok, Data} = hocon:binary("root={f1={field1=foo}}", #{}),
@@ -755,42 +755,45 @@ ref_nullable_test() ->
     ?assertEqual(#{<<"x">> => "y"},
                  hocon_schema:richmap_to_map(hocon_schema:check(Sc, RichMap))).
 
-% lazy_test() ->
-%     Sc = #{structs => [ {k, #{type => hoconsc:lazy(integer())}}
-%                       , {x, string()}
-%                       ]},
-%     Conf = "x = y, k=whatever",
-%     {ok, RichMap} = hocon:binary(Conf, #{format => richmap}),
-%     ?assertEqual(#{<<"x">> => "y", <<"k">> => <<"whatever">>},
-%                  hocon_schema:richmap_to_map(hocon_schema:check(Sc, RichMap))).
+lazy_test() ->
+    Sc = #{structs => [ {k, #{type => hoconsc:lazy(integer())}}
+                      , {x, string()}
+                      ]},
+    Conf = "x = y, k=whatever",
+    {ok, RichMap} = hocon:binary(Conf, #{format => richmap}),
+    ?assertEqual(#{<<"x">> => "y", <<"k">> => <<"whatever">>},
+                 hocon_schema:richmap_to_map(hocon_schema:check(Sc, RichMap))).
 
-% lazy_root_test() ->
-%     Sc = #{structs => [hoconsc:lazy("foo")],
-%            fields => #{"foo" => [ {k, #{type => integer()}}
-%                                 , {x, string()}
-%                                 ]
-%                       }
-%           },
-%     Conf = "x = y, k=whatever",
-%     {ok, RichMap} = hocon:binary(Conf, #{format => richmap}),
-%     ?assertEqual(#{<<"x">> => <<"y">>, <<"k">> => <<"whatever">>},
-%                  hocon_schema:richmap_to_map(hocon_schema:check(Sc, RichMap))).
+lazy_root_test() ->
+    Sc = #{structs => [{foo, hoconsc:lazy(hoconsc:ref(foo))}],
+           fields => #{foo => [ {k, #{type => integer()}}
+                              , {x, string()}
+                              ]
+                      }
+          },
+    Conf = "foo = {x = y, k=whatever}",
+    {ok, RichMap} = hocon:binary(Conf, #{format => richmap}),
+    ?assertEqual(#{<<"foo">> => #{<<"x">> => <<"y">>, <<"k">> => <<"whatever">>}},
+                 hocon_schema:richmap_to_map(hocon_schema:check(Sc, RichMap))).
 
-% lazy_root_env_override_test() ->
-%     Sc = #{structs => [hoconsc:lazy(foo)],
-%            fields => #{foo => [ {"kling", hoconsc:t(integer())},
-%                                 {"klang", hoconsc:t(integer())}
-%                               ]
-%                       }
-%           },
-%     with_envs(
-%       fun() ->
-%               Conf = "foo = {kling = 1}",
-%               {ok, PlainMap} = hocon:binary(Conf, #{}),
-%               Opts = #{format => map, nullable => true},
-%               ?assertEqual(#{<<"foo">> => #{<<"kling">> => 1}},
-%                            hocon_schema:check(Sc, PlainMap, Opts))
-%       end, [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"},
-%             {"EMQX_FOO__KLING", "111"},
-%             {"EMQX_FOO__KLANG", "222"}
-%            ]).
+lazy_root_env_override_test() ->
+    Sc = #{structs => [{foo, hoconsc:lazy(hoconsc:ref(bar))}],
+           fields => #{bar => [ {"kling", hoconsc:t(integer())},
+                                {"klang", hoconsc:t(integer())}
+                              ]
+                      }
+          },
+    with_envs(
+      fun() ->
+              Conf = "foo = {kling = 1}",
+              {ok, PlainMap} = hocon:binary(Conf, #{}),
+              Opts = #{format => map, nullable => true},
+              ?assertEqual(#{<<"foo">> => #{<<"kling">> => 1}},
+                           hocon_schema:check(Sc, PlainMap, Opts)),
+              ?assertEqual(#{<<"foo">> => #{<<"kling">> => 111,
+                                            <<"klang">> => 222}},
+                           hocon_schema:check(Sc, PlainMap, Opts#{check_lazy => true}))
+      end, [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"},
+            {"EMQX_FOO__KLING", "111"},
+            {"EMQX_FOO__KLANG", "222"}
+           ]).

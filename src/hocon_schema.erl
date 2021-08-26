@@ -102,6 +102,7 @@
                  , format => map | richmap
                  , stack => [name()]
                  , schema => schema()
+                 , check_lazy => boolean()
                  }.
 
 
@@ -321,16 +322,35 @@ map(Schema, Conf, all, Opts) ->
 map(Schema, Conf0, Roots0, Opts0) ->
     Opts = maps:merge(#{schema => Schema, format => richmap}, Opts0),
     Roots = resolve_root_types(structs(Schema), Roots0),
+    %% assert
+    lists:foreach(fun({RootName, _RootSc}) ->
+                          ok = assert_no_dot(Schema, RootName)
+                  end, Roots),
+    Conf1 = filter_by_roots(Opts, Conf0, Roots),
     {EnvNamespace, Envs} = collect_envs(Opts0),
-    F = fun ({RootName, _RootSc}, ConfAcc0) ->
-                ok = assert_no_dot(Schema, RootName),
-                apply_env(EnvNamespace, Envs, RootName, ConfAcc0, Opts)
-        end,
-    Conf = lists:foldl(F, Conf0, Roots),
+    Conf = apply_envs(EnvNamespace, Envs, Opts, Roots, Conf1),
     {Mapped, NewConf} = do_map(Roots, Conf, Opts, root),
     ok = assert_no_error(Schema, Mapped),
     ok = assert_integrity(Schema, NewConf, Opts),
     {Mapped, maybe_convert_to_plain_map(NewConf, Opts)}.
+
+apply_envs(_EnvNamespace, _Envs, _Opts, [], Conf) -> Conf;
+apply_envs(EnvNamespace, Envs, Opts, [{RootName, RootSc} | Roots], Conf) ->
+    ShouldApply =
+        case field_schema(RootSc, type) of
+            ?LAZY(_) -> maps:get(check_lazy, Opts, false);
+            _ -> true
+        end,
+    NewConf = case ShouldApply of
+                  true -> apply_env(EnvNamespace, Envs, RootName, Conf, Opts);
+                  false -> Conf
+                end,
+    apply_envs(EnvNamespace, Envs, Opts, Roots, NewConf).
+
+%% silently drop unknown data (root level only)
+filter_by_roots(Opts, Conf, Roots) ->
+    Names = lists:map(fun({N, _}) -> bin(N) end, Roots),
+    boxit(Opts, maps:with(Names, unbox(Opts, Conf)), Conf).
 
 resolve_root_types(_Roots, []) -> [];
 resolve_root_types(Roots, [Name | Rest]) ->
@@ -477,8 +497,11 @@ map_field(?ARRAY(Type), _FieldSchema, Value0, Opts) ->
         false ->
             {validation_errs(Opts, not_array, Value0), Value0}
     end;
-map_field(?LAZY(_HintType), _Schema, Value, _Opts) ->
-    {[], Value};
+map_field(?LAZY(Type), Schema, Value, Opts) ->
+    case maps:get(check_lazy, Opts, false) of
+        true -> map_field(Type, Schema, Value, Opts);
+        false -> {[], Value}
+    end;
 map_field(Type, Schema, Value0, Opts) ->
     %% primitive type
     Value = unbox(Opts, Value0),
@@ -544,8 +567,6 @@ is_known_field(Opts, Name, Value, ExpectedNames) ->
 is_known_name(Name, ExpectedNames) ->
     lists:any(fun(N) -> N =:= bin(Name) end, ExpectedNames).
 
-is_nullable(Opts, root) ->
-    maps:get(nullable, Opts, ?DEFAULT_NULLABLE);
 is_nullable(Opts, Schema) ->
     case field_schema(Schema, nullable) of
         undefined -> maps:get(nullable, Opts, ?DEFAULT_NULLABLE);
@@ -554,6 +575,8 @@ is_nullable(Opts, Schema) ->
 
 field_schema(Type, SchemaKey) when ?IS_TYPEREFL(Type) ->
     field_schema(hoconsc:t(Type), SchemaKey);
+field_schema(?LAZY(_) = Lazy, SchemaKey) ->
+    field_schema(hoconsc:t(Lazy), SchemaKey);
 field_schema(?REF(_) = Ref, SchemaKey) ->
     field_schema(hoconsc:t(Ref), SchemaKey);
 field_schema(?R_REF(_, _) = Ref, SchemaKey) ->
@@ -580,8 +603,7 @@ push_stack(X, New) ->
     X#{stack => [New]}.
 
 %% get type validation stack.
-path(#{stack := Stack}) -> string:join(lists:reverse(lists:map(fun str/1, Stack)), ".");
-path(_) -> "".
+path(#{stack := Stack}) -> string:join(lists:reverse(lists:map(fun str/1, Stack)), ".").
 
 do_map_union([], _TypeCheck, PerTypeResult, Opts) ->
     validation_errs(Opts, #{reason => matched_no_union_member,
