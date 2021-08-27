@@ -4,9 +4,9 @@
 
 -behaviour(hocon_schema).
 
--export([roots/0, fields/1, translations/0, translation/1]).
+-export([structs/0, fields/1, translations/0, translation/1]).
 
-roots() -> ["auth"].
+structs() -> ["auth"].
 
 fields("auth") ->
     [ {"mnesia", emqx_schema:ref("mnesia")}

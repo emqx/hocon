@@ -10,11 +10,11 @@
 
 -reflect_type([duration/0]).
 
--export([roots/0, fields/1, translations/0, translation/1]).
+-export([structs/0, fields/1, translations/0, translation/1]).
 
 -define(FIELD(NAME, TYPE), hoconsc:t(TYPE, #{mapping => NAME})).
 
-roots() -> [foo, "a_b", "b", person, "vm"].
+structs() -> [foo, "a_b", "b", person, "vm"].
 translations() -> ["app_foo"].
 
 fields(foo) ->
