@@ -11,9 +11,9 @@
 
 -reflect_type([type/0, w_mode/0, r_mode/0]).
 
--export([structs/0, fields/1, translations/0, translation/1]).
+-export([roots/0, fields/1, translations/0, translation/1]).
 
-structs() -> ["auth"].
+roots() -> ["auth"].
 
 fields("auth") ->
     [ {"mongo", emqx_schema:ref("mongo")}];
