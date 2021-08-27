@@ -17,7 +17,7 @@
 -module(hocon_schema).
 
 %% behaviour APIs
--export([ structs/1
+-export([ roots/1
         , fields/2
         , translations/1
         , translation/2
@@ -29,7 +29,7 @@
 -export([generate/2, generate/3, map_translate/3]).
 -export([check/2, check/3, check_plain/2, check_plain/3, check_plain/4]).
 -export([richmap_to_map/1, get_value/2, get_value/3]).
--export([find_struct/2]).
+-export([resolve_struct_name/2]).
 
 -include("hoconsc.hrl").
 -include("hocon_private.hrl").
@@ -77,9 +77,9 @@
 -type field() :: {name(), typefunc() | field_schema()}.
 -type translation() :: {name(), translationfunc()}.
 -type validation() :: {name(), validationfun()}.
--type struct_type() :: name() | ?ARRAY(name()).
+-type root_type() :: name() | field().
 -type schema() :: module()
-                | #{ structs := [struct_type()]
+                | #{ roots := [root_type()]
                    , fileds := #{name() => [field()]}
                    , translations => #{name() => [translation()]} %% for config mappings
                    , validations => [validation()] %% for config integrity checks
@@ -102,17 +102,19 @@
                  , format => map | richmap
                  , stack => [name()]
                  , schema => schema()
+                 , check_lazy => boolean()
                  }.
 
--callback structs() -> [struct_type()].
+
+-callback structs() -> [root_type()]. %% deprecated
+-callback roots() -> [root_type()].
 -callback fields(name()) -> [field()].
 -callback translations() -> [name()].
 -callback translation(name()) -> [translation()].
 -callback validations() -> [validation()].
 
--optional_callbacks([translations/0, translation/1, validations/0]).
+-optional_callbacks([roots/0, translations/0, translation/1, validations/0]).
 
--define(VIRTUAL_ROOT, "").
 -define(ERR(Code, Context), {Code, Context}).
 -define(ERRS(Code, Context), [?ERR(Code, Context)]).
 -define(VALIDATION_ERRS(Context), ?ERRS(validation_error, Context)).
@@ -124,13 +126,21 @@
 -define(NULL_BOX, #{?METADATA => #{made_for => null_value}}).
 
 %% behaviour APIs
--spec structs(schema()) -> [name()].
-structs(Mod) when is_atom(Mod) -> Mod:structs();
-structs(#{structs := Names}) -> Names.
+-spec roots(schema()) -> #{name() => {name(), field_schema()}}.
+roots(Schema) ->
+    maps:from_list(
+      lists:map(fun({N, T}) -> {bin(N), {N, T}};
+                   (N) -> {bin(N), {N, ?REF(N)}}
+                end, do_roots(Schema))).
+
+do_roots(Mod) when is_atom(Mod) ->
+    try Mod:roots()
+    catch error : undef -> Mod:structs()
+    end;
+do_roots(#{roots := Names}) -> Names.
 
 -spec fields(schema(), name()) -> [field()].
 fields(Mod, Name) when is_atom(Mod) -> Mod:fields(Name);
-fields(#{fields := Fields}, ?VIRTUAL_ROOT) when is_list(Fields) -> Fields;
 fields(#{fields := Fields}, Name) -> maps:get(Name, Fields).
 
 -spec translations(schema()) -> [name()].
@@ -154,17 +164,11 @@ validations(Mod) when is_atom(Mod) ->
     end;
 validations(Sc) -> maps:get(validations, Sc, []).
 
-%% @doc Find struct name from a guess.
-find_struct(Schema, StructName) ->
-    Names = lists:filtermap(
-              fun(?ARRAY(N)) -> {true, {bin(N), ?ARRAY(N)}};
-                 (?LAZY(_N)) -> false;
-                 (N) -> {true, {bin(N), N}}
-              end,
-              structs(Schema)),
-   case lists:keyfind(bin(StructName), 1, Names) of
-        false -> throw({unknown_struct_name, Schema, StructName});
-        {_, N} -> N
+%% @doc Resolve struct name from a guess.
+resolve_struct_name(Schema, StructName) ->
+    case maps:find(bin(StructName), roots(Schema)) of
+        {ok, {N, _Sc}} -> N;
+        error -> throw({unknown_struct_name, Schema, StructName})
     end.
 
 %% @doc generates application env from a parsed .conf and a schema module.
@@ -307,8 +311,8 @@ maybe_convert_to_plain_map(Conf, _Opts) ->
 
 -spec map(schema(), hocon:config()) -> {[proplists:property()], hocon:config()}.
 map(Schema, Conf) ->
-    RootNames = structs(Schema),
-    map(Schema, Conf, RootNames, #{}).
+    Roots = maps:keys(roots(Schema)),
+    map(Schema, Conf, Roots, #{}).
 
 -spec map(schema(), hocon:config(), all | [name()]) ->
         {[proplists:property()], hocon:config()}.
@@ -318,80 +322,49 @@ map(Schema, Conf, RootNames) ->
 -spec map(schema(), hocon:config(), all | [name()], opts()) ->
         {[proplists:property()], hocon:config()}.
 map(Schema, Conf, all, Opts) ->
-    map(Schema, Conf, structs(Schema), Opts);
-map(Schema, Conf, RootNames, Opts0) ->
-    Opts = maps:merge(#{schema => Schema,
-                        format => richmap
-                        }, Opts0),
+    map(Schema, Conf, maps:keys(roots(Schema)), Opts);
+map(Schema, Conf0, Roots0, Opts0) ->
+    Opts = maps:merge(#{schema => Schema, format => richmap}, Opts0),
+    Roots = resolve_root_types(roots(Schema), Roots0),
+    %% assert
+    lists:foreach(fun({RootName, _RootSc}) ->
+                          ok = assert_no_dot(Schema, RootName)
+                  end, Roots),
+    Conf1 = filter_by_roots(Opts, Conf0, Roots),
     {EnvNamespace, Envs} = collect_envs(Opts0),
-    F = fun (RootName, {MappedAcc, ConfAcc0}) ->
-                ok = assert_no_dot(Schema, RootName),
-                ConfAcc1 = ensure_indexed_map(Opts, RootName, ConfAcc0),
-                ConfAcc2 = apply_env(EnvNamespace, Envs, RootName, ConfAcc1, Opts),
-                {Mapped, ConfAcc} = map_per_root(Schema, RootName, ConfAcc2, Opts),
-                {lists:append(MappedAcc, Mapped), ConfAcc}
-        end,
-    {Mapped, NewConf} = lists:foldl(F, {[], Conf}, RootNames),
+    Conf = apply_envs(EnvNamespace, Envs, Opts, Roots, Conf1),
+    {Mapped, NewConf} = do_map(Roots, Conf, Opts, root),
     ok = assert_no_error(Schema, Mapped),
     ok = assert_integrity(Schema, NewConf, Opts),
     {Mapped, maybe_convert_to_plain_map(NewConf, Opts)}.
 
-%% ensure indexed root values are converted from an array (list) to a map
-%% e.g. [#{a => b}, #{a => c}] is turned into
-%% #{<<"1">> => #{a => b}, <<"2">> => #{a => c}}
-%% this is to make environment variable overrides work for arrays
-ensure_indexed_map(Opts, ?ARRAY(RootName), Conf) ->
-    RootValues0 = get_field(Opts, RootName, Conf),
-    RootValues = case RootValues0 =:= undefined of
-                     true ->
-                         [];
-                     false ->
-                         %% assert
-                         RootValues1 = unbox(Opts, RootValues0),
-                         is_list(RootValues1) orelse error({not_a_list, RootName}),
-                         RootValues1
-                 end,
-    {_, RootValuesMap} =
-        lists:foldl(
-            fun(Item, {Index, Map}) ->
-                NewMap = put_value(Opts, integer_to_binary(Index), unbox(Opts, Item), Map),
-                {Index + 1, NewMap}
-            end, {1, boxit(Opts, #{}, undefined)}, RootValues),
-    put_value(Opts, RootName, unbox(Opts, RootValuesMap), Conf);
-ensure_indexed_map(_Opts, _RootName, Conf) ->
-    Conf.
-
-map_per_root(_Schema, ?LAZY(_RootName), Conf, _Opts) ->
-    {[], Conf};
-map_per_root(Schema, ?ARRAY(RootName), Conf0, Opts) ->
-    RootValues0 = get_field(Opts, RootName, Conf0),
-    RootValues1 = lists:keysort(1, maps:to_list(unbox(Opts, RootValues0))),
-    RootValues =
-        lists:foldl(
-            fun({_, RootValue}, Acc) ->
-                    {Mapped, Value} =
-                        map_per_root_value(Schema, RootName, RootValue, RootValue, Opts),
-                    %% there is no way to support mapping for indexed roots
-                    [] = Mapped, %% assert
-                    [get_value(RootName, Value) | Acc]
-            end, [], RootValues1),
-    Conf = put_value(Opts, RootName, lists:reverse(RootValues), Conf0),
-    {[], Conf};
-map_per_root(Schema, RootName, Conf0, Opts) ->
-    RootValue = get_field(Opts, RootName, Conf0),
-    map_per_root_value(Schema, RootName, RootValue, Conf0, Opts).
-
-map_per_root_value(Schema, RootName, RootValue, Conf0, Opts) ->
-    {Mapped, NewRootValue} =
-        do_map(fields(Schema, RootName), RootValue,
-               Opts#{stack => [RootName || RootName =/= ?VIRTUAL_ROOT]},
-              root),
-    Conf =
-        case NewRootValue of
-            undefined -> Conf0;
-            _ -> put_value(Opts, RootName, unbox(Opts, NewRootValue), Conf0)
+apply_envs(_EnvNamespace, _Envs, _Opts, [], Conf) -> Conf;
+apply_envs(EnvNamespace, Envs, Opts, [{RootName, RootSc} | Roots], Conf) ->
+    ShouldApply =
+        case field_schema(RootSc, type) of
+            ?LAZY(_) -> maps:get(check_lazy, Opts, false);
+            _ -> true
         end,
-    {Mapped, Conf}.
+    NewConf = case ShouldApply of
+                  true -> apply_env(EnvNamespace, Envs, RootName, Conf, Opts);
+                  false -> Conf
+                end,
+    apply_envs(EnvNamespace, Envs, Opts, Roots, NewConf).
+
+%% silently drop unknown data (root level only)
+filter_by_roots(Opts, Conf, Roots) ->
+    Names = lists:map(fun({N, _}) -> bin(N) end, Roots),
+    boxit(Opts, maps:with(Names, unbox(Opts, Conf)), Conf).
+
+resolve_root_types(_Roots, []) -> [];
+resolve_root_types(Roots, [Name | Rest]) ->
+    case maps:find(bin(Name), Roots) of
+        {ok, {N, Sc}} ->
+            [{N, Sc} | resolve_root_types(Roots, Rest)];
+        error ->
+            %% maybe a private struct which is not exposed in roots/0
+            [{Name, hoconsc:ref(Name)} | resolve_root_types(Roots, Rest)]
+    end.
 
 %% Assert no dot in root struct name.
 %% This is because the dot will cause root name to be splited,
@@ -399,13 +372,10 @@ map_per_root_value(Schema, RootName, RootValue, Conf0, Opts) ->
 %%
 %% e.g. if a root name is 'a.b.c', the schema is only defined
 %% for data below `c` level.
-%% `a` and `b` are implicitly single-filed structs.
+%% `a` and `b` are implicitly single-filed roots.
 %%
 %% In this case if a non map value is assigned, such as `a.b=1`,
 %% the check code will crash rather than reporting a useful error reason.
-assert_no_dot(_, ?VIRTUAL_ROOT) -> ok;
-assert_no_dot(Schema, ?LAZY(Name)) -> assert_no_dot(Schema, Name);
-assert_no_dot(Schema, ?ARRAY(Name)) -> assert_no_dot(Schema, Name);
 assert_no_dot(Schema, RootName) ->
     case split(RootName) of
         [_] -> ok;
@@ -531,8 +501,11 @@ map_field(?ARRAY(Type), _FieldSchema, Value0, Opts) ->
         false ->
             {validation_errs(Opts, not_array, Value0), Value0}
     end;
-map_field(?LAZY(_HintType), _Schema, Value, _Opts) ->
-    {[], Value};
+map_field(?LAZY(Type), Schema, Value, Opts) ->
+    case maps:get(check_lazy, Opts, false) of
+        true -> map_field(Type, Schema, Value, Opts);
+        false -> {[], Value}
+    end;
 map_field(Type, Schema, Value0, Opts) ->
     %% primitive type
     Value = unbox(Opts, Value0),
@@ -598,8 +571,6 @@ is_known_field(Opts, Name, Value, ExpectedNames) ->
 is_known_name(Name, ExpectedNames) ->
     lists:any(fun(N) -> N =:= bin(Name) end, ExpectedNames).
 
-is_nullable(Opts, root) ->
-    maps:get(nullable, Opts, ?DEFAULT_NULLABLE);
 is_nullable(Opts, Schema) ->
     case field_schema(Schema, nullable) of
         undefined -> maps:get(nullable, Opts, ?DEFAULT_NULLABLE);
@@ -608,6 +579,12 @@ is_nullable(Opts, Schema) ->
 
 field_schema(Type, SchemaKey) when ?IS_TYPEREFL(Type) ->
     field_schema(hoconsc:t(Type), SchemaKey);
+field_schema(?LAZY(_) = Lazy, SchemaKey) ->
+    field_schema(hoconsc:t(Lazy), SchemaKey);
+field_schema(?REF(_) = Ref, SchemaKey) ->
+    field_schema(hoconsc:t(Ref), SchemaKey);
+field_schema(?R_REF(_, _) = Ref, SchemaKey) ->
+    field_schema(hoconsc:t(Ref), SchemaKey);
 field_schema(?ARRAY(_) = Array, SchemaKey) ->
     field_schema(hoconsc:t(Array), SchemaKey);
 field_schema(?UNION(_) = Union, SchemaKey) ->
@@ -620,12 +597,14 @@ field_schema(FieldSchema, SchemaKey) when is_map(FieldSchema) ->
     maps:get(SchemaKey, FieldSchema, undefined).
 
 maybe_mapping(undefined, _) -> []; % no mapping defined for this field
-maybe_mapping(_, undefined) -> []; % no value retrieved fro this field
+maybe_mapping(_, undefined) -> []; % no value retrieved for this field
 maybe_mapping(MappedPath, PlainValue) ->
     [{string:tokens(MappedPath, "."), PlainValue}].
 
 push_stack(#{stack := Stack} = X, New) ->
-    X#{stack := [New | Stack]}.
+    X#{stack := [New | Stack]};
+push_stack(X, New) ->
+    X#{stack => [New]}.
 
 %% get type validation stack.
 path(#{stack := Stack}) -> string:join(lists:reverse(lists:map(fun str/1, Stack)), ".").
@@ -717,18 +696,12 @@ read_informal_hocon_val(Value, Opts) ->
             Value
     end.
 
-apply_env(_Ns, _Vars, ?LAZY(_RootName), Conf, _Opts) ->
-    %% skip lazy
-    Conf;
-apply_env(Ns, Vars, ?ARRAY(RootName), Conf, Opts) ->
-    apply_env(Ns, Vars, RootName, Conf, Opts);
 apply_env(_Ns, [], _RootName, Conf, _Opts) -> Conf;
 apply_env(Ns, [{VarName, V} | More], RootName, Conf, Opts) ->
     K = string:prefix(VarName, Ns),
     Path0 = string:split(string:lowercase(K), "__", all),
     Path1 = lists:filter(fun(N) -> N =/= [] end, Path0),
-    NewConf = case RootName =:= ?VIRTUAL_ROOT orelse
-                   (Path1 =/= [] andalso bin(RootName) =:= bin(hd(Path1))) of
+    NewConf = case Path1 =/= [] andalso bin(RootName) =:= bin(hd(Path1)) of
                   true ->
                       Path = string:join(Path1, "."),
                       %% It lacks schema info here, so we need to tag the value '$FROM_ENV_VAR'
@@ -799,7 +772,6 @@ mkrich(Map, Box) when is_map(Map) ->
 mkrich(Val, Box) ->
     boxit(Val, Box).
 
-get_field(_Opts, ?VIRTUAL_ROOT, Value) -> Value;
 get_field(#{format := richmap}, Path, Conf) -> deep_get(Path, Conf);
 get_field(#{format := map}, Path, Conf) -> get_value(Path, Conf).
 
