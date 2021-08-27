@@ -9,9 +9,9 @@
 
 -reflect_type([endpoint/0, verify/0]).
 
--export([structs/0, fields/1, translations/0, translation/1]).
+-export([roots/0, fields/1, translations/0, translation/1]).
 
-structs() -> ["management"].
+roots() -> ["management"].
 
 fields("management") ->
     [ {"max_row_limit", emqx_schema:t(integer(), "emqx_management.max_row_limit", 10000)}

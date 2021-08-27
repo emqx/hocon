@@ -33,14 +33,14 @@
                 bytesize/0, percent/0, file/0,
                 comma_separated_list/0, bar_separated_list/0, ip_port/0]).
 
--export([structs/0, fields/1, translations/0, translation/1]).
+-export([roots/0, fields/1, translations/0, translation/1]).
 -export([t/1, t/3, t/4, ref/1]).
 -export([conf_get/2, conf_get/3, keys/2, filter/1]).
 -export([ssl/2, tr_ssl/2, tr_password_hash/2]).
 
-structs() -> ["cluster", "node", "rpc", "log", "lager",
-              "acl", "mqtt", "zone", "listener", "module", "broker",
-              "plugins", "sysmon", "os_mon", "vm_mon", "alarm", "telemetry"].
+roots() -> ["cluster", "node", "rpc", "log", "lager",
+             "acl", "mqtt", "zone", "listener", "module", "broker",
+             "plugins", "sysmon", "os_mon", "vm_mon", "alarm", "telemetry"].
 
 fields("cluster") ->
     [ {"name", t(atom(), "ekka.cluster_name", emqxcl)}

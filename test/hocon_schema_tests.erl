@@ -19,8 +19,6 @@
 -include_lib("eunit/include/eunit.hrl").
 -include("hocon_private.hrl").
 
--behaviour(hocon_schema).
-
 -export([structs/0, fields/1, validations/0]).
 
 -define(GEN_VALIDATION_ERR(Reason, Expr),
@@ -28,10 +26,7 @@
 -define(VALIDATION_ERR(Reason, Expr),
         ?assertThrow({_, [{validation_error, Reason}]}, Expr)).
 
-structs() -> roots().
-
-%% root names
-roots() -> [bar].
+structs() -> [bar].
 
 fields(bar) ->
     [ {union_with_default, fun union_with_default/1}

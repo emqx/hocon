@@ -4,9 +4,9 @@
 
 -behaviour(hocon_schema).
 
--export([structs/0, fields/1]).
+-export([roots/0, fields/1]).
 
-structs() ->
+roots() ->
     [ {foo, hoconsc:array(hoconsc:ref(foo))}
     , {"kek", hoconsc:lazy(hoconsc:union([bar, "kak"]))}
     ].

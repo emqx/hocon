@@ -27,7 +27,7 @@
 %% @doc convert cuttlefish schema file to hocon schema module.
 %% While `mapping` is automatically generated,
 %% you have to manually add translations and validators.
-%% You also need to set your `structs/0, fields/1` to describe the structure.
+%% You also need to set your `roots/0, fields/1` to describe the structure.
 -spec convert([string()], string()) -> ok.
 convert(SchemaFile, Output) when is_list(SchemaFile) ->
     file:write_file(Output, do_convert(cuttlefish_schema:files([SchemaFile]), Output)).
@@ -42,7 +42,7 @@ do_convert({_Translations, Mappings, _Validators}, Output) ->
     Behaviour = "-behaviour(hocon_schema).\n\n",
     ReflectType = io_lib:format("-reflect_type([~s]).\n\n",
         [string:join([string:replace(T, "()", "/0") || T <- maps:keys(AddedTypes)], ", ")]),
-    Export = "-export([structs/0, fields/1, translations/0, translation/1]).\n\n",
+    Export = "-export([roots/0, fields/1, translations/0, translation/1]).\n\n",
     lists:flatten([ModuleErl, TypesErl, Behaviour, ReflectType, Export, MappingErl]).
 
 -spec convert_mapping([cuttlefish_mapping:mapping()]) -> {map(), string()}.
@@ -157,7 +157,7 @@ basic_test() ->
     ConfFile = "etc/cuttlefish-1.conf",
     Dest = "generated/my_module.erl",
     ok = hocon_schema_cuttlefish:convert(CuttlefishSchemaFile, Dest),
-    Manual = "structs() -> [a].\n"
+    Manual = "roots() -> [a].\n"
              "fields(a) ->\n"
              "    [ {b, fun a__b/1}\n"
              "    , {c, fun a__c/1}\n"

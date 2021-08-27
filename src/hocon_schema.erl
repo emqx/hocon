@@ -29,7 +29,7 @@
 -export([generate/2, generate/3, map_translate/3]).
 -export([check/2, check/3, check_plain/2, check_plain/3, check_plain/4]).
 -export([richmap_to_map/1, get_value/2, get_value/3]).
--export([resolve_struct_name/2]).
+-export([resolve_struct_name/2, root_names/1]).
 
 -include("hoconsc.hrl").
 -include("hocon_private.hrl").
@@ -80,7 +80,7 @@
 -type root_type() :: name() | field().
 -type schema() :: module()
                 | #{ roots := [root_type()]
-                   , fileds := #{name() => [field()]}
+                   , fields := #{name() => [field()]}
                    , translations => #{name() => [translation()]} %% for config mappings
                    , validations => [validation()] %% for config integrity checks
                    }.
@@ -106,7 +106,6 @@
                  }.
 
 
--callback structs() -> [root_type()]. %% deprecated
 -callback roots() -> [root_type()].
 -callback fields(name()) -> [field()].
 -callback translations() -> [name()].
@@ -170,6 +169,10 @@ resolve_struct_name(Schema, StructName) ->
         {ok, {N, _Sc}} -> N;
         error -> throw({unknown_struct_name, Schema, StructName})
     end.
+
+%% @doc Get all root names from a schema.
+-spec root_names(schema()) -> [binary()].
+root_names(Schema) -> maps:keys(roots(Schema)).
 
 %% @doc generates application env from a parsed .conf and a schema module.
 %% For example, one can set the output values by
@@ -322,7 +325,7 @@ map(Schema, Conf, RootNames) ->
 -spec map(schema(), hocon:config(), all | [name()], opts()) ->
         {[proplists:property()], hocon:config()}.
 map(Schema, Conf, all, Opts) ->
-    map(Schema, Conf, maps:keys(roots(Schema)), Opts);
+    map(Schema, Conf, root_names(Schema), Opts);
 map(Schema, Conf0, Roots0, Opts0) ->
     Opts = maps:merge(#{schema => Schema, format => richmap}, Opts0),
     Roots = resolve_root_types(roots(Schema), Roots0),
@@ -372,7 +375,7 @@ resolve_root_types(Roots, [Name | Rest]) ->
 %%
 %% e.g. if a root name is 'a.b.c', the schema is only defined
 %% for data below `c` level.
-%% `a` and `b` are implicitly single-filed roots.
+%% `a` and `b` are implicitly single-field roots.
 %%
 %% In this case if a non map value is assigned, such as `a.b=1`,
 %% the check code will crash rather than reporting a useful error reason.
@@ -409,7 +412,7 @@ do_map(Fields, Value, Opts, FieldSchema) ->
 
 %% Conf must be a map from here on
 do_map2([{[$$ | _] = _Wildcard, Schema}], Conf, Opts, FieldSchema) ->
-    %% wildcard: support dynamic filed names.
+    %% wildcard: support dynamic field names.
     %% e.g. in this config:
     %%     #{config => #{internal => #{val => 1},
     %%                   external => #{val => 2}}

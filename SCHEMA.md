@@ -46,14 +46,14 @@ define a root level schema with just a `integer()` type.
 
 Structs consist of data fields, which can be defined using `hocon_schema` behaviour callbacks.
 
-* `structs/0`: This callback returns all the root level namespaces.
+* `roots/0`: This callback returns all the root level fields.
 * `fields/1`: This callback returns the schema for each data field (in a list, so order matters).
 
 For example, to define a struct named `foo` having one integer field, the schema module may look like:
 
 ```
--export([structs/0, fields/1]).
-structs() -> ["foo"]. %% 'exported' root names
+-export([roots/0, fields/1]).
+roots() -> ["foo"]. %% 'exported' root names, equivalent to `[{"foo", hoconsc:ref("foo")}].`
 fields("foo") -> [{"field1", typerefl:integer()}].
 ```
 
@@ -62,7 +62,7 @@ define a struct as a Erlang `map()`, so we do not have to implement the behaviou
 (this is however mostly for test cases):
 
 ```
-#{structs => ["foo"], %% 'exported' root names
+#{roots => ["foo"], %% 'exported' root names
   fields => #{"foo" => [{"field1", typerefl:integer()}]}
  }
 ```
@@ -84,7 +84,7 @@ e.g. if the type of parent-struct's field is another struct, the field's type sh
 
 ##### Virtual struct root
 
-The root struct name exported in the `structs/0` API serves as top level struct's field names.
+The root struct name exported in the `roots/0` API serves as top level struct's field names.
 like `listener`, `zone` and `broker` in `etc/emqx.conf`.
 
 #### Arrays
