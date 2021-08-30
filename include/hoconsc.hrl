@@ -29,6 +29,6 @@
 %% a field having lazy reference type is not type-checked as a part of its enclosing struct
 %% the user of this field is responsible for type checks at runtime
 %% the hint type is useful when generating documents
--define(LAZY(HintType), {'$lazy', HintType}).
+-define(LAZY(HintType), {lazy, HintType}).
 
 -endif.
