@@ -17,24 +17,27 @@
 %% this module exports APIs to help composing hocon field schema.
 -module(hoconsc).
 
--export([t/1, t/2]).
+-export([mk/1, mk/2]).
 -export([ref/1, ref/2]).
 -export([array/1, union/1, enum/1]).
 -export([lazy/1]).
 
 -include("hoconsc.hrl").
 
-t(Type) -> #{type => Type}.
+%% @doc Make a schema without metadata.
+mk(Type) ->
+    mk(Type, #{}).
 
-t(Type, Opts) ->
-    Opts#{type => Type}.
+%% @doc Make a schema with metadata.
+mk(Type, Meta) ->
+    assert_type(Type),
+    Meta#{type => Type}.
 
-%% @doc Make a local reference type to local schema's struct definition.
-ref(Name) -> {ref, Name}.
+ref(Name) -> ?REF(Name).
 
 %% @doc Make a 'remote' reference type to a struct defined
 %% in the given module's `fields/1` callback.
-ref(Module, Name) -> {ref, Module, Name}.
+ref(Module, Name) -> ?R_REF(Module, Name).
 
 %% @doc make an array type
 array(OfType) -> ?ARRAY(OfType).
@@ -46,3 +49,10 @@ union(OfTypes) when is_list(OfTypes) -> ?UNION(OfTypes).
 enum(OfSymbols) when is_list(OfSymbols) -> ?ENUM(OfSymbols).
 
 lazy(HintType) -> ?LAZY(HintType).
+
+assert_type(S) when is_function(S) -> error({expecting_type_but_got_schema, S});
+assert_type(#{type := _} = S) -> error({expecting_type_but_got_schema, S});
+assert_type(?UNION(Members)) -> lists:foreach(fun assert_type/1, Members);
+assert_type(?ARRAY(ElemT)) -> assert_type(ElemT);
+assert_type(?LAZY(HintT)) -> assert_type(HintT);
+assert_type(_) -> ok.

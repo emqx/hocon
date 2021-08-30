@@ -477,10 +477,9 @@ map_field(?UNION(Types), Schema0, Value, Opts) ->
     F = fun(Type) ->
                 %% go deep with union member's type, but all
                 %% other schema information should be inherited from the enclosing schema
-                Schema = fun(type) -> Type;
-                            (Other) -> field_schema(Schema0, Other)
-                         end,
-                map_field(Type, Schema, Value, Opts) end,
+                Schema = sub_schema(Schema0, Type),
+                map_field(Type, Schema, Value, Opts)
+        end,
     case do_map_union(Types, F, #{}, Opts) of
         {ok, {Mapped, NewValue}} -> {Mapped, NewValue};
         Error -> {Error, Value}
@@ -505,8 +504,9 @@ map_field(?ARRAY(Type), _FieldSchema, Value0, Opts) ->
             {validation_errs(Opts, not_array, Value0), Value0}
     end;
 map_field(?LAZY(Type), Schema, Value, Opts) ->
+    SubType = sub_type(Schema, Type),
     case maps:get(check_lazy, Opts, false) of
-        true -> map_field(Type, Schema, Value, Opts);
+        true -> map_field(SubType, Schema, Value, Opts);
         false -> {[], Value}
     end;
 map_field(Type, Schema, Value0, Opts) ->
@@ -528,6 +528,15 @@ map_field(Type, Schema, Value0, Opts) ->
                                      stacktrace => St
                                      }), Value0}
     end.
+
+sub_schema(EnclosingSchema, MaybeType) ->
+    fun(type) -> field_schema(MaybeType, type);
+       (Other) -> field_schema(EnclosingSchema, Other)
+    end.
+
+sub_type(EnclosingSchema, MaybeType) ->
+    SubSc = sub_schema(EnclosingSchema, MaybeType),
+    SubSc(type).
 
 maps_keys(undefined) -> [];
 maps_keys(Map) -> maps:keys(Map).
@@ -580,23 +589,24 @@ is_nullable(Opts, Schema) ->
         Maybe -> Maybe
     end.
 
+field_schema(Atom, type) when is_atom(Atom) -> Atom;
 field_schema(Type, SchemaKey) when ?IS_TYPEREFL(Type) ->
-    field_schema(hoconsc:t(Type), SchemaKey);
+    field_schema(hoconsc:mk(Type), SchemaKey);
 field_schema(?LAZY(_) = Lazy, SchemaKey) ->
-    field_schema(hoconsc:t(Lazy), SchemaKey);
+    field_schema(hoconsc:mk(Lazy), SchemaKey);
 field_schema(?REF(_) = Ref, SchemaKey) ->
-    field_schema(hoconsc:t(Ref), SchemaKey);
+    field_schema(hoconsc:mk(Ref), SchemaKey);
 field_schema(?R_REF(_, _) = Ref, SchemaKey) ->
-    field_schema(hoconsc:t(Ref), SchemaKey);
+    field_schema(hoconsc:mk(Ref), SchemaKey);
 field_schema(?ARRAY(_) = Array, SchemaKey) ->
-    field_schema(hoconsc:t(Array), SchemaKey);
+    field_schema(hoconsc:mk(Array), SchemaKey);
 field_schema(?UNION(_) = Union, SchemaKey) ->
-    field_schema(hoconsc:t(Union), SchemaKey);
+    field_schema(hoconsc:mk(Union), SchemaKey);
 field_schema(?ENUM(_) = Enum, SchemaKey) ->
-    field_schema(hoconsc:t(Enum), SchemaKey);
+    field_schema(hoconsc:mk(Enum), SchemaKey);
 field_schema(FieldSchema, SchemaKey) when is_function(FieldSchema, 1) ->
     FieldSchema(SchemaKey);
-field_schema(FieldSchema, SchemaKey) when is_map(FieldSchema) ->
+field_schema(#{type := _} = FieldSchema, SchemaKey) ->
     maps:get(SchemaKey, FieldSchema, undefined).
 
 maybe_mapping(undefined, _) -> []; % no mapping defined for this field

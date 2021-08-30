@@ -12,7 +12,7 @@
 
 -export([roots/0, fields/1, translations/0, translation/1]).
 
--define(FIELD(NAME, TYPE), hoconsc:t(TYPE, #{mapping => NAME})).
+-define(FIELD(NAME, TYPE), hoconsc:mk(TYPE, #{mapping => NAME})).
 
 roots() -> [foo, "a_b", "b", person, "vm"].
 translations() -> ["app_foo"].
@@ -29,7 +29,7 @@ fields(foo) ->
     ];
 
 fields("a_b") ->
-    [ {"some_int", hoconsc:t(integer(), #{mapping => "a_b.some_int"})}
+    [ {"some_int", hoconsc:mk(integer(), #{mapping => "a_b.some_int"})}
     ];
 
 fields("b") ->
@@ -39,8 +39,8 @@ fields("b") ->
     , {"arr", fun (type) -> hoconsc:array("priv.int");
                   (mapping) -> "app_foo.arr";
                   (_) -> undefined end}
-    , {"ua", hoconsc:t(hoconsc:array(hoconsc:union(["priv.int", "priv.bool"])),
-                       #{mapping => "app_foo.ua"})}
+    , {"ua", hoconsc:mk(hoconsc:array(hoconsc:union(["priv.int", "priv.bool"])),
+                        #{mapping => "app_foo.ua"})}
     ];
 
 fields("priv.bool") ->
