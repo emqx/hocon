@@ -66,4 +66,5 @@ anchor(Anchor0) ->
                 end, Anchor, Replaces).
 
 bin(S) when is_list(S) -> unicode:characters_to_binary(S, utf8);
-bin(A) when is_atom(A) -> atom_to_binary(A, utf8).
+bin(A) when is_atom(A) -> atom_to_binary(A, utf8);
+bin(B) when is_binary(B) -> B.

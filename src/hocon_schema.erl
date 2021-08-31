@@ -110,13 +110,20 @@
                  }.
 
 
+-callback namespace() -> name().
 -callback roots() -> [root_type()].
 -callback fields(name()) -> [field()].
 -callback translations() -> [name()].
 -callback translation(name()) -> [translation()].
 -callback validations() -> [validation()].
 
--optional_callbacks([roots/0, translations/0, translation/1, validations/0]).
+-optional_callbacks([ namespace/0
+                    , roots/0
+                    , fields/1
+                    , translations/0
+                    , translation/1
+                    , validations/0
+                    ]).
 
 -define(ERR(Code, Context), {Code, Context}).
 -define(ERRS(Code, Context), [?ERR(Code, Context)]).
@@ -131,10 +138,19 @@
 %% behaviour APIs
 -spec roots(schema()) -> #{name() => {name(), field_schema()}}.
 roots(Schema) ->
-    maps:from_list(
+    All =
       lists:map(fun({N, T}) -> {bin(N), {N, T}};
+                   (N) when is_atom(Schema) -> {bin(N), {N, ?R_REF(Schema, N)}};
                    (N) -> {bin(N), {N, ?REF(N)}}
-                end, do_roots(Schema))).
+                end, do_roots(Schema)),
+    Result = maps:from_list(All),
+    case length(All) =:= maps:size(Result) of
+        true  ->
+            Result;
+        false ->
+            AllNames = [Name || {Name, _} <- All],
+            error({duplicated_root_names, AllNames -- maps:keys(Result)})
+    end.
 
 do_roots(Mod) when is_atom(Mod) ->
     try Mod:roots()
@@ -171,12 +187,17 @@ validations(Mod) when is_atom(Mod) ->
     end;
 validations(Sc) -> maps:get(validations, Sc, []).
 
-%% @doc Get full name of a struct.
+%% @doc Get namespace of a schema.
 -spec namespace(schema()) -> undefined | binary().
 namespace(Schema) ->
     case is_atom(Schema) of
-        true -> bin(Schema);
-        false -> maps:get(namespace, Schema, undefined)
+        true ->
+            case erlang:function_exported(Schema, namespace, 0) of
+                true  -> Schema:namespace();
+                false -> undefined
+            end;
+        false ->
+            maps:get(namespace, Schema, undefined)
     end.
 
 %% @doc Resolve struct name from a guess.
