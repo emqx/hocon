@@ -71,13 +71,13 @@ fmt_structs(RootNs, [{{Ns, Name}, Fields} | Rest]) ->
 
 fmt_struct(RootNs, Ns0, Name, Fields) ->
     Th = ["name", "type", "default"],
-    Ns = case RootNs =:= Ns0 of
-             true -> undefined;
-             false -> Ns0
-         end,
+    {HeaderSize, Ns} = case RootNs =:= Ns0 of
+                           true -> {1, undefined};
+                           false -> {2, Ns0}
+                       end,
     FieldMd = fmt_fields(Ns, Fields, []),
     FullNameDisplay = ref(Ns, Name),
-    [hocon_md:h(3, FullNameDisplay), hocon_md:th(Th) , FieldMd].
+    [hocon_md:h(HeaderSize, FullNameDisplay), hocon_md:th(Th) , FieldMd].
 
 fmt_fields(_Ns, [], Md) ->
     lists:reverse(Md);

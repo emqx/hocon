@@ -57,6 +57,7 @@ anchor(Anchor0) ->
     Anchor = string:lowercase(bin(Anchor0)),
     Replaces = [{<<"\\.">>, <<"">>}, %% no dot
                 {<<"'">>, <<"">>}, %% no single quotes
+                {<<":">>, <<"">>}, %% no colon
                 {<<"\\s">>, <<"-">>} %% space replaced by hyphen
                ],
     lists:foldl(fun({Pattern, Replace}, Acc) ->

@@ -143,7 +143,7 @@ get(ParsedArgs, [Query | _]) ->
 docgen(ParsedArgs) ->
     case load_schema(ParsedArgs) of
         undefined ->
-            ?STDOUT("hocon's docgen command requres a schema module, use -s option", []),
+            ?STDOUT("hocon's docgen command requires a schema module, use -s option", []),
             stop_deactivate();
         Module ->
             io:format(user, "~s", [hocon_schema_doc:gen(Module)])
