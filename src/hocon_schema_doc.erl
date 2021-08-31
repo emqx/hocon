@@ -102,7 +102,7 @@ do_type(Ns, ?LAZY(T)) -> do_type(Ns, T);
 do_type(_Ns, {'$type_refl', #{name := Type}}) -> hocon_md:code(lists:flatten(Type)).
 
 ref(undefined, Name) -> Name;
-ref(Ns, Name) -> [bin(Ns), ".", bin(Name)].
+ref(Ns, Name) -> [bin(Ns), ":", bin(Name)].
 
 bin(S) when is_list(S) -> iolist_to_binary(S);
 bin(A) when is_atom(A) -> atom_to_binary(A, utf8);

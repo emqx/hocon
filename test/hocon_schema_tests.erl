@@ -765,10 +765,11 @@ lazy_root_test() ->
 
 lazy_root_env_override_test() ->
     Sc = #{roots => [{foo, hoconsc:lazy(hoconsc:ref(bar))}],
-           fields => #{bar => [ {"kling", hoconsc:mk(integer())},
-                                {"klang", hoconsc:mk(integer())}
-                              ]
-                      }
+           fields => fun(bar) ->
+                             [ {"kling", hoconsc:mk(integer())}
+                             , {"klang", hoconsc:mk(integer())}
+                             ]
+                     end
           },
     with_envs(
       fun() ->
@@ -784,3 +785,8 @@ lazy_root_env_override_test() ->
             {"EMQX_FOO__KLING", "111"},
             {"EMQX_FOO__KLANG", "222"}
            ]).
+
+duplicated_root_names_test() ->
+    Sc = #{roots => [foo, bar, foo]},
+    ?assertError({duplicated_root_names, [<<"foo">>]},
+                 hocon_schema:roots(Sc)).

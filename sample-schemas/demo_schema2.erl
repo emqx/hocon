@@ -4,7 +4,9 @@
 
 -behaviour(hocon_schema).
 
--export([roots/0, fields/1]).
+-export([namespace/0, roots/0, fields/1]).
+
+namespace() -> undefined.
 
 roots() ->
     [ {foo, hoconsc:array(hoconsc:ref(foo))}
