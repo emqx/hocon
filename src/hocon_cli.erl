@@ -50,12 +50,16 @@ cli_options() ->
         "the maximum number of generated config files to keep"}
     , {now_time, $t, "now_time", string, "the time suffix for generated files"}
     , {verbose_env, $v, "verbose_env", {boolean, false}, "whether to log env overrides to stdout"}
+    , {pa, undefined, "pa", string, "like the -pa flag for erl command, "
+                                    "prepend path to load beam files, "
+                                    "comma separate multiple paths"}
     ].
 
 print_help() ->
     ?STDOUT("Commands: now_time: get the current time for generate command's -t option", []),
     ?STDOUT("          generate: generate app.<time>.config and vm.<time>.args", []),
     ?STDOUT("          get: get value of a given key", []),
+    ?STDOUT("          docgen: generate doc for a given schema module", []),
     ?STDOUT("", []),
     getopt:usage(cli_options(), "hocon generate"),
     stop_deactivate().
@@ -104,6 +108,8 @@ main(Args) ->
             generate(ParsedArgs);
         now_time ->
             now_time();
+        docgen ->
+            docgen(ParsedArgs);
         _Other ->
             print_help()
     end.
@@ -134,7 +140,22 @@ get(ParsedArgs, [Query | _]) ->
     ?STDOUT("~0p", [hocon_schema:get_value(Query, NewConf)]),
     stop_ok().
 
+docgen(ParsedArgs) ->
+    case load_schema(ParsedArgs) of
+        undefined ->
+            ?STDOUT("hocon's docgen command requires a schema module, use -s option", []),
+            stop_deactivate();
+        Module ->
+            io:format(user, "~s", [hocon_schema_doc:gen(Module)])
+    end.
+
 load_schema(ParsedArgs) ->
+    case proplists:get_value(pa, ParsedArgs) of
+        undefined -> ok;
+        DirsStr ->
+            Dirs = string:tokens(DirsStr, ","),
+            lists:foreach(fun(Dir) -> code:add_patha(Dir) end, Dirs)
+    end,
     case {proplists:get_value(schema_file, ParsedArgs),
           proplists:get_value(schema_module, ParsedArgs)} of
         {undefined, Mod0} ->
