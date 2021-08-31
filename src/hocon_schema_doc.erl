@@ -102,7 +102,14 @@ do_type(Ns, ?LAZY(T)) -> do_type(Ns, T);
 do_type(_Ns, {'$type_refl', #{name := Type}}) -> hocon_md:code(lists:flatten(Type)).
 
 ref(undefined, Name) -> Name;
-ref(Ns, Name) -> [bin(Ns), ":", bin(Name)].
+ref(Ns, Name) ->
+    %% when namespace is the same as reference name
+    %% we do not prepend the reference link with namespace
+    %% because the root name is already unique enough
+    case bin(Ns) =:= bin(Name) of
+        true -> bin(Ns);
+        false -> [bin(Ns), ":", bin(Name)]
+    end.
 
 bin(S) when is_list(S) -> iolist_to_binary(S);
 bin(A) when is_atom(A) -> atom_to_binary(A, utf8);
