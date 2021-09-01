@@ -53,6 +53,7 @@ check_child_name(Conf) ->
     end.
 
 field1(type) -> string();
+field1(desc) -> "field1 desc";
 field1(_) -> undefined.
 
 union_with_default(type) ->

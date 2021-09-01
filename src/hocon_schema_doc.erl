@@ -72,8 +72,8 @@ fmt_structs(RootNs, [{{Ns, Name}, Fields} | Rest]) ->
 fmt_struct(RootNs, Ns0, Name, Fields) ->
     AnyDefault = any_defaults(Fields),
     Th = case AnyDefault of
-             true -> ["name", "type", "default"];
-             false -> ["name", "type"]
+             true  -> ["name", "type", "default", "description"];
+             false -> ["name", "type", "description"]
          end,
     {HeaderSize, Ns} = case RootNs =:= Ns0 of
                            true -> {1, undefined};
@@ -87,11 +87,15 @@ fmt_fields(_AnyDefault, _Ns, []) -> [];
 fmt_fields(AnyDefualt, Ns, [{Name, FieldSchema} | Fields]) ->
     Default = fmt_default(hocon_schema:field_schema(FieldSchema, default)),
     Type = fmt_type(Ns, hocon_schema:field_schema(FieldSchema, type)),
+    Desc = fmt_desc(hocon_schema:field_schema(FieldSchema, desc)),
     NewMd = case AnyDefualt of
-                true -> hocon_md:td([bin(Name), Type, Default]);
-                false -> hocon_md:td([bin(Name), Type])
+                true -> hocon_md:td([bin(Name), Type, Default, Desc]);
+                false -> hocon_md:td([bin(Name), Type, Desc])
             end,
     [NewMd | fmt_fields(AnyDefualt, Ns, Fields)].
+
+fmt_desc(undefined) -> "";
+fmt_desc(Desc) -> Desc.
 
 fmt_default(undefined) -> "";
 fmt_default(Value) -> hocon_md:code(io_lib:format("~100000p", [Value])).

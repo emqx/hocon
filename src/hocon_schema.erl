@@ -75,6 +75,7 @@
                          , nullable => true | false | {true, recursively} % default = true
                            %% for sensitive data obfuscation (password, token)
                          , sensitive => boolean()
+                         , desc => iodata()
                          }.
 
 -type field() :: {name(), typefunc() | field_schema()}.
