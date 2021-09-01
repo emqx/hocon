@@ -98,7 +98,8 @@ fmt_desc(undefined) -> "";
 fmt_desc(Desc) -> Desc.
 
 fmt_default(undefined) -> "";
-fmt_default(Value) -> hocon_md:code(io_lib:format("~100000p", [Value])).
+fmt_default(Value) ->
+    hocon_md:code(hocon_pp:do(Value)).
 
 any_defaults(Fields) ->
     lists:any(fun({_Name, Sc}) ->
