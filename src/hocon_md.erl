@@ -47,7 +47,7 @@ format(Template, Values) ->
 escape_bar(Str) ->
     lists:flatten(string:replace(Str, "|", "&#124;", all)).
 
-code(Text) -> format("<code>~s</code>", [Text]).
+code(Text) -> ["<code>", Text, "</code>"].
 
 join(Mds) ->
     lists:join("\n", [Mds]).
