@@ -107,11 +107,11 @@ do_type(_Ns, A) when is_atom(A) -> bin(A); % singleton
 do_type(Ns, Ref) when is_list(Ref) -> do_type(Ns, ?REF(Ref));
 do_type(Ns, ?REF(Ref)) -> hocon_md:local_link(ref(Ns, Ref), ref(Ns, Ref));
 do_type(_Ns, ?R_REF(Module, Ref)) -> do_type(hocon_schema:namespace(Module), ?REF(Ref));
-do_type(Ns, ?ARRAY(T)) -> hocon_md:code(io_lib:format("[~s]", [do_type(Ns, T)]));
-do_type(Ns, ?UNION(Ts)) -> hocon_md:code(lists:join(" | ", [do_type(Ns, T) || T <- Ts]));
-do_type(_Ns, ?ENUM(Symbols)) -> hocon_md:code(lists:join(" | ", [bin(S) || S <- Symbols]));
+do_type(Ns, ?ARRAY(T)) -> io_lib:format("[~s]", [do_type(Ns, T)]);
+do_type(Ns, ?UNION(Ts)) -> lists:join(" | ", [do_type(Ns, T) || T <- Ts]);
+do_type(_Ns, ?ENUM(Symbols)) -> lists:join(" | ", [bin(S) || S <- Symbols]);
 do_type(Ns, ?LAZY(T)) -> do_type(Ns, T);
-do_type(_Ns, {'$type_refl', #{name := Type}}) -> hocon_md:code(lists:flatten(Type)).
+do_type(_Ns, {'$type_refl', #{name := Type}}) -> lists:flatten(Type).
 
 ref(undefined, Name) -> Name;
 ref(Ns, Name) ->
