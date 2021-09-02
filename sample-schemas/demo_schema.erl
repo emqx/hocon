@@ -95,6 +95,7 @@ endpoint(_) -> undefined.
 
 greet(mapping) -> "app_foo.greet";
 greet(type) -> typerefl:regexp_string("^hello$");
+greet(desc) -> "greetings";
 greet(_) -> undefined.
 
 numbers(mapping) -> "app_foo.numbers";

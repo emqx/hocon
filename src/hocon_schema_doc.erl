@@ -70,24 +70,40 @@ fmt_structs(RootNs, [{{Ns, Name}, Fields} | Rest]) ->
     [fmt_struct(RootNs, Ns, Name, Fields) | fmt_structs(RootNs, Rest)].
 
 fmt_struct(RootNs, Ns0, Name, Fields) ->
-    Th = ["name", "type", "default"],
+    AnyDefault = any_defaults(Fields),
+    Th = case AnyDefault of
+             true  -> ["name", "type", "default", "description"];
+             false -> ["name", "type", "description"]
+         end,
     {HeaderSize, Ns} = case RootNs =:= Ns0 of
                            true -> {1, undefined};
                            false -> {2, Ns0}
                        end,
-    FieldMd = fmt_fields(Ns, Fields, []),
+    FieldMd = fmt_fields(AnyDefault, Ns, Fields),
     FullNameDisplay = ref(Ns, Name),
     [hocon_md:h(HeaderSize, FullNameDisplay), hocon_md:th(Th) , FieldMd].
 
-fmt_fields(_Ns, [], Md) ->
-    lists:reverse(Md);
-fmt_fields(Ns, [{Name, FieldSchema} | Fields], Md) ->
+fmt_fields(_AnyDefault, _Ns, []) -> [];
+fmt_fields(AnyDefualt, Ns, [{Name, FieldSchema} | Fields]) ->
     Default = fmt_default(hocon_schema:field_schema(FieldSchema, default)),
     Type = fmt_type(Ns, hocon_schema:field_schema(FieldSchema, type)),
-    fmt_fields(Ns, Fields, [hocon_md:td([bin(Name), Type, Default]) | Md]).
+    Desc = fmt_desc(hocon_schema:field_schema(FieldSchema, desc)),
+    NewMd = case AnyDefualt of
+                true -> hocon_md:td([bin(Name), Type, Default, Desc]);
+                false -> hocon_md:td([bin(Name), Type, Desc])
+            end,
+    [NewMd | fmt_fields(AnyDefualt, Ns, Fields)].
+
+fmt_desc(undefined) -> "";
+fmt_desc(Desc) -> Desc.
 
 fmt_default(undefined) -> "";
 fmt_default(Value) -> hocon_md:code(io_lib:format("~100000p", [Value])).
+
+any_defaults(Fields) ->
+    lists:any(fun({_Name, Sc}) ->
+                      hocon_schema:field_schema(Sc, default) =/= undefined
+              end, Fields).
 
 fmt_type(Ns, T) -> hocon_md:code(do_type(Ns, T)).
 
@@ -95,11 +111,11 @@ do_type(_Ns, A) when is_atom(A) -> bin(A); % singleton
 do_type(Ns, Ref) when is_list(Ref) -> do_type(Ns, ?REF(Ref));
 do_type(Ns, ?REF(Ref)) -> hocon_md:local_link(ref(Ns, Ref), ref(Ns, Ref));
 do_type(_Ns, ?R_REF(Module, Ref)) -> do_type(hocon_schema:namespace(Module), ?REF(Ref));
-do_type(Ns, ?ARRAY(T)) -> hocon_md:code(io_lib:format("[~s]", [do_type(Ns, T)]));
-do_type(Ns, ?UNION(Ts)) -> hocon_md:code(lists:join(" | ", [do_type(Ns, T) || T <- Ts]));
-do_type(_Ns, ?ENUM(Symbols)) -> hocon_md:code(lists:join(" | ", [bin(S) || S <- Symbols]));
+do_type(Ns, ?ARRAY(T)) -> io_lib:format("[~s]", [do_type(Ns, T)]);
+do_type(Ns, ?UNION(Ts)) -> lists:join(" | ", [do_type(Ns, T) || T <- Ts]);
+do_type(_Ns, ?ENUM(Symbols)) -> lists:join(" | ", [bin(S) || S <- Symbols]);
 do_type(Ns, ?LAZY(T)) -> do_type(Ns, T);
-do_type(_Ns, {'$type_refl', #{name := Type}}) -> hocon_md:code(lists:flatten(Type)).
+do_type(_Ns, {'$type_refl', #{name := Type}}) -> lists:flatten(Type).
 
 ref(undefined, Name) -> Name;
 ref(Ns, Name) ->
