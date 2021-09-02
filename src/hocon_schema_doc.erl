@@ -19,6 +19,7 @@
 -export([gen/1]).
 
 -include("hoconsc.hrl").
+-include("hocon_private.hrl").
 
 gen(Schema) ->
     Roots = hocon_schema:roots(Schema),
@@ -28,7 +29,8 @@ gen(Schema) ->
     All = find_structs(Schema, RootFields, #{}),
     RootNs = hocon_schema:namespace(Schema),
     RootKey = {RootNs, "Root Keys"},
-    fmt_structs(RootNs, [{RootKey, RootFields} | lists:keysort(1, maps:to_list(All))]).
+    [fmt_structs(1, RootNs, [{RootKey, RootFields}]),
+     fmt_structs(2, RootNs, lists:keysort(1, maps:to_list(All)))].
 
 find_structs(_Schema, [], Acc) -> Acc;
 find_structs(Schema, [{_FieldName, FieldSchema} | Fields], Acc0) ->
@@ -65,46 +67,44 @@ find_ref(Schema, Name, Acc) ->
             find_structs(Schema, Fields, Acc#{Key => Fields})
     end.
 
-fmt_structs(_RootNs, []) -> [];
-fmt_structs(RootNs, [{{Ns, Name}, Fields} | Rest]) ->
-    [fmt_struct(RootNs, Ns, Name, Fields) | fmt_structs(RootNs, Rest)].
+fmt_structs(_HeadWeight, _RootNs, []) -> [];
+fmt_structs(HeadWeight, RootNs, [{{Ns, Name}, Fields} | Rest]) ->
+    [fmt_struct(HeadWeight, RootNs, Ns, Name, Fields), "\n" |
+     fmt_structs(HeadWeight, RootNs, Rest)].
 
-fmt_struct(RootNs, Ns0, Name, Fields) ->
-    AnyDefault = any_defaults(Fields),
-    Th = case AnyDefault of
-             true  -> ["name", "type", "default", "description"];
-             false -> ["name", "type", "description"]
+fmt_struct(HeadWeight, RootNs, Ns0, Name, Fields) ->
+    Ns = case RootNs =:= Ns0 of
+             true -> undefined;
+             false -> Ns0
          end,
-    {HeaderSize, Ns} = case RootNs =:= Ns0 of
-                           true -> {1, undefined};
-                           false -> {2, Ns0}
-                       end,
-    FieldMd = fmt_fields(AnyDefault, Ns, Fields),
+    FieldMd = fmt_fields(HeadWeight + 1, Ns, Fields),
     FullNameDisplay = ref(Ns, Name),
-    [hocon_md:h(HeaderSize, FullNameDisplay), hocon_md:th(Th) , FieldMd].
+    [hocon_md:h(HeadWeight, FullNameDisplay), FieldMd].
 
-fmt_fields(_AnyDefault, _Ns, []) -> [];
-fmt_fields(AnyDefualt, Ns, [{Name, FieldSchema} | Fields]) ->
-    Default = fmt_default(hocon_schema:field_schema(FieldSchema, default)),
+fmt_fields(_Weight, _Ns, []) -> [];
+fmt_fields(Weight, Ns, [{Name, FieldSchema} | Fields]) ->
     Type = fmt_type(Ns, hocon_schema:field_schema(FieldSchema, type)),
-    Desc = fmt_desc(hocon_schema:field_schema(FieldSchema, desc)),
-    NewMd = case AnyDefualt of
-                true -> hocon_md:td([bin(Name), Type, Default, Desc]);
-                false -> hocon_md:td([bin(Name), Type, Desc])
-            end,
-    [NewMd | fmt_fields(AnyDefualt, Ns, Fields)].
+    Default = fmt_default(hocon_schema:field_schema(FieldSchema, default)),
+    Desc = hocon_schema:field_schema(FieldSchema, desc),
+    NewMd =
+        [ ["- ", bin(Name), ": ", Type, "\n"]
+        , case Desc =/= undefined of
+              true -> ["  - Description: ", Desc, "\n"];
+              false -> []
+          end
+        , case Default =/= undefined of
+            true  -> ["  - Default:", Default, "\n"];
+            false -> []
+          end
+        ],
+    [NewMd | fmt_fields(Weight, Ns, Fields)].
 
-fmt_desc(undefined) -> "";
-fmt_desc(Desc) -> Desc.
-
-fmt_default(undefined) -> "";
+fmt_default(undefined) -> undefined;
 fmt_default(Value) ->
-    hocon_md:code(hocon_pp:do(Value)).
-
-any_defaults(Fields) ->
-    lists:any(fun({_Name, Sc}) ->
-                      hocon_schema:field_schema(Sc, default) =/= undefined
-              end, Fields).
+    case hocon_pp:do(Value, #{newline => "", embedded => true}) of
+        [OneLine] -> [" `", OneLine, "`"];
+        Lines -> ["\n```\n", [[L, "\n"] || L <- Lines], "```"]
+    end.
 
 fmt_type(Ns, T) -> hocon_md:code(do_type(Ns, T)).
 

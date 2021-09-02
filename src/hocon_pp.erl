@@ -16,56 +16,87 @@
 
 -module(hocon_pp).
 
--export([do/1]).
+-export([do/2]).
 
-%% random magic bytes to work as newline instead of "\n"
--define(NL, <<"magic-chicken", 255, 156, 173, 82, 187, 168, 136>>).
+-include("hocon_private.hrl").
+
 -define(INDENT, "  ").
 
-do(Value) when is_map(Value) ->
+%% @doc Pretty print HOCON value.
+%% Options are:
+%% `embedded': boolean, to indicate if the given value is an embedded part
+%% of a wrapping ojbect, when `true', `{' and `}' are wrapped around the fields.
+%%
+%% `newline': string, by default `"\n"' is used, for generating web-content
+%% it should be `"<br>"' instead.
+-spec do(term(), map()) -> iodata().
+do(Value, Opts) when is_map(Value) ->
     %% Root level map should not have outter '{' '}' pair
-    pp(fmt(gen_map_fields(Value)));
-do(Value) ->
-    pp(fmt(gen(Value))).
+    case maps:get(embedded, Opts, false) of
+        true ->
+            pp(fmt(gen(Value, Opts)), Opts);
+        false ->
+            pp(fmt(gen_map_fields(Value, Opts, ?NL)), Opts)
+    end;
+do(Value, Opts) ->
+    pp(fmt(gen(Value, Opts)), Opts).
 
-pp(IoData) -> [[Line, "\n"] || Line <- split(bin(IoData))].
+pp(IoData, Opts) ->
+    NewLine = maps:get(newline, Opts, "\n"),
+    infix(split(bin(IoData)), NewLine).
 
-gen([]) -> <<"\"\"">>;
-gen(I) when is_integer(I) -> integer_to_binary(I);
-gen(F) when is_float(F) -> float_to_binary(F, [{decimals, 6}, compact]);
-gen(A) when is_atom(A) -> atom_to_binary(A, utf8);
-gen(Bin) when is_binary(Bin) ->
-    gen(unicode:characters_to_list(Bin, utf8));
-gen(S) when is_list(S) ->
+gen([], _Opts) -> <<"[]">>;
+gen(<<>>, _Opts) -> <<"\"\"">>;
+gen(I, _Opts) when is_integer(I) -> integer_to_binary(I);
+gen(F, _Opts) when is_float(F) -> float_to_binary(F, [{decimals, 6}, compact]);
+gen(A, _Opts) when is_atom(A) -> atom_to_binary(A, utf8);
+gen(Bin, Opts) when is_binary(Bin) ->
+    gen(unicode:characters_to_list(Bin, utf8), Opts);
+gen(S, Opts) when is_list(S) ->
     case io_lib:printable_unicode_list(S) of
         true  ->
             %% ~p to ensure always quote string value
             bin(io_lib:format("~100000p", [S]));
         false ->
-            gen_list(S)
+            gen_list(S, Opts)
     end;
-gen(M) when is_map(M) ->
-    gen_map(M).
+gen(M, Opts) when is_map(M) ->
+    gen_map(M, Opts).
 
-gen_list(L) ->
+
+gen_list(L, Opts) ->
+    case is_oneliner(L) of
+        true ->
+            %% one line
+            ["[", infix([gen(I, Opts) || I <- L], ", "), "]"];
+        false ->
+            do_gen_list(L, Opts)
+    end.
+
+do_gen_list(L, Opts) ->
     [ ["[", ?NL]
-    , [{indent, [gen(I), ",", ?NL]} || I <- L]
+    , [{indent, [gen(I, Opts), ",", ?NL]} || I <- L]
     , ["]", ?NL]
     ].
 
-gen_map(M) ->
-    [ ["{", ?NL]
-    , {indent, gen_map_fields(M)}
-    , ["}", ?NL]
-    ].
+is_oneliner(L) when is_list(L) ->
+    lists:all(fun(X) -> is_number(X) orelse is_binary(X) orelse is_atom(X) end, L);
+is_oneliner(M) when is_map(M) ->
+    maps:size(M) < 3 andalso is_oneliner(maps:values(M)).
 
-gen_map_fields(M) ->
-    [gen_map_field(K, V) || {K, V} <- maps:to_list(M)].
+gen_map(M, Opts) ->
+    case is_oneliner(M) of
+        true -> ["{", infix(gen_map_fields(M, Opts, ""), ", "), "}"];
+        false -> [ ["{", ?NL], {indent, gen_map_fields(M, Opts, ?NL)} , ["}", ?NL] ]
+    end.
 
-gen_map_field(K, V) when is_map(V) ->
-    [maybe_quote(K), " ", gen(V), ?NL];
-gen_map_field(K, V) ->
-    [maybe_quote(K), " = ", gen(V), ?NL].
+gen_map_fields(M, Opts, NL) ->
+    [gen_map_field(K, V, Opts, NL) || {K, V} <- maps:to_list(M)].
+
+gen_map_field(K, V, Opts, NL) when is_map(V) ->
+    [maybe_quote(K), " ", gen(V, Opts), NL];
+gen_map_field(K, V, Opts, NL) ->
+    [maybe_quote(K), " = ", gen(V, Opts), NL].
 
 %% maybe quote key
 maybe_quote(K) ->
@@ -86,3 +117,7 @@ fmt({indent, Block}) ->
 
 split(Bin) ->
     [Line || Line <- binary:split(Bin, ?NL, [global]), Line =/= <<>>].
+
+infix([], _) -> [];
+infix([One], _) -> [One];
+infix([H | T], Infix) -> [[H, Infix] | infix(T, Infix)].

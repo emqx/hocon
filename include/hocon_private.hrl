@@ -21,4 +21,6 @@
 -define(HOCON_V, '$hcVal').
 -define(HOCON_T, '$hcTyp').
 
+%% random magic bytes to work as newline instead of "\n"
+-define(NL, <<"magic-chicken", 255, 156, 173, 82, 187, 168, 136>>).
 -endif.

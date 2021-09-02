@@ -26,6 +26,6 @@ do_fun(File) ->
 
 do(File) ->
     {ok, Conf} = hocon:load(File),
-    PP = hocon_pp:do(Conf),
+    PP = hocon_pp:do(Conf, #{}),
     {ok, Conf2} = hocon:binary(iolist_to_binary(PP)),
     ?assertEqual(Conf, Conf2).
