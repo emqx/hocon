@@ -22,8 +22,13 @@
 -define(NL, <<"magic-chicken", 255, 156, 173, 82, 187, 168, 136>>).
 -define(INDENT, "  ").
 
+do(Value) when is_map(Value) ->
+    %% Root level map should not have outter '{' '}' pair
+    pp(fmt(gen_map_fields(Value)));
 do(Value) ->
-    [[Line, "\n"] || Line <- split(fmt(gen(Value)))].
+    pp(fmt(gen(Value))).
+
+pp(IoData) -> [[Line, "\n"] || Line <- split(bin(IoData))].
 
 gen([]) -> <<"\"\"">>;
 gen(I) when is_integer(I) -> integer_to_binary(I);
@@ -33,23 +38,41 @@ gen(Bin) when is_binary(Bin) ->
     gen(unicode:characters_to_list(Bin, utf8));
 gen(S) when is_list(S) ->
     case io_lib:printable_unicode_list(S) of
-        true  -> bin(io_lib:format("~100000p", [S]));
-        false -> gen_list(S)
+        true  ->
+            %% ~p to ensure always quote string value
+            bin(io_lib:format("~100000p", [S]));
+        false ->
+            gen_list(S)
     end;
 gen(M) when is_map(M) ->
     gen_map(M).
 
 gen_list(L) ->
     [ ["[", ?NL]
-    , [{indent, [gen(I), ?NL]} || I <- L]
+    , [{indent, [gen(I), ",", ?NL]} || I <- L]
     , ["]", ?NL]
     ].
 
 gen_map(M) ->
     [ ["{", ?NL]
-    , [{indent, [K, " = ", gen(V), ?NL]} || {K, V} <- maps:to_list(M)]
+    , {indent, gen_map_fields(M)}
     , ["}", ?NL]
     ].
+
+gen_map_fields(M) ->
+    [gen_map_field(K, V) || {K, V} <- maps:to_list(M)].
+
+gen_map_field(K, V) when is_map(V) ->
+    [maybe_quote(K), " ", gen(V), ?NL];
+gen_map_field(K, V) ->
+    [maybe_quote(K), " = ", gen(V), ?NL].
+
+%% maybe quote key
+maybe_quote(K) ->
+    case re:run(K, "[^A-Za-z_]") of
+        nomatch -> K;
+        _ -> io_lib:format("~100000p", [unicode:characters_to_list(K, utf8)])
+    end.
 
 bin(IoData) -> iolist_to_binary(IoData).
 
