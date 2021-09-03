@@ -462,9 +462,11 @@ do_map(Fields, Value, Opts, ParentSchema) ->
             {validation_errs(Opts, bad_value_for_struct, Value), Value}
     end.
 
-do_map2(Fields, Value, Opts, _ParentSchema) ->
+do_map2(Fields, Value0, Opts, _ParentSchema) ->
     SchemaFieldNames = [N || {N, _Schema} <- Fields],
-    DataFields = unbox(Opts, Value),
+    DataFields0 = unbox(Opts, Value0),
+    DataFields = drop_nulls(Opts, DataFields0),
+    Value = boxit(Opts, DataFields, Value0),
     case check_unknown_fields(Opts, SchemaFieldNames, DataFields) of
       ok -> map_fields(Fields, Value, [], Opts);
       Errors -> {Errors, Value}
@@ -1019,6 +1021,17 @@ richmap_to_map(Iter, Map) ->
         none ->
             Map
     end.
+
+%% treat 'null' as absence
+drop_nulls(_Opts, undefined) -> undefined;
+drop_nulls(Opts, Map) when is_map(Map) ->
+    maps:filter(fun(_Key, Value) ->
+                        case unbox(Opts, Value) of
+                            null -> false;
+                            {'$FROM_ENV_VAR', _, null} -> false;
+                            _ -> true
+                        end
+                end, Map).
 
 %% @doc Get (maybe nested) field value for the given path.
 %% This function works for both plain and rich map,

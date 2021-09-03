@@ -52,7 +52,7 @@ fields("cluster") ->
     , {"static", ref("static")}
     , {"mcast", ref("mcast")}
     , {"proto_dist", t(union([inet_tcp, inet6_tcp, inet_tls]), "ekka.proto_dist", inet_tcp)}
-    , {"dns", ref("dns")}
+    , {"dns", "dns"}
     , {"etcd", ref("etcd")}
     , {"k8s", ref("k8s")}
     ];
