@@ -39,7 +39,9 @@
 -export([ssl/2, tr_ssl/2, tr_password_hash/2]).
 
 roots() -> ["cluster", "node", "rpc", "log", "lager",
-             "acl", "mqtt", "zone", "listener", "module", "broker",
+             "acl", "mqtt",
+             {"zone", hoconsc:map("name",  hoconsc:ref(?MODULE, "zone"))},
+             "listener", "module", "broker",
              "plugins", "sysmon", "os_mon", "vm_mon", "alarm", "telemetry"].
 
 fields("cluster") ->
@@ -206,9 +208,6 @@ fields("mqtt") ->
     ];
 
 fields("zone") ->
-    [ {"$name", ref("zone_settings")}];
-
-fields("zone_settings") ->
     [ {"idle_timeout", t(duration(), undefined, "15s")}
     , {"allow_anonymous", t(boolean())}
     , {"acl_nomatch", t(union(allow, deny))}
@@ -267,63 +266,28 @@ fields("quota") ->
     ];
 
 fields("listener") ->
-    [ {"tcp", ref("tcp_listener")}
-    , {"ssl", ref("ssl_listener")}
-    , {"ws", ref("ws_listener")}
-    , {"wss", ref("wss_listener")}
+    [ {"tcp", map_ref("tcp_listener")}
+    , {"ssl", map_ref("ssl_listener")}
+    , {"ws", map_ref("ws_listener")}
+    , {"wss", map_ref("wss_listener")}
     ];
 
 fields("tcp_listener") ->
-    [ {"$name", ref("tcp_listener_settings")}];
-
-fields("ssl_listener") ->
-    [ {"$name", ref("ssl_listener_settings")}];
-
-fields("ws_listener") ->
-    [ {"$name", ref("ws_listener_settings")}];
-
-fields("wss_listener") ->
-    [ {"$name", ref("wss_listener_settings")}];
-
-fields("listener_settings") ->
-    [ {"endpoint", t(union(ip_port(), integer()))}
-    , {"acceptors", t(integer(), undefined, 8)}
-    , {"max_connections", t(integer(), undefined, 1024)}
-    , {"max_conn_rate", t(integer())}
-    , {"active_n", t(integer(), undefined, 100)}
-    , {"zone", t(string())}
-    , {"rate_limit", t(comma_separated_list())}
-    , {"access", ref("access")}
-    , {"proxy_protocol", t(flag())}
-    , {"proxy_protocol_timeout", t(duration())}
-    , {"backlog", t(integer(), undefined, 1024)}
-    , {"send_timeout", t(duration(), undefined, "15s")}
-    , {"send_timeout_close", t(flag(), undefined, true)}
-    , {"recbuf", t(bytesize())}
-    , {"sndbuf", t(bytesize())}
-    , {"buffer", t(bytesize())}
-    , {"high_watermark", t(bytesize(), undefined, "1MB")}
-    , {"tune_buffer", t(flag())}
-    , {"nodelay", t(boolean())}
-    , {"reuseaddr", t(boolean())}
-    ];
-
-fields("tcp_listener_settings") ->
     [ {"peer_cert_as_username", t(cn)}
     , {"peer_cert_as_clientid", t(cn)}
     , {"key_password", t(string())}
-    ] ++ fields("listener_settings");
+    ] ++ listener_fields();
 
-fields("ssl_listener_settings") ->
+fields("ssl_listener") ->
     [ {"peer_cert_as_username", t(union([cn, dn, crt, pem, md5]))}
     , {"peer_cert_as_clientid", t(union([cn, dn, crt, pem, md5]))}
     , {"key_password", t(string())}
     ] ++
     ssl(undefined, #{handshake_timeout => "15s"
                    , depth => 10
-                   , reuse_sessions => true}) ++ fields("listener_settings");
+                   , reuse_sessions => true}) ++ listener_fields();
 
-fields("ws_listener_settings") ->
+fields("ws_listener") ->
     [ {"mqtt_path", t(string(), undefined, "/mqtt")}
     , {"fail_if_no_subprotocol", t(boolean(), undefined, true)}
     , {"supported_subprotocols", t(string(), undefined, "mqtt, mqtt-v3, mqtt-v3.1.1, mqtt-v5")}
@@ -338,17 +302,14 @@ fields("ws_listener_settings") ->
     , {"allow_origin_absence", t(boolean(), undefined, true)}
     , {"check_origins", t(comma_separated_list())}
         % @fixme
-    ] ++ lists:keydelete("high_watermark", 1, fields("tcp_listener_settings"));
+    ] ++ lists:keydelete("high_watermark", 1, fields("tcp_listener"));
 
-fields("wss_listener_settings") ->
+fields("wss_listener") ->
     % @fixme
     Ssl = ssl(undefined, #{depth => 10
-                         , reuse_sessions => true}) ++ fields("listener_settings"),
-    Settings = lists:ukeymerge(1, Ssl, fields("ws_listener_settings")),
+                         , reuse_sessions => true}) ++ listener_fields(),
+    Settings = lists:ukeymerge(1, Ssl, fields("ws_listener")),
     lists:keydelete("high_watermark", 1, Settings);
-
-fields("access") ->
-    [ {"$id", t(string(), undefined, undefined)}];
 
 fields("deflate_opts") ->
     [ {"level", t(union([none, default, best_compression, best_speed]))}
@@ -363,7 +324,7 @@ fields("deflate_opts") ->
 fields("module") ->
     [ {"loaded_file", t(string(), "emqx.modules_loaded_file", undefined)}
     , {"presence", ref("presence")}
-    , {"subscription", ref("subscription")}
+    , {"subscription", map_ref("subscription")}
     , {"rewrite", ref("rewrite")}
     ];
 
@@ -371,9 +332,6 @@ fields("presence") ->
     [ {"qos", t(range(0, 2), undefined, 1)}];
 
 fields("subscription") ->
-    [ {"$id", ref("subscription_settings")}];
-
-fields("subscription_settings") ->
     [ {"topic", t(string())}
     , {"qos", t(range(0, 2), undefined, 1)}
     , {"nl", t(range(0, 1), undefined, 0)}
@@ -383,13 +341,11 @@ fields("subscription_settings") ->
 
 
 fields("rewrite") ->
-    [ {"rule", ref("rule")}
-    , {"pub_rule", ref("rule")}
-    , {"sub_rule", ref("rule")}
+    Sc = hoconsc:map("id", string()),
+    [ {"rule", Sc}
+    , {"pub_rule", Sc}
+    , {"sub_rule", Sc}
     ];
-
-fields("rule") ->
-    [ {"$id", t(string())}];
 
 fields("plugins") ->
     [ {"etc_dir", t(string(), "emqx.plugins_etc_dir", undefined)}
@@ -450,6 +406,28 @@ fields("telemetry") ->
     , {"report_interval", t(duration_s(), undefined, "7d")}
     ].
 
+listener_fields() ->
+    [ {"endpoint", t(union(ip_port(), integer()))}
+    , {"acceptors", t(integer(), undefined, 8)}
+    , {"max_connections", t(integer(), undefined, 1024)}
+    , {"max_conn_rate", t(integer())}
+    , {"active_n", t(integer(), undefined, 100)}
+    , {"zone", t(string())}
+    , {"rate_limit", t(comma_separated_list())}
+    , {"access", hoconsc:map("id", string())}
+    , {"proxy_protocol", t(flag())}
+    , {"proxy_protocol_timeout", t(duration())}
+    , {"backlog", t(integer(), undefined, 1024)}
+    , {"send_timeout", t(duration(), undefined, "15s")}
+    , {"send_timeout_close", t(flag(), undefined, true)}
+    , {"recbuf", t(bytesize())}
+    , {"sndbuf", t(bytesize())}
+    , {"buffer", t(bytesize())}
+    , {"high_watermark", t(bytesize(), undefined, "1MB")}
+    , {"tune_buffer", t(flag())}
+    , {"nodelay", t(boolean())}
+    , {"reuseaddr", t(boolean())}
+    ].
 
 translations() -> ["ekka", "vm_args", "gen_rpc", "kernel", "emqx"].
 
@@ -1225,3 +1203,6 @@ to_ip_port(Str) ->
             end;
         _ -> {error, Str}
     end.
+
+map_ref(Name) ->
+    hoconsc:mk(hoconsc:map("name", hoconsc:ref(Name))).

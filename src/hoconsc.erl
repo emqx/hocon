@@ -20,7 +20,7 @@
 -export([mk/1, mk/2]).
 -export([ref/1, ref/2]).
 -export([array/1, union/1, enum/1]).
--export([lazy/1]).
+-export([lazy/1, map/2]).
 
 -include("hoconsc.hrl").
 
@@ -49,6 +49,8 @@ union(OfTypes) when is_list(OfTypes) -> ?UNION(OfTypes).
 enum(OfSymbols) when is_list(OfSymbols) -> ?ENUM(OfSymbols).
 
 lazy(HintType) -> ?LAZY(HintType).
+
+map(Name, Type) -> ?MAP(Name, Type).
 
 assert_type(S) when is_function(S) -> error({expecting_type_but_got_schema, S});
 assert_type(#{type := _} = S) -> error({expecting_type_but_got_schema, S});
