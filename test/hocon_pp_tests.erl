@@ -13,14 +13,19 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 %%--------------------------------------------------------------------
+-module(hocon_pp_tests).
 
--ifndef(HOCON_PRIVATE_HRL).
--define(HOCON_PRIVATE_HRL, true).
+-include_lib("erlymatch/include/erlymatch.hrl").
 
--define(METADATA, '$hcMeta').
--define(HOCON_V, '$hcVal').
--define(HOCON_T, '$hcTyp').
+pp_test_() ->
+    [ {"emqx.conf", do_fun("etc/emqx.conf")}
+    ].
 
-%% random magic bytes to work as newline instead of "\n"
--define(NL, <<"magic-chicken", 255, 156, 173, 82, 187, 168, 136>>).
--endif.
+do_fun(File) ->
+    fun() -> do(File) end.
+
+do(File) ->
+    {ok, Conf} = hocon:load(File),
+    PP = hocon_pp:do(Conf, #{}),
+    {ok, Conf2} = hocon:binary(iolist_to_binary(PP)),
+    ?assertEqual(Conf, Conf2).

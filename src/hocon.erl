@@ -102,7 +102,9 @@ binary(Binary, Opts) ->
 -spec deep_merge(undefined | map(), map()) -> map().
 deep_merge(Base, Override) -> hocon_util:deep_merge(Base, Override).
 
-do_binary(Binary, Ctx) ->
+do_binary(String, Ctx) when is_list(String) ->
+    do_binary(iolist_to_binary(String), Ctx);
+do_binary(Binary, Ctx) when is_binary(Binary) ->
     hocon_util:pipeline(Binary, Ctx,
                        [ fun hocon_token:scan/2
                        , fun hocon_token:rm_trailing_comma/1
