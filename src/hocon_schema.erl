@@ -33,6 +33,7 @@
 -export([richmap_to_map/1, get_value/2, get_value/3]).
 -export([namespace/1, resolve_struct_name/2, root_names/1]).
 -export([field_schema/2, override/2]).
+-export([find_structs/1]).
 
 -include("hoconsc.hrl").
 -include("hocon_private.hrl").
@@ -167,6 +168,20 @@ roots(Schema) ->
             AllNames = [Name || {Name, _} <- All],
             error({duplicated_root_names, AllNames -- maps:keys(Result)})
     end.
+
+%% @doc Collect all structs defined in the given schema.
+-spec find_structs(schema()) ->
+        {RootNs :: name(), RootFields :: [field()],
+         [{Namespace :: name(), Name :: name(), [field()]}]}.
+find_structs(Schema) ->
+    Roots = hocon_schema:roots(Schema),
+    RootFields = lists:map(fun({_BinName, {RootFieldName, RootFieldSchema}}) ->
+                                   {RootFieldName, RootFieldSchema}
+                           end, maps:to_list(Roots)),
+    All = find_structs(Schema, RootFields, #{}),
+    RootNs = hocon_schema:namespace(Schema),
+    {RootNs, RootFields,
+     [{Ns, Name, Fields} || {{Ns, Name}, Fields} <- lists:keysort(1, maps:to_list(All))]}.
 
 do_roots(Mod) when is_atom(Mod) ->
     try Mod:roots()
@@ -1098,3 +1113,40 @@ do_find_error([{error, E} | More], Errors) ->
     do_find_error(More, [E | Errors]);
 do_find_error([_ | More], Errors) ->
     do_find_error(More, Errors).
+
+find_structs(_Schema, [], Acc) -> Acc;
+find_structs(Schema, [{_FieldName, FieldSchema} | Fields], Acc0) ->
+    Type = hocon_schema:field_schema(FieldSchema, type),
+    Acc = find_structs_per_type(Schema, Type, Acc0),
+    find_structs(Schema, Fields, Acc).
+
+find_structs_per_type(Schema, Name, Acc) when is_list(Name) ->
+    find_ref(Schema, Name, Acc);
+find_structs_per_type(Schema, ?REF(Name), Acc) ->
+    find_ref(Schema, Name, Acc);
+find_structs_per_type(_Schema, ?R_REF(Module, Name), Acc) ->
+    find_ref(Module, Name, Acc);
+find_structs_per_type(Schema, ?LAZY(Type), Acc) ->
+    find_structs_per_type(Schema, Type, Acc);
+find_structs_per_type(Schema, ?ARRAY(Type), Acc) ->
+    find_structs_per_type(Schema, Type, Acc);
+find_structs_per_type(Schema, ?UNION(Types), Acc) ->
+    lists:foldl(fun(T, AccIn) ->
+                        find_structs_per_type(Schema, T, AccIn)
+                end, Acc, Types);
+find_structs_per_type(Schema, ?MAP(_Name, Type), Acc) ->
+    find_structs_per_type(Schema, Type, Acc);
+find_structs_per_type(_Schema, _Type, Acc) ->
+    Acc.
+
+find_ref(Schema, Name, Acc) ->
+    Namespace = hocon_schema:namespace(Schema),
+    Key = {Namespace, Name},
+    case maps:find(Key, Acc) of
+        {ok, _} ->
+            %% visted before, avoid duplication
+            Acc;
+        error ->
+            Fields = hocon_schema:fields(Schema, Name),
+            find_structs(Schema, Fields, Acc#{Key => Fields})
+    end.
