@@ -64,7 +64,9 @@
                       | ?UNION([type()])
                       | ?ARRAY(type())
                       | ?ENUM(type())
-                      | field_schema_map().
+                      | field_schema_map()
+                      | field_schema_fun().
+-type field_schema_fun() :: fun((_) -> _).
 -type field_schema_map() ::
         #{ type := type()
          , default => term()
@@ -112,7 +114,6 @@
                  , check_lazy => boolean()
                  }.
 
-
 -callback namespace() -> name().
 -callback roots() -> [root_type()].
 -callback fields(name()) -> [field()].
@@ -141,7 +142,7 @@
 -define(MAGIC_SCHEMA, #{type => ?MAGIC}).
 
 %% @doc Make a higher order schema by overriding `Base' with `OnTop'
--spec override(field_schema(), field_schema_map()) -> field_schema().
+-spec override(field_schema(), field_schema_map()) -> field_schema_fun().
 override(Base, OnTop) ->
     fun(SchemaKey) ->
             case maps:is_key(SchemaKey, OnTop) of
