@@ -26,9 +26,12 @@
 -define(R_REF(Module, Name), {ref, Module, Name}). % remote ref
 -define(IS_TYPEREFL(X), (is_tuple(X) andalso element(1, Type) =:= '$type_refl')).
 
-%% a field having lazy reference type is not type-checked as a part of its enclosing struct
+%% A field having lazy type is not type-checked as a part of its enclosing struct
 %% the user of this field is responsible for type checks at runtime
 %% the hint type is useful when generating documents
 -define(LAZY(HintType), {lazy, HintType}).
+
+%% Map keys are always strings, `Name' is only for documentation
+-define(MAP(Name, Type), {map, Name, Type}).
 
 -endif.

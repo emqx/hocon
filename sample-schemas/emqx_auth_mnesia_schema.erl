@@ -10,24 +10,19 @@ roots() -> ["auth"].
 
 fields("auth") ->
     [ {"mnesia", emqx_schema:ref("mnesia")}
-    , {"client", emqx_schema:ref("client")}
-    , {"user", emqx_schema:ref("user")}];
+    , {"client", hoconsc:map("id", hoconsc:ref("client"))}
+    , {"user", hoconsc:map("id", hoconsc:ref("user"))}
+    ];
 
 fields("mnesia") ->
     [ {"password_hash", emqx_schema:t(union([plain, md5, sha, sha256, sha512]),
                                       "emqx_auth_mnesia.password_hash", sha256)}];
 
 fields("client") ->
-    [ {"$id", emqx_schema:ref("client_settings")}];
-
-fields("user") ->
-    [ {"$id", emqx_schema:ref("user_settings")}];
-
-fields("client_settings") ->
    [ {"clientid", emqx_schema:t(string())}
    , {"password", emqx_schema:t(string())}];
 
-fields("user_settings") ->
+fields("user") ->
     [ {"username", emqx_schema:t(string())}
     , {"password", emqx_schema:t(string())}].
 

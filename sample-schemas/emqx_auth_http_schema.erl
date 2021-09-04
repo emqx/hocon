@@ -23,12 +23,9 @@ fields("http") ->
 fields("req") ->
     [ {"url", emqx_schema:t(string(), undefined, undefined)}
     , {"method", emqx_schema:t(union(get, post), undefined, post)}
-    , {"headers", emqx_schema:ref("headers")}
+    , {"headers", hoconsc:map("name", string())}
     , {"params", emqx_schema:t(string(), undefined, undefined)}
     ];
-
-fields("headers") ->
-    [ {"$field", emqx_schema:t(string(), undefined, undefined)}];
 
 % @TODO modify emqx_auth_http_app.erl
 fields("ssl") ->

@@ -733,7 +733,7 @@ root_array_test_() ->
 
 ref_nullable_test() ->
     Sc = #{roots => [ {k, #{type => hoconsc:ref(sub),
-                              nullable => {true, recursively}}}
+                            nullable => {true, recursively}}}
                     , {x, string()}
                     ],
            fields =>  #{sub => [{a, string()}, {b, string()}]}
@@ -741,7 +741,16 @@ ref_nullable_test() ->
     Conf = "x = y",
     {ok, RichMap} = hocon:binary(Conf, #{format => richmap}),
     ?assertEqual(#{<<"x">> => "y"},
-                 hocon_schema:richmap_to_map(hocon_schema:check(Sc, RichMap))).
+                 hocon_schema:richmap_to_map(hocon_schema:check(Sc, RichMap))),
+    {ok, Map} = hocon:binary("k = null, x = y", #{format => map}),
+    ?assertEqual(#{<<"x">> => "y"}, hocon_schema:check_plain(Sc, Map)),
+    with_envs(
+      fun() ->
+            {ok, Map2} = hocon:binary("k = {a: a, b: b}, x = y", #{format => map}),
+            ?assertEqual(#{<<"x">> => "y"}, hocon_schema:check_plain(Sc, Map2))
+      end, [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"},
+            {"EMQX_K", "null"}
+           ]).
 
 lazy_test() ->
     Sc = #{roots => [ {k, #{type => hoconsc:lazy(integer())}}

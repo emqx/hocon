@@ -52,6 +52,8 @@ find_structs_per_type(Schema, ?UNION(Types), Acc) ->
     lists:foldl(fun(T, AccIn) ->
                         find_structs_per_type(Schema, T, AccIn)
                 end, Acc, Types);
+find_structs_per_type(Schema, ?MAP(_Name, Type), Acc) ->
+    find_structs_per_type(Schema, Type, Acc);
 find_structs_per_type(_Schema, _Type, Acc) ->
     Acc.
 
@@ -116,6 +118,7 @@ do_type(Ns, ?ARRAY(T)) -> io_lib:format("[~s]", [do_type(Ns, T)]);
 do_type(Ns, ?UNION(Ts)) -> lists:join(" | ", [do_type(Ns, T) || T <- Ts]);
 do_type(_Ns, ?ENUM(Symbols)) -> lists:join(" | ", [bin(S) || S <- Symbols]);
 do_type(Ns, ?LAZY(T)) -> do_type(Ns, T);
+do_type(Ns, ?MAP(Name, T)) -> ["{$", bin(Name), " -> ", do_type(Ns, T), "}"];
 do_type(_Ns, {'$type_refl', #{name := Type}}) -> lists:flatten(Type).
 
 ref(undefined, Name) -> Name;

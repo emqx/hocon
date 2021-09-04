@@ -29,7 +29,7 @@ no_crash_test_() ->
      {"arbitrary2",
       gen(#{namespace => dummy,
             roots => [foo],
-            fields => #{foo => [{"f1", hoconsc:mk(hoconsc:ref(emqx_schema, "zone_settings"))}]}
+            fields => #{foo => [{"f1", hoconsc:mk(hoconsc:ref(emqx_schema, "zone"))}]}
            })}
     ].
 
