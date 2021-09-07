@@ -39,7 +39,6 @@ cli_options() ->
 %% Option Name, Short Code, Long Code, Argument Spec, Help Message
     [
       {help, $h, "help", undefined, "Print this usage page"}
-    , {etc_dir, $e, "etc_dir", {string, "/etc"}, "etc dir"}
     , {dest_dir, $d, "dest_dir", string, "specifies the directory to write the config file to"}
     , {dest_file, $f, "dest_file", {string, "app"}, "the file name to write"}
     , {schema_file, $i, "schema_file", string, "the file name of schema module"}
@@ -117,7 +116,9 @@ main(Args) ->
 %% equav command: date -u +"%Y.%m.%d.%H.%M.%S"
 now_time() ->
     {{Y, M, D}, {HH, MM, SS}} = calendar:local_time(),
-    ?STDOUT("~0p.~2..0b.~2..0b.~2..0b.~2..0b.~2..0b", [Y, M, D, HH, MM, SS]).
+    Res = io_lib:format("~0p.~2..0b.~2..0b.~2..0b.~2..0b.~2..0b", [Y, M, D, HH, MM, SS]),
+    ?STDOUT("~s", [Res]),
+    lists:flatten(Res).
 
 is_valid_now_time(T) ->
     re:run(T, "^[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[0-9]{2}\.[0-9]{2}\.[0-9]{2}$") =/= nomatch.
@@ -180,12 +181,15 @@ load_conf(ParsedArgs, LogFunc) ->
 
 -spec writable_destination_path([proplists:property()]) -> file:filename() | error.
 writable_destination_path(ParsedArgs) ->
-    EtcDir = proplists:get_value(etc_dir, ParsedArgs),
-    DestinationPath = proplists:get_value(dest_dir, ParsedArgs, filename:join(EtcDir, "generated")),
-    AbsoluteDestPath = case DestinationPath of
-                           [$/ | _] -> DestinationPath;
-                           _      -> filename:join(element(2, file:get_cwd()), DestinationPath)
-                       end,
+    DestinationPath = proplists:get_value(dest_dir, ParsedArgs),
+    case DestinationPath =:= undefined of
+        true ->
+            log(error, "Missing -d|--dest_dir option", []),
+            stop_deactivate();
+        _ ->
+            ok
+    end,
+    AbsoluteDestPath = filename:absname(DestinationPath),
     %% Check Permissions
     case filelib:ensure_dir(filename:join(AbsoluteDestPath, "weaksauce.dummy")) of
         %% filelib:ensure_dir/1 requires a dummy filename in the argument,
@@ -207,11 +211,16 @@ generate(ParsedArgs) ->
 
     DestFile = proplists:get_value(dest_file, ParsedArgs),
 
-    NowTime = proplists:get_value(now_time, ParsedArgs, ""),
+    NowTime0 = proplists:get_value(now_time, ParsedArgs),
+    NowTime = case NowTime0 =:= undefined of
+                  true -> now_time();
+                  false -> NowTime0
+              end,
     case is_valid_now_time(NowTime) of
         true -> ok;
         false ->
-            log(error, "bad -t|--now_time option, get it from this script's now_time command", []),
+            log(error, "bad -t|--now_time option, get it from this script's now_time command or "
+                       "from command: date +'%Y.%m.%d.%H.%M.%S'", []),
             stop_deactivate()
     end,
 

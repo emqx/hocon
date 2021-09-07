@@ -33,6 +33,7 @@
 -export([richmap_to_map/1, get_value/2, get_value/3]).
 -export([namespace/1, resolve_struct_name/2, root_names/1]).
 -export([field_schema/2, override/2]).
+-export([find_structs/1]).
 
 -include("hoconsc.hrl").
 -include("hocon_private.hrl").
@@ -70,7 +71,7 @@
 -type field_schema_map() ::
         #{ type := type()
          , default => term()
-         , mapping => string()
+         , mapping => undefined | string()
          , converter => function()
          , validator => function()
          , override_env => string()
@@ -152,26 +153,37 @@ override(Base, OnTop) ->
     end.
 
 %% behaviour APIs
--spec roots(schema()) -> #{name() => {name(), field_schema()}}.
+-spec roots(schema()) -> [{name(), {name(), field_schema()}}].
 roots(Schema) ->
     All =
       lists:map(fun({N, T}) -> {bin(N), {N, T}};
                    (N) when is_atom(Schema) -> {bin(N), {N, ?R_REF(Schema, N)}};
                    (N) -> {bin(N), {N, ?REF(N)}}
                 end, do_roots(Schema)),
-    Result = maps:from_list(All),
-    case length(All) =:= maps:size(Result) of
+    AllNames = [Name || {Name, _} <- All],
+    UniqueNames = lists:usort(AllNames),
+    case length(UniqueNames) =:= length(AllNames) of
         true  ->
-            Result;
+            All;
         false ->
-            AllNames = [Name || {Name, _} <- All],
-            error({duplicated_root_names, AllNames -- maps:keys(Result)})
+            error({duplicated_root_names, AllNames -- UniqueNames})
     end.
 
-do_roots(Mod) when is_atom(Mod) ->
-    try Mod:roots()
-    catch error : undef -> Mod:structs()
-    end;
+%% @doc Collect all structs defined in the given schema.
+-spec find_structs(schema()) ->
+        {RootNs :: name(), RootFields :: [field()],
+         [{Namespace :: name(), Name :: name(), [field()]}]}.
+find_structs(Schema) ->
+    Roots = ?MODULE:roots(Schema),
+    RootFields = lists:map(fun({_BinName, {RootFieldName, RootFieldSchema}}) ->
+                                   {RootFieldName, RootFieldSchema}
+                           end, Roots),
+    All = find_structs(Schema, RootFields, #{}),
+    RootNs = hocon_schema:namespace(Schema),
+    {RootNs, RootFields,
+     [{Ns, Name, Fields} || {{Ns, Name}, Fields} <- lists:keysort(1, maps:to_list(All))]}.
+
+do_roots(Mod) when is_atom(Mod) -> Mod:roots();
 do_roots(#{roots := Names}) -> Names.
 
 -spec fields(schema(), name()) -> [field()].
@@ -218,14 +230,14 @@ namespace(Schema) ->
 
 %% @doc Resolve struct name from a guess.
 resolve_struct_name(Schema, StructName) ->
-    case maps:find(bin(StructName), roots(Schema)) of
-        {ok, {N, _Sc}} -> N;
-        error -> throw({unknown_struct_name, Schema, StructName})
+    case lists:keyfind(bin(StructName), 1, roots(Schema)) of
+        {_, {N, _Sc}} -> N;
+        false -> throw({unknown_struct_name, Schema, StructName})
     end.
 
 %% @doc Get all root names from a schema.
 -spec root_names(schema()) -> [binary()].
-root_names(Schema) -> maps:keys(roots(Schema)).
+root_names(Schema) -> [Name || {Name, _} <- roots(Schema)].
 
 %% @doc generates application env from a parsed .conf and a schema module.
 %% For example, one can set the output values by
@@ -367,7 +379,7 @@ maybe_convert_to_plain_map(Conf, _Opts) ->
 
 -spec map(schema(), hocon:config()) -> {[proplists:property()], hocon:config()}.
 map(Schema, Conf) ->
-    Roots = maps:keys(roots(Schema)),
+    Roots = [N || {N, _} <- roots(Schema)],
     map(Schema, Conf, Roots, #{}).
 
 -spec map(schema(), hocon:config(), all | [name()]) ->
@@ -414,10 +426,10 @@ filter_by_roots(Opts, Conf, Roots) ->
 
 resolve_root_types(_Roots, []) -> [];
 resolve_root_types(Roots, [Name | Rest]) ->
-    case maps:find(bin(Name), Roots) of
-        {ok, {N, Sc}} ->
-            [{N, Sc} | resolve_root_types(Roots, Rest)];
-        error ->
+    case lists:keyfind(bin(Name), 1, Roots) of
+        {_, {OrigName, Sc}} ->
+            [{OrigName, Sc} | resolve_root_types(Roots, Rest)];
+        false ->
             %% maybe a private struct which is not exposed in roots/0
             [{Name, hoconsc:ref(Name)} | resolve_root_types(Roots, Rest)]
     end.
@@ -499,8 +511,8 @@ map_field(?MAP(_Name, Type), FieldSchema, Value, Opts) ->
     %% map type always has string keys
     Keys = maps_keys(unbox(Opts, Value)),
     FieldNames = [str(K) || K <- Keys],
-    % All objects in this map should share the same schema.
-    NewSc = override(FieldSchema, #{type => Type}),
+    %% All objects in this map should share the same schema.
+    NewSc = override(FieldSchema, #{type => Type, mapping => undefined}),
     NewFields = [{FieldName, NewSc} || FieldName <- FieldNames],
     do_map(NewFields, Value, Opts, NewSc); %% start over
 map_field(?R_REF(Module, Ref), FieldSchema, Value, Opts) ->
@@ -1098,3 +1110,40 @@ do_find_error([{error, E} | More], Errors) ->
     do_find_error(More, [E | Errors]);
 do_find_error([_ | More], Errors) ->
     do_find_error(More, Errors).
+
+find_structs(_Schema, [], Acc) -> Acc;
+find_structs(Schema, [{_FieldName, FieldSchema} | Fields], Acc0) ->
+    Type = hocon_schema:field_schema(FieldSchema, type),
+    Acc = find_structs_per_type(Schema, Type, Acc0),
+    find_structs(Schema, Fields, Acc).
+
+find_structs_per_type(Schema, Name, Acc) when is_list(Name) ->
+    find_ref(Schema, Name, Acc);
+find_structs_per_type(Schema, ?REF(Name), Acc) ->
+    find_ref(Schema, Name, Acc);
+find_structs_per_type(_Schema, ?R_REF(Module, Name), Acc) ->
+    find_ref(Module, Name, Acc);
+find_structs_per_type(Schema, ?LAZY(Type), Acc) ->
+    find_structs_per_type(Schema, Type, Acc);
+find_structs_per_type(Schema, ?ARRAY(Type), Acc) ->
+    find_structs_per_type(Schema, Type, Acc);
+find_structs_per_type(Schema, ?UNION(Types), Acc) ->
+    lists:foldl(fun(T, AccIn) ->
+                        find_structs_per_type(Schema, T, AccIn)
+                end, Acc, Types);
+find_structs_per_type(Schema, ?MAP(_Name, Type), Acc) ->
+    find_structs_per_type(Schema, Type, Acc);
+find_structs_per_type(_Schema, _Type, Acc) ->
+    Acc.
+
+find_ref(Schema, Name, Acc) ->
+    Namespace = hocon_schema:namespace(Schema),
+    Key = {Namespace, Name},
+    case maps:find(Key, Acc) of
+        {ok, _} ->
+            %% visted before, avoid duplication
+            Acc;
+        error ->
+            Fields = hocon_schema:fields(Schema, Name),
+            find_structs(Schema, Fields, Acc#{Key => Fields})
+    end.
