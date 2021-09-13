@@ -32,7 +32,8 @@
 -export([check/2, check/3, check_plain/2, check_plain/3, check_plain/4]).
 -export([richmap_to_map/1, get_value/2, get_value/3]).
 -export([namespace/1, resolve_struct_name/2, root_names/1]).
--export([field_schema/2]).
+-export([field_schema/2, override/2]).
+-export([find_structs/1]).
 
 -include("hoconsc.hrl").
 -include("hocon_private.hrl").
@@ -64,19 +65,23 @@
                       | ?UNION([type()])
                       | ?ARRAY(type())
                       | ?ENUM(type())
-                      | #{ type := type()
-                         , default => term()
-                         , mapping => string()
-                         , converter => function()
-                         , validator => function()
-                         , override_env => string()
-                           %% set true if a field is allowed to be `undefined`
-                           %% NOTE: has no point setting it to `true` if field has a default value
-                         , nullable => true | false | {true, recursively} % default = true
-                           %% for sensitive data obfuscation (password, token)
-                         , sensitive => boolean()
-                         , desc => iodata()
-                         }.
+                      | field_schema_map()
+                      | field_schema_fun().
+-type field_schema_fun() :: fun((_) -> _).
+-type field_schema_map() ::
+        #{ type := type()
+         , default => term()
+         , mapping => undefined | string()
+         , converter => function()
+         , validator => function()
+         , override_env => string()
+           %% set true if a field is allowed to be `undefined`
+           %% NOTE: has no point setting it to `true` if field has a default value
+         , nullable => true | false | {true, recursively} % default = true
+           %% for sensitive data obfuscation (password, token)
+         , sensitive => boolean()
+         , desc => iodata()
+         }.
 
 -type field() :: {name(), typefunc() | field_schema()}.
 -type translation() :: {name(), translationfunc()}.
@@ -110,7 +115,6 @@
                  , check_lazy => boolean()
                  }.
 
-
 -callback namespace() -> name().
 -callback roots() -> [root_type()].
 -callback fields(name()) -> [field()].
@@ -135,28 +139,51 @@
 
 -define(META_BOX(Tag, Metadata), #{?METADATA => #{Tag => Metadata}}).
 -define(NULL_BOX, #{?METADATA => #{made_for => null_value}}).
+-define(MAGIC, '$magic_chicken').
+-define(MAGIC_SCHEMA, #{type => ?MAGIC}).
+
+%% @doc Make a higher order schema by overriding `Base' with `OnTop'
+-spec override(field_schema(), field_schema_map()) -> field_schema_fun().
+override(Base, OnTop) ->
+    fun(SchemaKey) ->
+            case maps:is_key(SchemaKey, OnTop) of
+                true -> field_schema(OnTop, SchemaKey);
+                false -> field_schema(Base, SchemaKey)
+            end
+    end.
 
 %% behaviour APIs
--spec roots(schema()) -> #{name() => {name(), field_schema()}}.
+-spec roots(schema()) -> [{name(), {name(), field_schema()}}].
 roots(Schema) ->
     All =
       lists:map(fun({N, T}) -> {bin(N), {N, T}};
                    (N) when is_atom(Schema) -> {bin(N), {N, ?R_REF(Schema, N)}};
                    (N) -> {bin(N), {N, ?REF(N)}}
                 end, do_roots(Schema)),
-    Result = maps:from_list(All),
-    case length(All) =:= maps:size(Result) of
+    AllNames = [Name || {Name, _} <- All],
+    UniqueNames = lists:usort(AllNames),
+    case length(UniqueNames) =:= length(AllNames) of
         true  ->
-            Result;
+            All;
         false ->
-            AllNames = [Name || {Name, _} <- All],
-            error({duplicated_root_names, AllNames -- maps:keys(Result)})
+            error({duplicated_root_names, AllNames -- UniqueNames})
     end.
 
-do_roots(Mod) when is_atom(Mod) ->
-    try Mod:roots()
-    catch error : undef -> Mod:structs()
-    end;
+%% @doc Collect all structs defined in the given schema.
+-spec find_structs(schema()) ->
+        {RootNs :: name(), RootFields :: [field()],
+         [{Namespace :: name(), Name :: name(), [field()]}]}.
+find_structs(Schema) ->
+    Roots = ?MODULE:roots(Schema),
+    RootFields = lists:map(fun({_BinName, {RootFieldName, RootFieldSchema}}) ->
+                                   {RootFieldName, RootFieldSchema}
+                           end, Roots),
+    All = find_structs(Schema, RootFields, #{}),
+    RootNs = hocon_schema:namespace(Schema),
+    {RootNs, RootFields,
+     [{Ns, Name, Fields} || {{Ns, Name}, Fields} <- lists:keysort(1, maps:to_list(All))]}.
+
+do_roots(Mod) when is_atom(Mod) -> Mod:roots();
 do_roots(#{roots := Names}) -> Names.
 
 -spec fields(schema(), name()) -> [field()].
@@ -203,14 +230,14 @@ namespace(Schema) ->
 
 %% @doc Resolve struct name from a guess.
 resolve_struct_name(Schema, StructName) ->
-    case maps:find(bin(StructName), roots(Schema)) of
-        {ok, {N, _Sc}} -> N;
-        error -> throw({unknown_struct_name, Schema, StructName})
+    case lists:keyfind(bin(StructName), 1, roots(Schema)) of
+        {_, {N, _Sc}} -> N;
+        false -> throw({unknown_struct_name, Schema, StructName})
     end.
 
 %% @doc Get all root names from a schema.
 -spec root_names(schema()) -> [binary()].
-root_names(Schema) -> maps:keys(roots(Schema)).
+root_names(Schema) -> [Name || {Name, _} <- roots(Schema)].
 
 %% @doc generates application env from a parsed .conf and a schema module.
 %% For example, one can set the output values by
@@ -352,7 +379,7 @@ maybe_convert_to_plain_map(Conf, _Opts) ->
 
 -spec map(schema(), hocon:config()) -> {[proplists:property()], hocon:config()}.
 map(Schema, Conf) ->
-    Roots = maps:keys(roots(Schema)),
+    Roots = [N || {N, _} <- roots(Schema)],
     map(Schema, Conf, Roots, #{}).
 
 -spec map(schema(), hocon:config(), all | [name()]) ->
@@ -374,7 +401,7 @@ map(Schema, Conf0, Roots0, Opts0) ->
     Conf1 = filter_by_roots(Opts, Conf0, Roots),
     {EnvNamespace, Envs} = collect_envs(Opts0),
     Conf = apply_envs(EnvNamespace, Envs, Opts, Roots, Conf1),
-    {Mapped, NewConf} = do_map(Roots, Conf, Opts, root),
+    {Mapped, NewConf} = do_map(Roots, Conf, Opts, ?MAGIC_SCHEMA),
     ok = assert_no_error(Schema, Mapped),
     ok = assert_integrity(Schema, NewConf, Opts),
     {Mapped, maybe_convert_to_plain_map(NewConf, Opts)}.
@@ -399,10 +426,10 @@ filter_by_roots(Opts, Conf, Roots) ->
 
 resolve_root_types(_Roots, []) -> [];
 resolve_root_types(Roots, [Name | Rest]) ->
-    case maps:find(bin(Name), Roots) of
-        {ok, {N, Sc}} ->
-            [{N, Sc} | resolve_root_types(Roots, Rest)];
-        error ->
+    case lists:keyfind(bin(Name), 1, Roots) of
+        {_, {OrigName, Sc}} ->
+            [{OrigName, Sc} | resolve_root_types(Roots, Rest)];
+        false ->
             %% maybe a private struct which is not exposed in roots/0
             [{Name, hoconsc:ref(Name)} | resolve_root_types(Roots, Rest)]
     end.
@@ -430,53 +457,32 @@ str(S) when is_list(S) -> S.
 bin(A) when is_atom(A) -> atom_to_binary(A, utf8);
 bin(S) -> iolist_to_binary(S).
 
-do_map(Fields, Value, Opts, FieldSchema) ->
+do_map(Fields, Value, Opts, ParentSchema) ->
     case unbox(Opts, Value) of
         undefined ->
-            case is_nullable(Opts, FieldSchema) of
+            case is_nullable(Opts, ParentSchema) of
                 {true, recursively} ->
                     {[], boxit(Opts, undefined, undefined)};
                 true ->
                     do_map2(Fields, boxit(Opts, undefined, undefined), Opts,
-                            FieldSchema);
+                            ParentSchema);
                 false ->
                     {validation_errs(Opts, not_nullable, undefined), undefined}
             end;
         V when is_map(V) ->
-            do_map2(Fields, Value, Opts, FieldSchema);
+            do_map2(Fields, Value, Opts, ParentSchema);
         _ ->
             {validation_errs(Opts, bad_value_for_struct, Value), Value}
     end.
 
-%% Conf must be a map from here on
-do_map2([{[$$ | _] = _Wildcard, Schema}], Conf, Opts, FieldSchema) ->
-    %% wildcard: support dynamic field names.
-    %% e.g. in this config:
-    %%     #{config => #{internal => #{val => 1},
-    %%                   external => #{val => 2}}
-    %% `internal` and `external` share the same schema, which is_map
-    %%     [{"val", #{type => integer()}}]
-    %%
-    %% If there is no wildcard, the enclosing schema should be:
-    %%     [{"internal", #{type => "val"}}
-    %%      {"external", #{type => "val"}}]
-    %%
-    %% This will not allow us to add more fields without changing
-    %% the schema (source code). So, wildcard is to the rescue:
-    %% The enclosing field name can be defined with a leading $
-    %% e.g.
-    %%     [{"$name", #{type => "val"}}].
-    Keys = maps_keys(unbox(Opts, Conf)),
-    FieldNames = [str(K) || K <- Keys],
-    % All objects in this map should share the same schema.
-    Fields = [{FieldName, Schema} || FieldName <- FieldNames],
-    do_map(Fields, Conf, Opts, FieldSchema); %% start over
-do_map2(Fields, Value, Opts, _FieldSchema) ->
+do_map2(Fields, Value0, Opts, _ParentSchema) ->
     SchemaFieldNames = [N || {N, _Schema} <- Fields],
-    DataFields = unbox(Opts, Value),
+    DataFields0 = unbox(Opts, Value0),
+    DataFields = drop_nulls(Opts, DataFields0),
+    Value = boxit(Opts, DataFields, Value0),
     case check_unknown_fields(Opts, SchemaFieldNames, DataFields) of
-        ok -> map_fields(Fields, Value, [], Opts);
-        Errors -> {Errors, Value}
+      ok -> map_fields(Fields, Value, [], Opts);
+      Errors -> {Errors, Value}
     end.
 
 map_fields([], Conf, Mapped, _Opts) ->
@@ -501,10 +507,18 @@ map_one_field(FieldType, FieldSchema, FieldValue, Opts) ->
             {Acc, FieldValue}
     end.
 
-map_field({ref, Module, Ref}, FieldSchema, Value, Opts) ->
+map_field(?MAP(_Name, Type), FieldSchema, Value, Opts) ->
+    %% map type always has string keys
+    Keys = maps_keys(unbox(Opts, Value)),
+    FieldNames = [str(K) || K <- Keys],
+    %% All objects in this map should share the same schema.
+    NewSc = override(FieldSchema, #{type => Type, mapping => undefined}),
+    NewFields = [{FieldName, NewSc} || FieldName <- FieldNames],
+    do_map(NewFields, Value, Opts, NewSc); %% start over
+map_field(?R_REF(Module, Ref), FieldSchema, Value, Opts) ->
     %% Switching to another module, good luck.
     do_map(Module:fields(Ref), Value, Opts#{schema := Module}, FieldSchema);
-map_field({ref, Ref}, FieldSchema, Value, #{schema := Schema} = Opts) ->
+map_field(?REF(Ref), FieldSchema, Value, #{schema := Schema} = Opts) ->
     Fields = fields(Schema, Ref),
     do_map(Fields, Value, Opts, FieldSchema);
 map_field(Ref, FieldSchema, Value, #{schema := Schema} = Opts) when is_list(Ref) ->
@@ -630,8 +644,12 @@ is_nullable(Opts, Schema) ->
 field_schema(Atom, type) when is_atom(Atom) -> Atom;
 field_schema(Type, SchemaKey) when ?IS_TYPEREFL(Type) ->
     field_schema(hoconsc:mk(Type), SchemaKey);
+field_schema(?MAP(_Name, _Type) = Map, SchemaKey) ->
+    field_schema(hoconsc:mk(Map), SchemaKey);
 field_schema(?LAZY(_) = Lazy, SchemaKey) ->
     field_schema(hoconsc:mk(Lazy), SchemaKey);
+field_schema(Ref, SchemaKey) when is_list(Ref) ->
+    field_schema(hoconsc:mk(Ref), SchemaKey);
 field_schema(?REF(_) = Ref, SchemaKey) ->
     field_schema(hoconsc:mk(Ref), SchemaKey);
 field_schema(?R_REF(_, _) = Ref, SchemaKey) ->
@@ -644,7 +662,7 @@ field_schema(?ENUM(_) = Enum, SchemaKey) ->
     field_schema(hoconsc:mk(Enum), SchemaKey);
 field_schema(FieldSchema, SchemaKey) when is_function(FieldSchema, 1) ->
     FieldSchema(SchemaKey);
-field_schema(#{type := _} = FieldSchema, SchemaKey) ->
+field_schema(FieldSchema, SchemaKey) when is_map(FieldSchema) ->
     maps:get(SchemaKey, FieldSchema, undefined).
 
 maybe_mapping(undefined, _) -> []; % no mapping defined for this field
@@ -1017,6 +1035,17 @@ richmap_to_map(Iter, Map) ->
             Map
     end.
 
+%% treat 'null' as absence
+drop_nulls(_Opts, undefined) -> undefined;
+drop_nulls(Opts, Map) when is_map(Map) ->
+    maps:filter(fun(_Key, Value) ->
+                        case unbox(Opts, Value) of
+                            null -> false;
+                            {'$FROM_ENV_VAR', _, null} -> false;
+                            _ -> true
+                        end
+                end, Map).
+
 %% @doc Get (maybe nested) field value for the given path.
 %% This function works for both plain and rich map,
 %% And it always returns plain map.
@@ -1081,3 +1110,40 @@ do_find_error([{error, E} | More], Errors) ->
     do_find_error(More, [E | Errors]);
 do_find_error([_ | More], Errors) ->
     do_find_error(More, Errors).
+
+find_structs(_Schema, [], Acc) -> Acc;
+find_structs(Schema, [{_FieldName, FieldSchema} | Fields], Acc0) ->
+    Type = hocon_schema:field_schema(FieldSchema, type),
+    Acc = find_structs_per_type(Schema, Type, Acc0),
+    find_structs(Schema, Fields, Acc).
+
+find_structs_per_type(Schema, Name, Acc) when is_list(Name) ->
+    find_ref(Schema, Name, Acc);
+find_structs_per_type(Schema, ?REF(Name), Acc) ->
+    find_ref(Schema, Name, Acc);
+find_structs_per_type(_Schema, ?R_REF(Module, Name), Acc) ->
+    find_ref(Module, Name, Acc);
+find_structs_per_type(Schema, ?LAZY(Type), Acc) ->
+    find_structs_per_type(Schema, Type, Acc);
+find_structs_per_type(Schema, ?ARRAY(Type), Acc) ->
+    find_structs_per_type(Schema, Type, Acc);
+find_structs_per_type(Schema, ?UNION(Types), Acc) ->
+    lists:foldl(fun(T, AccIn) ->
+                        find_structs_per_type(Schema, T, AccIn)
+                end, Acc, Types);
+find_structs_per_type(Schema, ?MAP(_Name, Type), Acc) ->
+    find_structs_per_type(Schema, Type, Acc);
+find_structs_per_type(_Schema, _Type, Acc) ->
+    Acc.
+
+find_ref(Schema, Name, Acc) ->
+    Namespace = hocon_schema:namespace(Schema),
+    Key = {Namespace, Name},
+    case maps:find(Key, Acc) of
+        {ok, _} ->
+            %% visted before, avoid duplication
+            Acc;
+        error ->
+            Fields = hocon_schema:fields(Schema, Name),
+            find_structs(Schema, Fields, Acc#{Key => Fields})
+    end.

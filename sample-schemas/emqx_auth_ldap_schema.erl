@@ -22,7 +22,7 @@ fields("ldap") ->
     , {"device_dn", t(string(), "emqx_auth_ldap.device_dn", "ou=device,dc=emqx,dc=io")}
     , {"match_objectclass", t(string(), "emqx_auth_ldap.match_objectclass", "mqttUser")}
     , {"custom_base_dn", t(string(), "emqx_auth_ldap.custom_base_dn", "${username_attr}=${user},${device_dn}")}
-    , {"filters", emqx_schema:ref("filters")}
+    , {"filters", hoconsc:map("num", hoconsc:ref("filter"))}
     , {"bind_as_user", t(boolean(), "emqx_auth_ldap.bind_as_user", false)}
     , {"username_attr", t(string(), "emqx_auth_ldap.username_attr", "uid")}
     , {"password_attr", t(string(), "emqx_auth_ldap.password_attr", "userPassword")}
@@ -31,10 +31,7 @@ fields("ldap") ->
 fields("ssl") ->
     emqx_schema:ssl(undefined, #{enable => false, verify => verify_none});
 
-fields("filters") ->
-    [ {"$num", emqx_schema:ref("filter_settings")}];
-
-fields("filter_settings") ->
+fields("filter") ->
     [ {"key", t(string())}
     , {"value", t(string())}
     , {"op", t(union('and', 'or'))}

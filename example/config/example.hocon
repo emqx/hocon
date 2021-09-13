@@ -1,0 +1,14 @@
+myserver.listeners {
+    http {
+        port = 8080
+    }
+    https {
+        port = 8083
+        ssl {
+            cacertfile = "config/ssl/ca.pem"
+            keyfile = "config/ssl/server.key"
+            certfile = "config/ssl/server.pem"
+        }
+    }
+}
+myserver.concurrent_users_limit=1000

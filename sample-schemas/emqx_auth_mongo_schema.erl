@@ -31,15 +31,12 @@ fields("mongo") ->
     , {"ssl", emqx_schema:ref("ssl")}
     , {"w_mode", fun w_mode/1}
     , {"r_mode", fun r_mode/1}
-    , {"topology", emqx_schema:ref("topology")}
+    , {"topology", hoconsc:map("name", integer())}
     , {"query_timeout", emqx_schema:t(string(), undefined, undefined)}
     , {"auth_query", emqx_schema:ref("auth_query")}
     , {"super_query", emqx_schema:ref("super_query")}
     , {"acl_query", emqx_schema:ref("acl_query")}
     ];
-
-fields("topology") ->
-    [ {"$name", emqx_schema:t(integer(), undefined, undefined)}];
 
 fields("ssl") ->
     [ {"enable", emqx_schema:t(emqx_schema:flag(), undefined, false)}
@@ -63,11 +60,8 @@ fields("acl_query") ->
     [ {"enable", emqx_schema:t(emqx_schema:flag(), undefined, false)}
     , {"collection", emqx_schema:t(string(), undefined, "mqtt_user")}
     , {"selector", emqx_schema:t(string(), undefined, "")}
-    , {"selectors", emqx_schema:ref("selectors")}
-    ];
-
-fields("selectors") ->
-    [ {"$id", emqx_schema:t(string(), undefined, undefined)}].
+    , {"selectors", hoconsc:map("id", string())}
+    ].
 
 translations() -> ["emqx_auth_mongo", "mongodb"].
 

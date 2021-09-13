@@ -26,10 +26,8 @@ fields("jwks") ->
 
 fields("verify_claims") ->
     [ {"enable", emqx_schema:t(emqx_schema:flag(), undefined, false)}
-    , {"claims", emqx_schema:ref("claims")}];
-
-fields("claims") ->
-    [ {"$name", emqx_schema:t(string(), undefined, undefined)}].
+    , {"claims", hoconsc:map("name", string())}
+    ].
 
 translations() -> ["emqx_auth_jwt"].
 

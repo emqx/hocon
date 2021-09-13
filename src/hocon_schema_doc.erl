@@ -22,53 +22,12 @@
 -include("hocon_private.hrl").
 
 gen(Schema) ->
-    Roots = hocon_schema:roots(Schema),
-    RootFields = lists:map(fun({_BinName, {RootFieldName, RootFieldSchema}}) ->
-                                   {RootFieldName, RootFieldSchema}
-                           end, maps:to_list(Roots)),
-    All = find_structs(Schema, RootFields, #{}),
-    RootNs = hocon_schema:namespace(Schema),
-    RootKey = {RootNs, "Root Keys"},
-    [fmt_structs(1, RootNs, [{RootKey, RootFields}]),
-     fmt_structs(2, RootNs, lists:keysort(1, maps:to_list(All)))].
-
-find_structs(_Schema, [], Acc) -> Acc;
-find_structs(Schema, [{_FieldName, FieldSchema} | Fields], Acc0) ->
-    Type = hocon_schema:field_schema(FieldSchema, type),
-    Acc = find_structs_per_type(Schema, Type, Acc0),
-    find_structs(Schema, Fields, Acc).
-
-find_structs_per_type(Schema, Name, Acc) when is_list(Name) ->
-    find_ref(Schema, Name, Acc);
-find_structs_per_type(Schema, ?REF(Name), Acc) ->
-    find_ref(Schema, Name, Acc);
-find_structs_per_type(_Schema, ?R_REF(Module, Name), Acc) ->
-    find_ref(Module, Name, Acc);
-find_structs_per_type(Schema, ?LAZY(Type), Acc) ->
-    find_structs_per_type(Schema, Type, Acc);
-find_structs_per_type(Schema, ?ARRAY(Type), Acc) ->
-    find_structs_per_type(Schema, Type, Acc);
-find_structs_per_type(Schema, ?UNION(Types), Acc) ->
-    lists:foldl(fun(T, AccIn) ->
-                        find_structs_per_type(Schema, T, AccIn)
-                end, Acc, Types);
-find_structs_per_type(_Schema, _Type, Acc) ->
-    Acc.
-
-find_ref(Schema, Name, Acc) ->
-    Namespace = hocon_schema:namespace(Schema),
-    Key = {Namespace, Name},
-    case maps:find(Key, Acc) of
-        {ok, _} ->
-            %% visted before, avoid duplication
-            Acc;
-        error ->
-            Fields = hocon_schema:fields(Schema, Name),
-            find_structs(Schema, Fields, Acc#{Key => Fields})
-    end.
+    {RootNs, RootFields, Structs} = hocon_schema:find_structs(Schema),
+    [fmt_structs(1, RootNs, [{RootNs, "Root Keys", RootFields}]),
+     fmt_structs(2, RootNs, Structs)].
 
 fmt_structs(_HeadWeight, _RootNs, []) -> [];
-fmt_structs(HeadWeight, RootNs, [{{Ns, Name}, Fields} | Rest]) ->
+fmt_structs(HeadWeight, RootNs, [{Ns, Name, Fields} | Rest]) ->
     [fmt_struct(HeadWeight, RootNs, Ns, Name, Fields), "\n" |
      fmt_structs(HeadWeight, RootNs, Rest)].
 
@@ -116,6 +75,7 @@ do_type(Ns, ?ARRAY(T)) -> io_lib:format("[~s]", [do_type(Ns, T)]);
 do_type(Ns, ?UNION(Ts)) -> lists:join(" | ", [do_type(Ns, T) || T <- Ts]);
 do_type(_Ns, ?ENUM(Symbols)) -> lists:join(" | ", [bin(S) || S <- Symbols]);
 do_type(Ns, ?LAZY(T)) -> do_type(Ns, T);
+do_type(Ns, ?MAP(Name, T)) -> ["{$", bin(Name), " -> ", do_type(Ns, T), "}"];
 do_type(_Ns, {'$type_refl', #{name := Type}}) -> lists:flatten(Type).
 
 ref(undefined, Name) -> Name;

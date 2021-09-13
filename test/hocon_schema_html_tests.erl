@@ -14,7 +14,7 @@
 %% limitations under the License.
 %%--------------------------------------------------------------------
 
--module(hocon_schema_doc_tests).
+-module(hocon_schema_html_tests).
 
 -include_lib("eunit/include/eunit.hrl").
 
@@ -33,4 +33,4 @@ no_crash_test_() ->
            })}
     ].
 
-gen(Schema) -> fun() -> hocon_schema_doc:gen(Schema) end.
+gen(Schema) -> fun() -> hocon_schema_html:gen(Schema, "test") end.
