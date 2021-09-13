@@ -133,7 +133,8 @@ commas_test_() ->
     , ?_assertError(_, binary("a={b=1,c=2,,}"))
     , ?_assertError(_, binary("a={,b=1,c=2}"))
     , ?_assertError(_, binary("a={b=1,,c=2}"))
-    , ?_assertEqual(binary(""), binary("{}"))
+    , ?_assertEqual(#{}, binary(""))
+    , ?_assertEqual(#{}, binary("{}"))
     ].
 
 trailing_comma_test_() ->
