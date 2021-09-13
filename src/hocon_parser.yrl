@@ -17,6 +17,7 @@ Terminals
   include key required.
 
 Rootsymbol hocon.
+hocon -> '{' endobj : make_object(0, []).
 hocon -> '{' fields endobj : make_object(0, '$2').
 hocon -> fields : make_object(0, '$1').
 
