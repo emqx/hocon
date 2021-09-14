@@ -82,6 +82,20 @@ env_override_test() ->
             {"EMQX_bar__field1", ""}
            ]).
 
+env_override_false_test() ->
+   with_envs(
+     fun() ->
+             Conf = "{\"bar.field1\": \"foo\"}",
+             Res = check(Conf, #{override_env => false, format => richmap}),
+             PlainRes = check_plain(Conf, #{logger => fun(_, _) -> ok end, override_env => false}),
+             ?assertEqual(Res, PlainRes),
+             ?assertEqual(#{<<"bar">> => #{ <<"union_with_default">> => dummy,
+             <<"field1">> => "foo"}}, Res)
+     end, [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"},
+           {"EMQX_BAR__UNION_WITH_DEFAULT__VAL", "211"},
+           {"EMQX_bar__field1", ""}
+    ]).
+
 unknown_env_test() ->
     Tester = self(),
     Ref = make_ref(),
@@ -106,10 +120,11 @@ unknown_env_test() ->
             ?assertEqual(<<"unknown_environment_variable_discarded: EMQX_BAR__UNKNOWNx">>, Msg)
     end.
 
-check(Str) ->
-    Opts = #{format => richmap},
+check(Str) -> check(Str, #{format => richmap}).
+
+check(Str, Opts) ->
     {ok, RichMap} = hocon:binary(Str, Opts),
-    RichMap2 = hocon_schema:check(?MODULE, RichMap),
+    RichMap2 = hocon_schema:check(?MODULE, RichMap, Opts),
     hocon_schema:richmap_to_map(RichMap2).
 
 check_plain(Str) ->

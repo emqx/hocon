@@ -102,6 +102,9 @@
                  , no_conversion => boolean()
                  , atom_key => boolean()
                  , return_plain => boolean()
+                   %% override_env =:= true andalso has HOCON_ENV_OVERRIDE_PREFIX env.
+                   %% default is true.
+                 , override_env => boolean()
                    %% By default allow all fields to be undefined.
                    %% if `nullable` is set to `false`
                    %% map or check APIs fail with validation_error.
@@ -343,7 +346,7 @@ check(Schema, Conf) ->
     check(Schema, Conf, #{}).
 
 check(Schema, Conf, Opts0) ->
-    Opts = maps:merge(#{format => richmap, atom_key => false}, Opts0),
+    Opts = maps:merge(#{override_env => true, format => richmap, atom_key => false}, Opts0),
     do_check(Schema, Conf, Opts, all).
 
 %% @doc Check plain-map input against schema.
@@ -356,12 +359,14 @@ check_plain(Schema, Conf) ->
 
 check_plain(Schema, Conf, Opts0) ->
     Opts = maps:merge(#{format => map,
+                        override_env => true,
                         atom_key => false
                        }, Opts0),
     check_plain(Schema, Conf, Opts, all).
 
 check_plain(Schema, Conf, Opts0, RootNames) ->
     Opts = maps:merge(#{format => map,
+                        override_env => true,
                         atom_key => false
                        }, Opts0),
     do_check(Schema, Conf, Opts, RootNames).
@@ -392,14 +397,14 @@ map(Schema, Conf, RootNames) ->
 map(Schema, Conf, all, Opts) ->
     map(Schema, Conf, root_names(Schema), Opts);
 map(Schema, Conf0, Roots0, Opts0) ->
-    Opts = maps:merge(#{schema => Schema, format => richmap}, Opts0),
+    Opts = maps:merge(#{schema => Schema, format => richmap, override_env => true}, Opts0),
     Roots = resolve_root_types(roots(Schema), Roots0),
     %% assert
     lists:foreach(fun({RootName, _RootSc}) ->
                           ok = assert_no_dot(Schema, RootName)
                   end, Roots),
     Conf1 = filter_by_roots(Opts, Conf0, Roots),
-    {EnvNamespace, Envs} = collect_envs(Opts0),
+    {EnvNamespace, Envs} = collect_envs(Opts),
     Conf = apply_envs(EnvNamespace, Envs, Opts, Roots, Conf1),
     {Mapped, NewConf} = do_map(Roots, Conf, Opts, ?MAGIC_SCHEMA),
     ok = assert_no_error(Schema, Mapped),
@@ -730,6 +735,7 @@ maybe_use_default(Default, undefined, Opts) ->
     maybe_mkrich(Opts, Default, ?META_BOX(made_for, default_value));
 maybe_use_default(_, Value, _Opts) -> Value.
 
+collect_envs(#{override_env := false}) -> {undefined, []};
 collect_envs(Opts) ->
     Ns = case os:getenv("HOCON_ENV_OVERRIDE_PREFIX") of
              V when V =:= false orelse V =:= [] -> undefined;
