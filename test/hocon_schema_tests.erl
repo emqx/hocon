@@ -87,11 +87,12 @@ env_override_false_test() ->
      fun() ->
              Conf = "{\"bar.field1\": \"foo\"}",
              Res = check(Conf, #{override_env => false, format => richmap}),
-             ?assertEqual(Res, check_plain(Conf, #{logger => fun(_, _) -> ok end, override_env => false})),
+             PlainRes = check_plain(Conf, #{logger => fun(_, _) -> ok end, override_env => false}),
+             ?assertEqual(Res, PlainRes),
              ?assertEqual(#{<<"bar">> => #{ <<"union_with_default">> => dummy,
              <<"field1">> => "foo"}}, Res)
      end, [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"},
-           {"EMQX_BAR__UNION_WITH_DEFAULT__VAL", "111"},
+           {"EMQX_BAR__UNION_WITH_DEFAULT__VAL", "211"},
            {"EMQX_bar__field1", ""}
     ]).
 
