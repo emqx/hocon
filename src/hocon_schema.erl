@@ -397,7 +397,7 @@ map(Schema, Conf, RootNames) ->
 map(Schema, Conf, all, Opts) ->
     map(Schema, Conf, root_names(Schema), Opts);
 map(Schema, Conf0, Roots0, Opts0) ->
-    Opts = maps:merge(#{schema => Schema, format => richmap, env_override => true}, Opts0),
+    Opts = maps:merge(#{schema => Schema, format => richmap, override_env => true}, Opts0),
     Roots = resolve_root_types(roots(Schema), Roots0),
     %% assert
     lists:foreach(fun({RootName, _RootSc}) ->
@@ -735,7 +735,7 @@ maybe_use_default(Default, undefined, Opts) ->
     maybe_mkrich(Opts, Default, ?META_BOX(made_for, default_value));
 maybe_use_default(_, Value, _Opts) -> Value.
 
-collect_envs(#{env_override := false}) -> {undefined, []};
+collect_envs(#{override_env := false}) -> {undefined, []};
 collect_envs(Opts) ->
     Ns = case os:getenv("HOCON_ENV_OVERRIDE_PREFIX") of
              V when V =:= false orelse V =:= [] -> undefined;
