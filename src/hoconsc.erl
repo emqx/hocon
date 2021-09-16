@@ -21,6 +21,7 @@
 -export([ref/1, ref/2]).
 -export([array/1, union/1, enum/1]).
 -export([lazy/1, map/2]).
+-export([is_type/1]).
 
 -include("hoconsc.hrl").
 
@@ -48,9 +49,21 @@ union(OfTypes) when is_list(OfTypes) -> ?UNION(OfTypes).
 %% @doc make a enum type.
 enum(OfSymbols) when is_list(OfSymbols) -> ?ENUM(OfSymbols).
 
+%% @doc make a lazy type.
 lazy(HintType) -> ?LAZY(HintType).
 
+%% @doc make a map type.
 map(Name, Type) -> ?MAP(Name, Type).
+
+%% @doc Check Type is a hocon type.
+is_type(?UNION(Members)) -> lists:all(fun is_type/1, Members);
+is_type(?ARRAY(ElemT)) -> is_type(ElemT);
+is_type(?LAZY(HintT)) -> is_type(HintT);
+is_type(?REF(_)) -> true;
+is_type(?R_REF(_, _)) -> true;
+is_type(#{type := _}) -> true;
+is_type(Type) when ?IS_TYPEREFL(Type) -> true;
+is_type(_) -> false.
 
 assert_type(S) when is_function(S) -> error({expecting_type_but_got_schema, S});
 assert_type(#{type := _} = S) -> error({expecting_type_but_got_schema, S});
