@@ -21,7 +21,7 @@
 -export([ref/1, ref/2]).
 -export([array/1, union/1, enum/1]).
 -export([lazy/1, map/2]).
--export([is_type/1]).
+-export([is_schema/1]).
 
 -include("hoconsc.hrl").
 
@@ -56,14 +56,17 @@ lazy(HintType) -> ?LAZY(HintType).
 map(Name, Type) -> ?MAP(Name, Type).
 
 %% @doc Check Type is a hocon type.
-is_type(?UNION(Members)) -> lists:all(fun is_type/1, Members);
-is_type(?ARRAY(ElemT)) -> is_type(ElemT);
-is_type(?LAZY(HintT)) -> is_type(HintT);
-is_type(?REF(_)) -> true;
-is_type(?R_REF(_, _)) -> true;
-is_type(#{type := _}) -> true;
-is_type(Type) when ?IS_TYPEREFL(Type) -> true;
-is_type(_) -> false.
+is_schema(?UNION(Members)) -> lists:all(fun is_schema/1, Members);
+is_schema(?ARRAY(ElemT)) -> is_schema(ElemT);
+is_schema(?LAZY(HintT)) -> is_schema(HintT);
+is_schema(?REF(_)) -> true;
+is_schema(?R_REF(_, _)) -> true;
+is_schema(?ENUM(_)) -> true;
+is_schema(?MAP(_, _)) -> true;
+is_schema(#{type := _}) -> true;
+is_schema(Type) when ?IS_TYPEREFL(Type) -> true;
+is_schema(Func) when is_function(Func) -> true;
+is_schema(_) -> false.
 
 assert_type(S) when is_function(S) -> error({expecting_type_but_got_schema, S});
 assert_type(#{type := _} = S) -> error({expecting_type_but_got_schema, S});
