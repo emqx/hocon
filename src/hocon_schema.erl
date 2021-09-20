@@ -43,11 +43,12 @@
 -export([nest/1]).
 -endif.
 
--export_type([ name/0
+-export_type([ field_schema/0
+             , name/0
+             , opts/0
+             , schema/0
              , typefunc/0
              , translationfunc/0
-             , schema/0
-             , opts/0
              ]).
 
 -type name() :: atom() | string() | binary().
