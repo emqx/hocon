@@ -506,9 +506,16 @@ map_one_field(FieldType, FieldSchema, FieldValue, Opts) ->
     {Acc, NewValue} = map_field(FieldType, FieldSchema, FieldValue, Opts),
     case find_errors(Acc) of
         ok ->
-            Mapped = maybe_mapping(field_schema(FieldSchema, mapping),
-                                   plain_value(NewValue, Opts)),
-            {Mapped ++ Acc, NewValue};
+            Pv = plain_value(NewValue, Opts),
+            Validators = validators(field_schema(FieldSchema, validator)),
+            ValidationResult = validate(Opts, FieldSchema, Pv, Validators),
+            case ValidationResult of
+                [] ->
+                    Mapped = maybe_mapping(field_schema(FieldSchema, mapping), Pv),
+                    {Acc ++ Mapped, NewValue};
+                Errors ->
+                    {Acc ++ Errors, NewValue}
+            end;
         _ ->
             {Acc, FieldValue}
     end.
@@ -554,7 +561,7 @@ map_field(Type, Schema, Value0, Opts) ->
 map_field_0(Type, Schema, Value0, Opts, undefined) ->
     map_field_1(Type, Schema, Value0, Opts);
 map_field_0(Type, Schema, Value0, Opts, Converter) ->
-    Value1 = richmap_to_map(unbox(Opts, Value0)),
+    Value1 = plain_value(unbox(Opts, Value0), Opts),
     try Converter(Value1) of
         Value2 ->
             Value3 = maybe_mkrich(Opts, Value2, Value0),
@@ -596,7 +603,7 @@ map_field_1(Type, Schema, Value0, Opts) ->
     PlainValue = plain_value(Value, Opts),
     try hocon_schema_builtin:convert(PlainValue, Type) of
         ConvertedValue ->
-            Validators = add_default_validator(field_schema(Schema, validator), Type),
+            Validators = builtin_validators(Type),
             ValidationResult = validate(Opts, Schema, ConvertedValue, Validators),
             {ValidationResult, boxit(Opts, ConvertedValue, Value0)}
     catch
@@ -902,19 +909,18 @@ get_override_env(Schema, Opts) ->
             end
     end.
 
-add_default_validator(undefined, Type) ->
-    do_add_default_validator([], Type);
-add_default_validator(Validator, Type) when is_function(Validator) ->
-    add_default_validator([Validator], Type);
-add_default_validator(Validators, Type) ->
+validators(undefined) -> [];
+validators(Validator) when is_function(Validator) ->
+    validators([Validator]);
+validators(Validators) when is_list(Validators) ->
     true = lists:all(fun(F) -> is_function(F, 1) end, Validators), %% assert
-    do_add_default_validator(Validators, Type).
+    Validators.
 
-do_add_default_validator(Validators, ?ENUM(Symbols)) ->
-    [fun(Value) -> check_enum_sybol(Value, Symbols) end | Validators];
-do_add_default_validator(Validators, Type) ->
+builtin_validators(?ENUM(Symbols)) ->
+    [fun(Value) -> check_enum_sybol(Value, Symbols) end];
+builtin_validators(Type) ->
     TypeChecker = fun (Value) -> typerefl:typecheck(Type, Value) end,
-    [TypeChecker | Validators].
+    [TypeChecker].
 
 check_enum_sybol(Value, Symbols) when is_atom(Value) ->
     case lists:member(Value, Symbols) of
