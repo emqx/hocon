@@ -503,7 +503,8 @@ map_fields([{FieldName, FieldSchema} | Fields], Conf0, Acc, Opts) ->
     map_fields(Fields, Conf, FAcc ++ Acc, Opts).
 
 map_one_field(FieldType, FieldSchema, FieldValue, Opts) ->
-    {Acc, NewValue} = map_field(FieldType, FieldSchema, FieldValue, Opts),
+    Converter = field_schema(FieldSchema, converter),
+    {Acc, NewValue} = map_field_maybe_convert(FieldType, FieldSchema, FieldValue, Opts, Converter),
     case find_errors(Acc) of
         ok ->
             Pv = plain_value(NewValue, Opts),
@@ -518,6 +519,26 @@ map_one_field(FieldType, FieldSchema, FieldValue, Opts) ->
             end;
         _ ->
             {Acc, FieldValue}
+    end.
+
+map_field_maybe_convert(Type, Schema, Value0, Opts, undefined) ->
+    map_field(Type, Schema, Value0, Opts);
+map_field_maybe_convert(Type, Schema, Value0, Opts, Converter) ->
+    Value1 = plain_value(unbox(Opts, Value0), Opts),
+    try Converter(Value1) of
+        Value2 ->
+            Value3 = maybe_mkrich(Opts, Value2, Value0),
+            {Mapped, Value} = map_field(Type, Schema, Value3, Opts),
+            case Opts of
+                #{no_conversion := true} -> {Mapped, Value0};
+                _ -> {Mapped, Value}
+            end
+    catch
+        C : E : St ->
+            {validation_errs(Opts, #{reason => converter_crashed,
+                                     exception => {C, E},
+                                     stacktrace => St
+                                    }), Value0}
     end.
 
 map_field(?MAP(_Name, Type), FieldSchema, Value, Opts) ->
@@ -555,30 +576,7 @@ map_field(?LAZY(Type), Schema, Value, Opts) ->
         true -> map_field(SubType, Schema, Value, Opts);
         false -> {[], Value}
     end;
-map_field(Type, Schema, Value0, Opts) ->
-    map_field_0(Type, Schema, Value0, Opts, field_schema(Schema, converter)).
-
-map_field_0(Type, Schema, Value0, Opts, undefined) ->
-    map_field_1(Type, Schema, Value0, Opts);
-map_field_0(Type, Schema, Value0, Opts, Converter) ->
-    Value1 = plain_value(unbox(Opts, Value0), Opts),
-    try Converter(Value1) of
-        Value2 ->
-            Value3 = maybe_mkrich(Opts, Value2, Value0),
-            {Mapped, Value} = map_field_1(Type, Schema, Value3, Opts),
-            case Opts of
-                #{no_conversion := true} -> {Mapped, Value0};
-                _ -> {Mapped, Value}
-            end
-    catch
-        C : E : St ->
-            {validation_errs(Opts, #{reason => converter_crashed,
-                                     exception => {C, E},
-                                     stacktrace => St
-                                    }), Value0}
-    end.
-
-map_field_1(?ARRAY(Type), _Schema, Value0, Opts) ->
+map_field(?ARRAY(Type), _Schema, Value0, Opts) ->
     %% array needs an unbox
     Array = unbox(Opts, Value0),
     F= fun(Elem) -> map_field(Type, Type, Elem, Opts) end,
@@ -597,22 +595,14 @@ map_field_1(?ARRAY(Type), _Schema, Value0, Opts) ->
         false ->
             {validation_errs(Opts, not_array, Value0), Value0}
     end;
-map_field_1(Type, Schema, Value0, Opts) ->
+map_field(Type, Schema, Value0, Opts) ->
     %% primitive type
     Value = unbox(Opts, Value0),
     PlainValue = plain_value(Value, Opts),
-    try hocon_schema_builtin:convert(PlainValue, Type) of
-        ConvertedValue ->
-            Validators = builtin_validators(Type),
-            ValidationResult = validate(Opts, Schema, ConvertedValue, Validators),
-            {ValidationResult, boxit(Opts, ConvertedValue, Value0)}
-    catch
-        C : E : St ->
-            {validation_errs(Opts, #{reason => converter_crashed,
-                                     exception => {C, E},
-                                     stacktrace => St
-                                     }), Value0}
-    end.
+    ConvertedValue = hocon_schema_builtin:convert(PlainValue, Type),
+    Validators = builtin_validators(Type),
+    ValidationResult = validate(Opts, Schema, ConvertedValue, Validators),
+    {ValidationResult, boxit(Opts, ConvertedValue, Value0)}.
 
 sub_schema(EnclosingSchema, MaybeType) ->
     fun(type) -> field_schema(MaybeType, type);
@@ -675,6 +665,7 @@ is_nullable(Opts, Schema) ->
     end.
 
 field_schema(Atom, type) when is_atom(Atom) -> Atom;
+field_schema(Atom, _Other) when is_atom(Atom) -> undefined;
 field_schema(Type, SchemaKey) when ?IS_TYPEREFL(Type) ->
     field_schema(hoconsc:mk(Type), SchemaKey);
 field_schema(?MAP(_Name, _Type) = Map, SchemaKey) ->

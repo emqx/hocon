@@ -833,11 +833,11 @@ union_converter_test() ->
                                        #{atom_key => true}),
     ?assertEqual(#{foo => #{bar => ["1", "2"]}}, Checked).
 
-builtin_converter_crash_test() ->
+singleton_type_test() ->
     Sc = #{roots => [foo],
            fields =>
-            #{foo => [{bar, #{type => integer()}}]}
+            #{foo => [{bar, bar}]}
           },
-    ?assertThrow({_, [{validation_error, _}]},
-                 hocon_schema:check_plain(Sc, #{<<"foo">> => #{<<"bar">> => <<"1.2">>}},
+    ?assertEqual(#{foo => #{bar => bar}},
+                 hocon_schema:check_plain(Sc, #{<<"foo">> => #{<<"bar">> => <<"bar">>}},
                                           #{atom_key => true})).
