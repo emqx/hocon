@@ -542,7 +542,36 @@ map_field(?UNION(Types), Schema0, Value, Opts) ->
         {ok, {Mapped, NewValue}} -> {Mapped, NewValue};
         Error -> {Error, Value}
     end;
-map_field(?ARRAY(Type), _FieldSchema, Value0, Opts) ->
+map_field(?LAZY(Type), Schema, Value, Opts) ->
+    SubType = sub_type(Schema, Type),
+    case maps:get(check_lazy, Opts, false) of
+        true -> map_field(SubType, Schema, Value, Opts);
+        false -> {[], Value}
+    end;
+map_field(Type, Schema, Value0, Opts) ->
+    map_field_0(Type, Schema, Value0, Opts, field_schema(Schema, converter)).
+
+map_field_0(Type, Schema, Value0, Opts, undefined) ->
+    map_field_1(Type, Schema, Value0, Opts);
+map_field_0(Type, Schema, Value0, Opts, Converter) ->
+    Value1 = richmap_to_map(unbox(Opts, Value0)),
+    try Converter(Value1) of
+        Value2 ->
+            Value3 = maybe_mkrich(Opts, Value2, Value0),
+            {Mapped, Value} = map_field_1(Type, Schema, Value3, Opts),
+            case Opts of
+                #{no_conversion := true} -> {Mapped, Value0};
+                _ -> {Mapped, Value}
+            end
+    catch
+        C : E : St ->
+            {validation_errs(Opts, #{reason => converter_crashed,
+                                     exception => {C, E},
+                                     stacktrace => St
+                                    }), Value0}
+    end.
+
+map_field_1(?ARRAY(Type), _Schema, Value0, Opts) ->
     %% array needs an unbox
     Array = unbox(Opts, Value0),
     F= fun(Elem) -> map_field(Type, Type, Elem, Opts) end,
@@ -561,24 +590,15 @@ map_field(?ARRAY(Type), _FieldSchema, Value0, Opts) ->
         false ->
             {validation_errs(Opts, not_array, Value0), Value0}
     end;
-map_field(?LAZY(Type), Schema, Value, Opts) ->
-    SubType = sub_type(Schema, Type),
-    case maps:get(check_lazy, Opts, false) of
-        true -> map_field(SubType, Schema, Value, Opts);
-        false -> {[], Value}
-    end;
-map_field(Type, Schema, Value0, Opts) ->
+map_field_1(Type, Schema, Value0, Opts) ->
     %% primitive type
     Value = unbox(Opts, Value0),
     PlainValue = plain_value(Value, Opts),
-    try apply_converter(Schema, PlainValue) of
+    try hocon_schema_builtin:convert(PlainValue, Type) of
         ConvertedValue ->
             Validators = add_default_validator(field_schema(Schema, validator), Type),
             ValidationResult = validate(Opts, Schema, ConvertedValue, Validators),
-            case Opts of
-                #{no_conversion := true} -> {ValidationResult, Value0};
-                _ -> {ValidationResult, boxit(Opts, ConvertedValue, Value0)}
-            end
+            {ValidationResult, boxit(Opts, ConvertedValue, Value0)}
     catch
         C : E : St ->
             {validation_errs(Opts, #{reason => converter_crashed,
@@ -880,15 +900,6 @@ get_override_env(Schema, Opts) ->
                     log_env_override(Schema, Opts, Var, path(Opts), V),
                     {str(Var), read_hocon_val(V, Opts)}
             end
-    end.
-
--spec(apply_converter(typefunc(), term()) -> term()).
-apply_converter(Schema, Value) ->
-    case {field_schema(Schema, converter), field_schema(Schema, type)}  of
-        {undefined, Type} ->
-            hocon_schema_builtin:convert(Value, Type);
-        {Converter, _} ->
-            Converter(Value)
     end.
 
 add_default_validator(undefined, Type) ->
