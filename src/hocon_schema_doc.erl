@@ -56,7 +56,7 @@ fmt_fields(Weight, Ns, [{Name, FieldSchema} | Fields]) ->
             false -> []
           end
         ],
-    [NewMd | fmt_fields(Weight, Ns, Fields)].
+    [bin(NewMd) | fmt_fields(Weight, Ns, Fields)].
 
 fmt_default(undefined) -> undefined;
 fmt_default(Value) ->
@@ -88,6 +88,6 @@ ref(Ns, Name) ->
         false -> [bin(Ns), ":", bin(Name)]
     end.
 
-bin(S) when is_list(S) -> iolist_to_binary(S);
+bin(S) when is_list(S) -> unicode:characters_to_binary(S, utf8);
 bin(A) when is_atom(A) -> atom_to_binary(A, utf8);
 bin(B) when is_binary(B) -> B.
