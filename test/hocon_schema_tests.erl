@@ -815,3 +815,29 @@ duplicated_root_names_test() ->
     Sc = #{roots => [foo, bar, foo]},
     ?assertError({duplicated_root_names, [<<"foo">>]},
                  hocon_schema:roots(Sc)).
+
+union_converter_test() ->
+    Sc = #{roots => [foo],
+           fields =>
+            #{foo => [{bar, #{type => {union, [string(), {array, string()}]},
+                              default => <<"2,3">>,
+                              converter => fun(B) when is_binary(B) ->
+                                                   binary:split(B, <<",">>, [global]);
+                                              (L) when is_list(L) ->
+                                                   L
+                                           end
+                             }}]
+             }
+          },
+    Checked = hocon_schema:check_plain(Sc, #{<<"foo">> => #{<<"bar">> => <<"1,2">>}},
+                                       #{atom_key => true}),
+    ?assertEqual(#{foo => #{bar => ["1", "2"]}}, Checked).
+
+singleton_type_test() ->
+    Sc = #{roots => [foo],
+           fields =>
+            #{foo => [{bar, bar}]}
+          },
+    ?assertEqual(#{foo => #{bar => bar}},
+                 hocon_schema:check_plain(Sc, #{<<"foo">> => #{<<"bar">> => <<"bar">>}},
+                                          #{atom_key => true})).
