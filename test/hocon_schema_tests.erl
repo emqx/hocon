@@ -842,3 +842,17 @@ singleton_type_test() ->
     ?assertEqual(#{foo => #{bar => bar}},
                  hocon_schema:check_plain(Sc, #{<<"foo">> => #{<<"bar">> => <<"bar">>}},
                                           #{atom_key => true})).
+
+non_primitive_value_validation_test() ->
+    Sc = fun(MinLen) ->
+                 #{roots => [{foo, #{type => {array, integer()},
+                                     validator => fun(Arr) -> length(Arr) >= MinLen end
+                                    }}],
+                   fields => #{}
+                  }
+         end,
+    ?assertEqual(#{foo => [1, 2]},
+                 hocon_schema:check_plain(Sc(2), #{<<"foo">> => [1, 2]}, #{atom_key => true})),
+    ?assertThrow({_, [{validation_error, #{reason := returned_false}}]},
+                 hocon_schema:check_plain(Sc(3), #{<<"foo">> => [1, 2]}, #{atom_key => true})),
+    ok.

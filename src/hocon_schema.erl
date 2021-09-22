@@ -99,7 +99,11 @@
 -define(FROM_ENV_VAR(Name, Value), {'$FROM_ENV_VAR', Name, Value}).
 -define(IS_NON_EMPTY_STRING(X), (is_list(X) andalso X =/= [] andalso is_integer(hd(X)))).
 -type loggerfunc() :: fun((atom(), map()) -> ok).
+%% Config map/check options.
 -type opts() :: #{ logger => loggerfunc()
+                   %% no_conversion is to only to fill default values for the input
+                   %% config to be checked, only primitive value type check (validation)
+                   %% but not complex value validation and mapping
                  , no_conversion => boolean()
                  , atom_key => boolean()
                  , return_plain => boolean()
@@ -505,10 +509,24 @@ map_fields([{FieldName, FieldSchema} | Fields], Conf0, Acc, Opts) ->
 map_one_field(FieldType, FieldSchema, FieldValue, Opts) ->
     Converter = field_schema(FieldSchema, converter),
     {Acc, NewValue} = map_field_maybe_convert(FieldType, FieldSchema, FieldValue, Opts, Converter),
+    NoConversion = maps:get(no_conversion, Opts, false),
+    Validators =
+        case is_primitive_type(FieldType) of
+            true ->
+                %% primitive values are already validated
+                [];
+            false ->
+                %% otherwise valdiate using the schema defined callbacks
+                validators(field_schema(FieldSchema, validator))
+        end,
     case find_errors(Acc) of
+        ok when NoConversion ->
+            %% when no_conversion, we are only filling default values (recursively)
+            %% for the input FieldValue.
+            %% i.e. no config mapping, value validation (because it's unconverted)
+            {Acc, NewValue};
         ok ->
             Pv = plain_value(NewValue, Opts),
-            Validators = validators(field_schema(FieldSchema, validator)),
             ValidationResult = validate(Opts, FieldSchema, Pv, Validators),
             case ValidationResult of
                 [] ->
@@ -600,13 +618,18 @@ map_field(Type, Schema, Value0, Opts) ->
     Value = unbox(Opts, Value0),
     PlainValue = plain_value(Value, Opts),
     ConvertedValue = hocon_schema_builtin:convert(PlainValue, Type),
-    Validators = builtin_validators(Type),
+    Validators = validators(field_schema(Schema, validator)) ++ builtin_validators(Type),
     ValidationResult = validate(Opts, Schema, ConvertedValue, Validators),
     case Opts of
         #{no_conversion := true} ->
             {ValidationResult, Value0};
         _ -> {ValidationResult, boxit(Opts, ConvertedValue, Value0)}
     end.
+
+is_primitive_type(Type) when ?IS_TYPEREFL(Type) -> true;
+is_primitive_type(Atom) when is_atom(Atom) -> true;
+is_primitive_type(?ENUM(_)) -> true;
+is_primitive_type(_) -> false.
 
 sub_schema(EnclosingSchema, MaybeType) ->
     fun(type) -> field_schema(MaybeType, type);
