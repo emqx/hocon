@@ -101,10 +101,10 @@
 -type loggerfunc() :: fun((atom(), map()) -> ok).
 %% Config map/check options.
 -type opts() :: #{ logger => loggerfunc()
-                   %% no_conversion is to only to fill default values for the input
+                   %% only_fill_defaults is to only to fill default values for the input
                    %% config to be checked, only primitive value type check (validation)
                    %% but not complex value validation and mapping
-                 , no_conversion => boolean()
+                 , only_fill_defaults => boolean()
                  , atom_key => boolean()
                  , return_plain => boolean()
                    %% override_env =:= true andalso has HOCON_ENV_OVERRIDE_PREFIX env.
@@ -509,7 +509,7 @@ map_fields([{FieldName, FieldSchema} | Fields], Conf0, Acc, Opts) ->
 map_one_field(FieldType, FieldSchema, FieldValue, Opts) ->
     Converter = field_schema(FieldSchema, converter),
     {Acc, NewValue} = map_field_maybe_convert(FieldType, FieldSchema, FieldValue, Opts, Converter),
-    NoConversion = maps:get(no_conversion, Opts, false),
+    NoConversion = maps:get(only_fill_defaults, Opts, false),
     Validators =
         case is_primitive_type(FieldType) of
             true ->
@@ -521,7 +521,7 @@ map_one_field(FieldType, FieldSchema, FieldValue, Opts) ->
         end,
     case find_errors(Acc) of
         ok when NoConversion ->
-            %% when no_conversion, we are only filling default values (recursively)
+            %% when only_fill_defaults, we are only filling default values (recursively)
             %% for the input FieldValue.
             %% i.e. no config mapping, value validation (because it's unconverted)
             {Acc, NewValue};
@@ -548,7 +548,7 @@ map_field_maybe_convert(Type, Schema, Value0, Opts, Converter) ->
             Value3 = maybe_mkrich(Opts, Value2, Value0),
             {Mapped, Value} = map_field(Type, Schema, Value3, Opts),
             case Opts of
-                #{no_conversion := true} -> {Mapped, Value0};
+                #{only_fill_defaults := true} -> {Mapped, Value0};
                 _ -> {Mapped, Value}
             end
     catch
@@ -621,9 +621,10 @@ map_field(Type, Schema, Value0, Opts) ->
     Validators = validators(field_schema(Schema, validator)) ++ builtin_validators(Type),
     ValidationResult = validate(Opts, Schema, ConvertedValue, Validators),
     case Opts of
-        #{no_conversion := true} ->
+        #{only_fill_defaults := true} ->
             {ValidationResult, Value0};
-        _ -> {ValidationResult, boxit(Opts, ConvertedValue, Value0)}
+        _ ->
+            {ValidationResult, boxit(Opts, ConvertedValue, Value0)}
     end.
 
 is_primitive_type(Type) when ?IS_TYPEREFL(Type) -> true;
