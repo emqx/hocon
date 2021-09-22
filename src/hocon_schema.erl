@@ -602,7 +602,11 @@ map_field(Type, Schema, Value0, Opts) ->
     ConvertedValue = hocon_schema_builtin:convert(PlainValue, Type),
     Validators = builtin_validators(Type),
     ValidationResult = validate(Opts, Schema, ConvertedValue, Validators),
-    {ValidationResult, boxit(Opts, ConvertedValue, Value0)}.
+    case Opts of
+        #{no_conversion := true} ->
+            {ValidationResult, Value0};
+        _ -> {ValidationResult, boxit(Opts, ConvertedValue, Value0)}
+    end.
 
 sub_schema(EnclosingSchema, MaybeType) ->
     fun(type) -> field_schema(MaybeType, type);

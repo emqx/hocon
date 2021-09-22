@@ -682,11 +682,12 @@ fill_defaults_test() ->
                , {c, hoconsc:mk(integer(), #{
                    default => "15s",
                    converter => fun (Dur) -> hocon_postprocess:duration(Dur) end})}
+               , {d, hoconsc:mk(integer(), #{default => <<"16">>})}
                ]}
           },
-    ?assertMatch(#{<<"a">> := #{<<"b">> := 888, <<"c">> := 15000}},
+    ?assertMatch(#{<<"a">> := #{<<"b">> := 888, <<"c">> := 15000, <<"d">> := 16}},
         hocon_schema:check_plain(Sc, #{}, #{nullable => true})),
-    ?assertMatch(#{<<"a">> := #{<<"b">> := 888, <<"c">> := "15s"}},
+    ?assertMatch(#{<<"a">> := #{<<"b">> := 888, <<"c">> := "15s", <<"d">> := <<"16">>}},
         hocon_schema:check_plain(Sc, #{}, #{nullable => true, no_conversion => true})),
     ok.
 
