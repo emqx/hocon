@@ -21,10 +21,12 @@
 %% behaviour APIs
 -export([ roots/1
         , fields/2
+        , fields_and_meta/2
         , translations/1
         , translation/2
         , validations/1
         ]).
+
 
 -export([map/2, map/3, map/4]).
 -export([translate/3]).
@@ -33,7 +35,8 @@
 -export([richmap_to_map/1, get_value/2, get_value/3]).
 -export([namespace/1, resolve_struct_name/2, root_names/1]).
 -export([field_schema/2, override/2]).
--export([find_structs/1]).
+
+-export([find_structs/1]). %% internal use
 
 -include("hoconsc.hrl").
 -include("hocon_private.hrl").
@@ -84,13 +87,17 @@
          , desc => iodata()
          }.
 
+-type struct_meta() :: #{desc => iodata()}.
 -type field() :: {name(), typefunc() | field_schema()}.
+-type fields() :: [field()] | #{fields := [field()],
+                                desc => iodata()
+                               }.
 -type translation() :: {name(), translationfunc()}.
 -type validation() :: {name(), validationfun()}.
 -type root_type() :: name() | field().
 -type schema() :: module()
                 | #{ roots := [root_type()]
-                   , fields := #{name() => [field()]} | fun((name()) -> [field()])
+                   , fields := #{name() => fields()} | fun((name()) -> fields())
                    , translations => #{name() => [translation()]} %% for config mappings
                    , validations => [validation()] %% for config integrity checks
                    , namespace => atom()
@@ -125,7 +132,7 @@
 
 -callback namespace() -> name().
 -callback roots() -> [root_type()].
--callback fields(name()) -> [field()].
+-callback fields(name()) -> fields().
 -callback translations() -> [name()].
 -callback translation(name()) -> [translation()].
 -callback validations() -> [validation()].
@@ -177,10 +184,10 @@ roots(Schema) ->
             error({duplicated_root_names, AllNames -- UniqueNames})
     end.
 
-%% @doc Collect all structs defined in the given schema.
+%% @private Collect all structs defined in the given schema.
 -spec find_structs(schema()) ->
         {RootNs :: name(), RootFields :: [field()],
-         [{Namespace :: name(), Name :: name(), [field()]}]}.
+         [{Namespace :: name(), Name :: name(), fields()}]}.
 find_structs(Schema) ->
     Roots = ?MODULE:roots(Schema),
     RootFields = lists:map(fun({_BinName, {RootFieldName, RootFieldSchema}}) ->
@@ -194,13 +201,23 @@ find_structs(Schema) ->
 do_roots(Mod) when is_atom(Mod) -> Mod:roots();
 do_roots(#{roots := Names}) -> Names.
 
+%% @doc Get fields of the struct for the given struct name.
 -spec fields(schema(), name()) -> [field()].
-fields(Mod, Name) when is_atom(Mod) ->
-    Mod:fields(Name);
-fields(#{fields := Fields}, Name) when is_function(Fields) ->
-    Fields(Name);
-fields(#{fields := Fields}, Name) when is_map(Fields) ->
-    maps:get(Name, Fields).
+fields(Sc, Name) ->
+    #{fields := Fields} = fields_and_meta(Sc, Name),
+    Fields.
+
+%% @doc Get fields and meta data of the struct for the given struct name.
+-spec fields_and_meta(schema(), name()) -> fields().
+fields_and_meta(Mod, Name) when is_atom(Mod) ->
+    ensure_struct_meta(Mod:fields(Name));
+fields_and_meta(#{fields := Fields}, Name) when is_function(Fields) ->
+    ensure_struct_meta(Fields(Name));
+fields_and_meta(#{fields := Fields}, Name) when is_map(Fields) ->
+    ensure_struct_meta(maps:get(Name, Fields)).
+
+ensure_struct_meta(Fields) when is_list(Fields) -> #{fields => Fields};
+ensure_struct_meta(#{fields := _} = Fields) -> Fields.
 
 -spec translations(schema()) -> [name()].
 translations(Mod) when is_atom(Mod) ->
@@ -569,7 +586,7 @@ map_field(?MAP(_Name, Type), FieldSchema, Value, Opts) ->
     do_map(NewFields, Value, Opts, NewSc); %% start over
 map_field(?R_REF(Module, Ref), FieldSchema, Value, Opts) ->
     %% Switching to another module, good luck.
-    do_map(Module:fields(Ref), Value, Opts#{schema := Module}, FieldSchema);
+    do_map(fields(Module, Ref), Value, Opts#{schema := Module}, FieldSchema);
 map_field(?REF(Ref), FieldSchema, Value, #{schema := Schema} = Opts) ->
     Fields = fields(Schema, Ref),
     do_map(Fields, Value, Opts, FieldSchema);
@@ -1154,6 +1171,8 @@ do_find_error([{error, E} | More], Errors) ->
 do_find_error([_ | More], Errors) ->
     do_find_error(More, Errors).
 
+find_structs(Schema, #{fields := Fields}, Acc) ->
+    find_structs(Schema, Fields, Acc);
 find_structs(_Schema, [], Acc) -> Acc;
 find_structs(Schema, [{_FieldName, FieldSchema} | Fields], Acc0) ->
     Type = hocon_schema:field_schema(FieldSchema, type),
@@ -1187,6 +1206,6 @@ find_ref(Schema, Name, Acc) ->
             %% visted before, avoid duplication
             Acc;
         error ->
-            Fields = hocon_schema:fields(Schema, Name),
+            Fields = fields_and_meta(Schema, Name),
             find_structs(Schema, Fields, Acc#{Key => Fields})
     end.

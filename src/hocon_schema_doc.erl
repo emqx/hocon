@@ -23,7 +23,7 @@
 
 gen(Schema) ->
     {RootNs, RootFields, Structs} = hocon_schema:find_structs(Schema),
-    [fmt_structs(1, RootNs, [{RootNs, "Root Keys", RootFields}]),
+    [fmt_structs(1, RootNs, [{RootNs, "Root Keys", #{fields => RootFields}}]),
      fmt_structs(2, RootNs, Structs)].
 
 fmt_structs(_HeadWeight, _RootNs, []) -> [];
@@ -31,14 +31,20 @@ fmt_structs(HeadWeight, RootNs, [{Ns, Name, Fields} | Rest]) ->
     [fmt_struct(HeadWeight, RootNs, Ns, Name, Fields), "\n" |
      fmt_structs(HeadWeight, RootNs, Rest)].
 
-fmt_struct(HeadWeight, RootNs, Ns0, Name, Fields) ->
+fmt_struct(HeadWeight, RootNs, Ns0, Name, #{fields := Fields} = Meta) ->
     Ns = case RootNs =:= Ns0 of
              true -> undefined;
              false -> Ns0
          end,
     FieldMd = fmt_fields(HeadWeight + 1, Ns, Fields),
     FullNameDisplay = ref(Ns, Name),
-    [hocon_md:h(HeadWeight, FullNameDisplay), FieldMd].
+    [ hocon_md:h(HeadWeight, FullNameDisplay), FieldMd,
+      case Meta of
+          #{desc := StructDoc} -> ["\n", StructDoc];
+          _ -> []
+      end
+    ].
+
 
 fmt_fields(_Weight, _Ns, []) -> [];
 fmt_fields(Weight, Ns, [{Name, FieldSchema} | Fields]) ->
