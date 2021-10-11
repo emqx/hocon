@@ -115,7 +115,16 @@ get_filename_from_required("required(" ++ Filename) ->
 bool("true")  -> true;
 bool("false") -> false.
 
-unquote(Str) -> string:strip(Str, both, $").
+unquote(Str) ->
+    undo_escape(strip_surrounded_quotes(Str)).
+
+strip_surrounded_quotes([$" | Rem]) ->
+    lists:reverse(strip_surrounded_quotes(lists:reverse(Rem)));
+strip_surrounded_quotes(Str) ->
+    Str.
+
+undo_escape(Str) ->
+    re:replace(Str, "(\\\\\")", "\"", [{return, list}, global]).
 
 maybe_var_ref_name("${?" ++ Name_CR) ->
     [$} | NameRev] = lists:reverse(Name_CR),

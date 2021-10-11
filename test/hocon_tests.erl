@@ -155,6 +155,15 @@ unquoted_test_() ->
     , ?_assertEqual(#{<<"a">> => null}, binary("a=null"))
     ].
 
+escape_test_() ->
+    [ ?_assertEqual(#{<<"str_a">> => <<"1">>},
+                    binary("str_a = \"1\""))
+    , ?_assertEqual(#{<<"str_b">> => <<"key=\"val\"">>},
+                    binary("str_b = \"key=\\\"val\\\"\""))
+    , ?_assertEqual(#{<<"str_b">> => <<" key=\"val\" ">>},
+                    binary("str_b = \" key=\\\"val\\\" \""))
+    ].
+
 multiline_string_test_() ->
     [].
 
