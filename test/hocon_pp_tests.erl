@@ -19,6 +19,7 @@
 
 pp_test_() ->
     [ {"emqx.conf", do_fun("etc/emqx.conf")}
+    , {"unescape.conf", do_fun("etc/unescape.conf")}
     ].
 
 do_fun(File) ->
