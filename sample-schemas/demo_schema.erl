@@ -18,15 +18,16 @@ roots() -> [foo, "a_b", "b", person, "vm"].
 translations() -> ["app_foo"].
 
 fields(foo) ->
-    [ {setting, fun setting/1}
-    , {endpoint, fun endpoint/1}
-    , {greet, fun greet/1}
-    , {numbers, fun numbers/1}
-    , {ref_x_y, fun ref_x_y/1}
-    , {ref_j_k, fun ref_j_k/1}
-    , {min, integer()}
-    , {max, integer()}
-    ];
+    #{fields => [ {setting, fun setting/1}
+                , {endpoint, fun endpoint/1}
+                , {greet, fun greet/1}
+                , {numbers, fun numbers/1}
+                , {ref_x_y, fun ref_x_y/1}
+                , {ref_j_k, fun ref_j_k/1}
+                , {min, integer()}
+                , {max, integer()}
+                ],
+      desc => "foo doc"};
 
 fields("a_b") ->
     [ {"some_int", hoconsc:mk(integer(), #{mapping => "a_b.some_int"})}

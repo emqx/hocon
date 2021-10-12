@@ -25,7 +25,7 @@ gen(Schema, Title) ->
     {RootNs, RootFields, Structs} = hocon_schema:find_structs(Schema),
     IndexHtml = fmt_index(RootFields, Structs),
     StructsHtml =
-        [fmt_structs(1, RootNs, [{RootNs, "Root Keys", RootFields}]),
+        [fmt_structs(1, RootNs, [{RootNs, "Root Keys", #{fields => RootFields}}]),
          fmt_structs(2, RootNs, Structs)],
     render([{<<"%%MAGIC_CHICKEN_TITLE%%">>, Title},
             {<<"%%MAGIC_CHICKEN_INDEX%%">>, IndexHtml},
@@ -37,19 +37,24 @@ fmt_structs(Weight, RootNs, [{Ns, Name, Fields} | Rest]) ->
     [fmt_struct(Weight, RootNs, Ns, Name, Fields), "\n" |
      fmt_structs(Weight, RootNs, Rest)].
 
-fmt_struct(Weight, RootNs, Ns0, Name, Fields) ->
+fmt_struct(Weight, RootNs, Ns0, Name, #{fields := Fields} = Meta) ->
     Ns = case RootNs =:= Ns0 of
              true -> undefined;
              false -> Ns0
          end,
     FieldsHtml= ul(fmt_fields(Weight + 1, Ns, Fields)),
     FullNameDisplay = ref(Ns, Name),
-    [html_hd(Weight, FullNameDisplay), FieldsHtml].
+    [html_hd(Weight, FullNameDisplay, Meta), FieldsHtml].
 
-html_hd(Weight, StructName) ->
+html_hd(Weight, StructName, Meta) ->
     H = ["<h", integer_to_list(Weight), ">"],
     E = ["</h", integer_to_list(Weight), ">"],
-    [H, local_anchor(StructName), E, "\n"].
+    [ [H, local_anchor(StructName), E, "\n"],
+      case Meta of
+          #{desc := StructDoc} -> ["<br>", StructDoc];
+          _ -> []
+      end
+    ].
 
 fmt_fields(_Weight, _Ns, []) -> [];
 fmt_fields(Weight, Ns, [{Name, FieldSchema} | Fields]) ->
