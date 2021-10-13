@@ -52,7 +52,6 @@
              , schema/0
              , typefunc/0
              , translationfunc/0
-             , struct_meta/0
              ]).
 
 -type name() :: atom() | string() | binary().

@@ -314,7 +314,8 @@ delete_null_test() ->
 
 required_test() ->
     ?assertEqual({ok, #{}}, hocon:load("etc/optional-include.conf")),
-    ?assertMatch({error, [{enoent, _}]}, hocon:load("etc/required-include.conf")).
+    RequiredRes = hocon:load("etc/required-include.conf"),
+    ?assertMatch({error, {enoent, <<"no.conf">>}}, RequiredRes).
 
 include_dirs_test() ->
   Expect =
@@ -332,9 +333,8 @@ include_dirs_test() ->
   Opts = #{include_dirs => ["test/data/", "sample-configs/"]},
   {ok, Map} = hocon:load("etc/include-dir.conf", Opts),
   ?assertEqual(Expect, Map),
-  {error, Errors} = hocon:load("etc/include-dir-enoent.conf", Opts),
-  Reason = lists:usort(lists:map(fun({R, _}) -> R end, Errors)),
-  ?assertEqual([enoent], Reason),
+  {error, Reason} = hocon:load("etc/include-dir-enoent.conf", Opts),
+  ?assertEqual({enoent, <<"not-exist.conf">>}, Reason),
   ok.
 
 merge_when_resolve_test() ->
