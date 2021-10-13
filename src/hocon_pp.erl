@@ -29,6 +29,9 @@
 %%
 %% `newline': string, by default `"\n"' is used, for generating web-content
 %% it should be `"<br>"' instead.
+%%
+%% `no_obj_nl': boolean, default to `false'. When set to `true' no new line
+%% is added after objects.
 -spec do(term(), map()) -> iodata().
 do(Value, Opts) when is_map(Value) ->
     %% Root level map should not have outter '{' '}' pair
@@ -61,8 +64,11 @@ gen(S, Opts) when is_list(S) ->
             gen_list(S, Opts)
     end;
 gen(M, Opts) when is_map(M) ->
-    gen_map(M, Opts).
-
+    NL = case maps:get(no_obj_nl, Opts, false) of
+             true -> "";
+             false -> ?NL
+         end,
+    [gen_map(M, Opts), NL].
 
 gen_list(L, Opts) ->
     case is_oneliner(L) of
@@ -73,11 +79,16 @@ gen_list(L, Opts) ->
             do_gen_list(L, Opts)
     end.
 
-do_gen_list(L, Opts) ->
+do_gen_list([_ | _] = L, Opts) ->
     [ ["[", ?NL]
-    , [{indent, [gen(I, Opts), ",", ?NL]} || I <- L]
+    , do_gen_list_loop(L, Opts#{no_obj_nl => true})
     , ["]", ?NL]
     ].
+
+do_gen_list_loop([I], Opts) ->
+    [{indent, gen(I, Opts)}];
+do_gen_list_loop([H | T], Opts) ->
+    [{indent, [gen(H, Opts), ","]} | do_gen_list_loop(T, Opts)].
 
 is_oneliner(L) when is_list(L) ->
     lists:all(fun(X) -> is_number(X) orelse is_binary(X) orelse is_atom(X) end, L);
@@ -87,7 +98,7 @@ is_oneliner(M) when is_map(M) ->
 gen_map(M, Opts) ->
     case is_oneliner(M) of
         true -> ["{", infix(gen_map_fields(M, Opts, ""), ", "), "}"];
-        false -> [ ["{", ?NL], {indent, gen_map_fields(M, Opts, ?NL)} , ["}", ?NL] ]
+        false -> [["{", ?NL], {indent, gen_map_fields(M, Opts, ?NL)}, "}"]
     end.
 
 gen_map_fields(M, Opts, NL) ->
