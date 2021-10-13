@@ -87,7 +87,6 @@
          , desc => iodata()
          }.
 
--type struct_meta() :: #{desc => iodata()}.
 -type field() :: {name(), typefunc() | field_schema()}.
 -type fields() :: [field()] | #{fields := [field()],
                                 desc => iodata()
@@ -1070,30 +1069,8 @@ put_rich(Opts, [Name | Path], Value, Box) ->
     boxit(NewBoxV, Box).
 
 %% @doc Convert richmap to plain-map.
-richmap_to_map(RichMap) when is_map(RichMap) ->
-    richmap_to_map(maps:iterator(RichMap), #{});
-richmap_to_map(Array) when is_list(Array) ->
-    [richmap_to_map(R) || R <- Array];
-richmap_to_map(Other) ->
-    Other.
-
-richmap_to_map(Iter, Map) ->
-    case maps:next(Iter) of
-        {?METADATA, _, I} ->
-            richmap_to_map(I, Map);
-        {?HOCON_T, _, I} ->
-            richmap_to_map(I, Map);
-        {?HOCON_V, M, _} when is_map(M) ->
-            richmap_to_map(maps:iterator(M), #{});
-        {?HOCON_V, A, _} when is_list(A) ->
-            [richmap_to_map(R) || R <- A];
-        {?HOCON_V, V, _} ->
-            V;
-        {K, V, I} ->
-            richmap_to_map(I, Map#{K => richmap_to_map(V)});
-        none ->
-            Map
-    end.
+richmap_to_map(MaybeRichMap) ->
+    hocon_util:richmap_to_map(MaybeRichMap).
 
 %% treat 'null' as absence
 drop_nulls(_Opts, undefined) -> undefined;

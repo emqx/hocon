@@ -109,6 +109,8 @@ main(Args) ->
             now_time();
         docgen ->
             docgen(ParsedArgs);
+        pp ->
+            pretty_print(ParsedArgs);
         _Other ->
             print_help()
     end.
@@ -140,6 +142,11 @@ get(ParsedArgs, [Query | _]) ->
     {_, NewConf} = hocon_schema:map(Schema, Conf, [RootName], DummyLogger),
     ?STDOUT("~0p", [hocon_schema:get_value(Query, NewConf)]),
     stop_ok().
+
+pretty_print(ParsedArgs) ->
+    Conf0 = load_conf(ParsedArgs, fun log/3),
+    Conf = hocon_util:richmap_to_map(Conf0),
+    ?STDOUT("~ts", [hocon_pp:do(Conf, #{})]).
 
 docgen(ParsedArgs) ->
     case load_schema(ParsedArgs) of
