@@ -314,7 +314,28 @@ delete_null_test() ->
 
 required_test() ->
     ?assertEqual({ok, #{}}, hocon:load("etc/optional-include.conf")),
-    ?assertMatch({error, {enoent, _}}, hocon:load("etc/required-include.conf")).
+    ?assertMatch({error, [{enoent, _}]}, hocon:load("etc/required-include.conf")).
+
+include_dirs_test() ->
+  Expect =
+    #{<<"a">> => 1,
+      <<"cluster">> =>
+        #{<<"autoclean">> => <<"5m">>,
+          <<"autoheal">> => <<"on">>,
+          <<"discovery">> => <<"manual">>,
+          <<"name">> => <<"emqxcl">>,
+          <<"proto_dist">> => <<"inet_tcp">>},
+      <<"node">> =>
+        #{<<"cookie">> => <<"emqxsecretcookie">>,
+          <<"data_dir">> => <<"platform_data_dir">>,
+          <<"name">> => <<"emqx@127.0.0.1">>}},
+  Opts = #{include_dirs => ["test/data/", "sample-configs/"]},
+  {ok, Map} = hocon:load("etc/include-dir.conf", Opts),
+  ?assertEqual(Expect, Map),
+  {error, Errors} = hocon:load("etc/include-dir-enoent.conf", Opts),
+  Reason = lists:usort(lists:map(fun({R, _}) -> R end, Errors)),
+  ?assertEqual([enoent], Reason),
+  ok.
 
 merge_when_resolve_test() ->
     ?assertEqual({ok, #{<<"a">> => #{<<"x">> => 1, <<"y">> => 2},
