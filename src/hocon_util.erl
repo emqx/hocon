@@ -20,6 +20,9 @@
 -export([pipeline_fun/1, pipeline/3]).
 -export([stack_multiple_push/2, stack_push/2, get_stack/2, top_stack/2]).
 -export([is_same_file/2, real_file_name/1]).
+-export([richmap_to_map/1]).
+
+-include("hocon_private.hrl").
 
 deep_merge(M1, M2) when is_map(M1), is_map(M2) ->
     maps:fold(fun(K, V2, Acc) ->
@@ -61,4 +64,30 @@ real_file_name(F) ->
     case file:read_link_all(F) of
         {ok, Real} -> Real;
         {error, _} -> F
+    end.
+
+%% @doc Convert richmap to plain-map.
+richmap_to_map(RichMap) when is_map(RichMap) ->
+    richmap_to_map(maps:iterator(RichMap), #{});
+richmap_to_map(Array) when is_list(Array) ->
+    [richmap_to_map(R) || R <- Array];
+richmap_to_map(Other) ->
+    Other.
+
+richmap_to_map(Iter, Map) ->
+    case maps:next(Iter) of
+        {?METADATA, _, I} ->
+            richmap_to_map(I, Map);
+        {?HOCON_T, _, I} ->
+            richmap_to_map(I, Map);
+        {?HOCON_V, M, _} when is_map(M) ->
+            richmap_to_map(maps:iterator(M), #{});
+        {?HOCON_V, A, _} when is_list(A) ->
+            [richmap_to_map(R) || R <- A];
+        {?HOCON_V, V, _} ->
+            V;
+        {K, V, I} ->
+            richmap_to_map(I, Map#{K => richmap_to_map(V)});
+        none ->
+            Map
     end.
