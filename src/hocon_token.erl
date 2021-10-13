@@ -215,26 +215,39 @@ do_abspath(Var, [#{?HOCON_T := key}=K | More]) ->
 %% @end
 load_include(#{?HOCON_T := include, ?HOCON_V := Value, required := Required}, Ctx0) ->
     Cwd = filename:dirname(hd(hocon_util:get_stack(filename, Ctx0))),
-    Filename = binary_to_list(filename:join([Cwd, Value])),
-    case {file:read_file_info(Filename), Required} of
-        {{error, enoent}, true} ->
-            throw({enoent, Filename});
-        {{error, enoent}, false} ->
-            nothing;
-        _ ->
-    case is_included(Filename, Ctx0) of
-        true ->
-            throw({cycle, hocon_util:get_stack(filename, Ctx0)});
-        false ->
-            Ctx = hocon_util:stack_push({filename, Filename}, Ctx0),
-            hocon_util:pipeline(Filename, Ctx,
-                                [ fun read/1
-                                , fun scan/2
-                                , fun trans_key/1
-                                , fun parse/2
-                                , fun include/2
-                                ])
-    end
+    IncludeDirs = hd(hocon_util:get_stack(include_dirs, Ctx0)),
+    case search_file([Cwd | IncludeDirs], Value) of
+        {ok, Filename} ->
+            case is_included(Filename, Ctx0) of
+                true ->
+                    throw({cycle, hocon_util:get_stack(filename, Ctx0)});
+                false ->
+                    Ctx = hocon_util:stack_push({filename, Filename}, Ctx0),
+                    hocon_util:pipeline(Filename, Ctx,
+                                        [ fun read/1
+                                        , fun scan/2
+                                        , fun trans_key/1
+                                        , fun parse/2
+                                        , fun include/2
+                                        ])
+            end;
+        {error, enoent} when Required -> throw({enoent, Value});
+        {error, enoent} -> nothing;
+        {error, Errors} -> throw(Errors)
+    end.
+
+search_file(Dirs, File) -> search_file(Dirs, File, []).
+
+search_file([], _File, []) -> {error, enoent};
+search_file([], _File, Reasons) -> {error, Reasons};
+search_file([Dir | Dirs], File, Reasons0) ->
+    Filename = binary_to_list(filename:join([Dir, File])),
+    case file:read_file_info(Filename) of
+        {ok, _} -> {ok, Filename};
+        {error, enoent} -> search_file(Dirs, File, Reasons0);
+        {error, Reason} ->
+            Reasons = [{Reason, Filename} | Reasons0],
+            search_file(Dirs, File, Reasons)
     end.
 
 is_included(Filename, Ctx) ->
