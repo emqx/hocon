@@ -856,3 +856,46 @@ non_primitive_value_validation_test() ->
     ?assertThrow({_, [{validation_error, #{reason := returned_false}}]},
                  hocon_schema:check_plain(Sc(3), #{<<"foo">> => [1, 2]}, #{atom_key => true})),
     ok.
+
+override_env_with_include_test() ->
+    Sc = #{roots => [{foo, hoconsc:ref(bar)}],
+           fields => fun(bar) ->
+                             [ {"kling", hoconsc:mk(integer())}
+                             , {"klang", hoconsc:mk(integer())}
+                             ]
+                     end
+          },
+    with_envs(
+      fun() ->
+              Conf = "foo = {kling = 1}",
+              {ok, PlainMap} = hocon:binary(Conf, #{}),
+              Opts = #{format => map, nullable => true},
+              ?assertEqual(#{<<"foo">> => #{<<"kling">> => 1,
+                                            <<"klang">> => 233}},
+                           hocon_schema:check(Sc, PlainMap, Opts#{check_lazy => true}))
+      end, [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"},
+            {"EMQX_FOO", "{include \"etc/klingklang.conf\"}"}
+           ]).
+
+override_env_with_include_abs_path_test() ->
+    Sc = #{roots => [{foo, hoconsc:ref(bar)}],
+           fields => fun(bar) ->
+                             [ {"kling", hoconsc:mk(integer())}
+                             , {"klang", hoconsc:mk(integer())}
+                             ]
+                     end
+          },
+    Content = "kling=123,\nklang=456",
+    Include = "/tmp/hocon_override_env_with_include_abs_path_test",
+    ok = file:write_file(Include, Content),
+    with_envs(
+      fun() ->
+              Conf = "foo = {kling = 1}",
+              {ok, PlainMap} = hocon:binary(Conf, #{}),
+              Opts = #{format => map, nullable => true},
+              ?assertEqual(#{<<"foo">> => #{<<"kling">> => 123,
+                                            <<"klang">> => 456}},
+                           hocon_schema:check(Sc, PlainMap, Opts#{check_lazy => true}))
+      end, [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"},
+            {"EMQX_FOO", "{include \""++ Include ++ "\"}"}
+           ]).

@@ -40,8 +40,6 @@ Files in sample-configs are collected from https://github.com/lightbend/config/t
 
 ## TODO
 
-- Get values from environment variables
-- Introduction doc
 - Upload to hex.pm
 
 ## Reference
