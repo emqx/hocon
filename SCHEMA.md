@@ -200,12 +200,32 @@ HOCON schema also supports below field metadata.
   with `********` when logging.
 
 <a name="default_override_rule"></a>
-## Default environment variable override
+
+## Environment variable overrides
+
+### Common environment variable override rule
 
 By default, a field (except for when it's inside an array element) can be overridden by an environment
 variable the name of which is translated from field's absolute path with dots replaced by
 double-underscores and then prepended with a prefix.
 
 For example, the value of config entry `foo.bar.field1` can be overridden by
-`PREFIX_FOO__BAR__FIELD1`, or `PREFIX_foo_bar_field1`, where `PREFIX_`
+`PREFIX_FOO__BAR__FIELD1`, or `PREFIX_foo_bar_field1` (i.e. not case-sensitive), where `PREFIX_`
 is configurable by another environment variable `HOCON_ENV_OVERRIDE_PREFIX`.
+
+### Special environment override
+
+Define `override_env` in struct field metadata.
+
+### Complex value override
+
+Environment variables are not parsed as plain string, rather as HOCON values.
+This creates the flexibility for overriding config vlaues in different ways:
+
+* Set individual object paths, for example `export EMQX_MY__KEY__name=zz; export EMQX_MY__KEY__fingers=10`
+* Set the the engire object as escaped HOCON value: `export EMQX_MY__KEY="{name = \"zz\", fingers = 10}"`
+* Load the object from another file `export EMQX_MY__KEY="{\"include /config/my-key-override.conf\"}"`
+
+Using `{include "path/to/file"}` is extremly useful to override a value with large object or an array.
+
+NOTE: currently HOCON schema does not support array index (`KEY__1`, `KEY__2` etc) overrides.
