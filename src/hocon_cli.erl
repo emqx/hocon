@@ -40,6 +40,7 @@ cli_options() ->
     [
       {help, $h, "help", undefined, "Print this usage page"}
     , {dest_dir, $d, "dest_dir", string, "specifies the directory to write the config file to"}
+    , {include_dirs, $I, "include_dir", string, "specifies the directory to search include file"}
     , {dest_file, $f, "dest_file", {string, "app"}, "the file name to write"}
     , {schema_file, $i, "schema_file", string, "the file name of schema module"}
     , {schema_module, $s, "schema_module", atom, "the name of schema module"}
@@ -177,8 +178,9 @@ load_schema(ParsedArgs) ->
 -spec load_conf([proplists:property()], function()) -> hocon:config() | no_return().
 load_conf(ParsedArgs, LogFunc) ->
     ConfFiles = proplists:get_all_values(conf_file, ParsedArgs),
-    LogFunc(debug, "ConfFiles: ~0p", [ConfFiles]),
-    case hocon:files(ConfFiles, #{format => richmap}) of
+    IncDirs = proplists:get_all_values(include_dirs, ParsedArgs),
+    LogFunc(debug, "ConfFiles: ~0p", [{ConfFiles, IncDirs}]),
+    case hocon:files(ConfFiles, #{format => richmap, include_dirs => IncDirs}) of
         {error, E} ->
             LogFunc(error, "~0p~n", [E]),
             stop_deactivate();
