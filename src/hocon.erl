@@ -31,7 +31,7 @@
 -type convert() :: duration | bytesize | percent | onoff | convert_func().
 -type convert_func() :: fun((term()) -> term()).
 -type opts() :: #{format => map | proplists | richmap,
-                  convert => [convert()]}.
+                  convert => [convert()], include_dirs => [file:filename_all()]}.
 
 -export_type([config/0, ctx/0]).
 
