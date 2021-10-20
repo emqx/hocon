@@ -45,11 +45,17 @@ convert(Int, Type) when is_integer(Int) ->
 convert(Bin, Type) when is_binary(Bin) ->
     Str = unicode:characters_to_list(Bin, utf8),
     convert(Str, Type);
+
 convert(Str, Type) when is_list(Str) ->
-    case typerefl:from_string(Type, Str) of
-        {ok, V} ->
-            V;
-        {error, _} ->
+    case io_lib:printable_unicode_list(Str) of
+        true ->
+            case typerefl:from_string(Type, Str) of
+                {ok, V} ->
+                    V;
+                {error, _} ->
+                    Str
+            end;
+        false ->
             Str
     end;
 convert(Other, _Type) ->

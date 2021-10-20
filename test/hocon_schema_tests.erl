@@ -834,6 +834,19 @@ union_converter_test() ->
                                        #{atom_key => true}),
     ?assertEqual(#{foo => #{bar => ["1", "2"]}}, Checked).
 
+list_converter_test() ->
+  Sc = #{roots => [foo],
+         fields =>
+           #{foo => [{bar, #{type => list(),
+                             default => #{a => b},
+                             converter => fun(Map) -> maps:to_list(Map) end
+                             }}]
+            }
+         },
+  Checked = hocon_schema:check_plain(Sc, #{<<"foo">> => #{<<"bar">> => #{<<"a">> => <<"c">>}}},
+    #{atom_key => true}),
+  ?assertEqual(#{foo => #{bar =>  [{<<"a">>, <<"c">>}]}}, Checked).
+
 singleton_type_test() ->
     Sc = #{roots => [foo],
            fields =>
