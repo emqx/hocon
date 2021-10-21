@@ -675,7 +675,7 @@ default_value_for_null_enclosing_struct_test() ->
     ?assertEqual(#{<<"l1">> => #{<<"l2">> => 22}},
                  hocon_schema:check(Sc, RichMap, #{nullable => true, return_plain => true})).
 
-fill_defaults_test() ->
+fill_primitive_defaults_test() ->
     Sc = #{roots => ["a"],
            fields => #{"a" =>
                [ {b, hoconsc:mk(integer(), #{default => 888})}
@@ -687,8 +687,21 @@ fill_defaults_test() ->
           },
     ?assertMatch(#{<<"a">> := #{<<"b">> := 888, <<"c">> := 15000, <<"d">> := 16}},
         hocon_schema:check_plain(Sc, #{}, #{nullable => true})),
-    ?assertMatch(#{<<"a">> := #{<<"b">> := 888, <<"c">> := "15s", <<"d">> := <<"16">>}},
+    ?assertMatch(#{<<"a">> := #{<<"b">> := 888, <<"c">> := <<"15s">>, <<"d">> := <<"16">>}},
         hocon_schema:check_plain(Sc, #{}, #{nullable => true, only_fill_defaults => true})),
+    ok.
+
+fill_complex_defaults_test() ->
+    Sc = #{roots => [{"a", hoconsc:mk(hoconsc:ref("sub"),
+                                      #{default => #{<<"c">> => 2, <<"d">> => [90, 91, 92]}})}],
+           fields => #{"sub" =>
+               [ {"c", hoconsc:mk(integer())}
+               , {"d", hoconsc:mk(hoconsc:array(integer()))}
+               ]}
+          },
+    %% ensure integer array is not converted to a string
+    ?assertMatch(#{<<"a">> := #{<<"c">> := 2, <<"d">> := [90, 91, 92]}},
+        hocon_schema:check_plain(Sc, #{}, #{only_fill_defaults => true})),
     ok.
 
 root_array_test_() ->
