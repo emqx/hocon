@@ -21,11 +21,16 @@
 -include("hoconsc.hrl").
 -include("hocon_private.hrl").
 
+-define(ROOT_KEYS, "Root Keys").
+-define(REF_PREFIX_FIELD, "field-").
+-define(REF_PREFIX_ROOT, "root-").
+-define(REF_PREFIX_STRUCT, "struct-").
+
 gen(Schema, Title) ->
     {RootNs, RootFields, Structs} = hocon_schema:find_structs(Schema),
     IndexHtml = fmt_index(RootFields, Structs),
     StructsHtml =
-        [fmt_structs(1, RootNs, [{RootNs, "Root Keys", #{fields => RootFields}}]),
+        [fmt_structs(1, RootNs, [{RootNs, ?ROOT_KEYS, #{fields => RootFields}}]),
          fmt_structs(2, RootNs, Structs)],
     render([{<<"%%MAGIC_CHICKEN_TITLE%%">>, Title},
             {<<"%%MAGIC_CHICKEN_INDEX%%">>, IndexHtml},
@@ -42,27 +47,28 @@ fmt_struct(Weight, RootNs, Ns0, Name, #{fields := Fields} = Meta) ->
              true -> undefined;
              false -> Ns0
          end,
-    FieldsHtml= ul(fmt_fields(Weight + 1, Ns, Fields)),
+    FieldsHtml= ul(fmt_fields(Weight + 1, Ns, Name, Fields)),
     FullNameDisplay = ref(Ns, Name),
     [html_hd(Weight, FullNameDisplay, Meta), FieldsHtml].
 
 html_hd(Weight, StructName, Meta) ->
     H = ["<h", integer_to_list(Weight), ">"],
     E = ["</h", integer_to_list(Weight), ">"],
-    [ [H, local_anchor(StructName), E, "\n"],
+    [ [H, local_anchor([?REF_PREFIX_STRUCT, bin(StructName)], StructName), E, "\n"],
       case Meta of
           #{desc := StructDoc} -> ["<br>", StructDoc];
           _ -> []
       end
     ].
 
-fmt_fields(_Weight, _Ns, []) -> [];
-fmt_fields(Weight, Ns, [{Name, FieldSchema} | Fields]) ->
+fmt_fields(_Weight, _Ns, _StructName, []) -> [];
+fmt_fields(Weight, Ns, StructName, [{Name, FieldSchema} | Fields]) ->
     Type = fmt_type(Ns, hocon_schema:field_schema(FieldSchema, type)),
     Default = fmt_default(hocon_schema:field_schema(FieldSchema, default)),
     Desc = hocon_schema:field_schema(FieldSchema, desc),
     HTML =
-        li([ ["<p class=\"fn\">", bin(Name), "</p>\n"]
+        li([ ["<p class=\"fn\">",
+              local_anchor(full_path(Ns, StructName, Name), bin(Name)), "</p>\n"]
            , case Desc =/= undefined of
                  true -> html_div("desc", Desc);
                  false -> []
@@ -73,7 +79,7 @@ fmt_fields(Weight, Ns, [{Name, FieldSchema} | Fields]) ->
                  false -> []
              end
            ]),
-    [bin(HTML) | fmt_fields(Weight, Ns, Fields)].
+    [bin(HTML) | fmt_fields(Weight, Ns, StructName, Fields)].
 
 em(X) -> ["<em>", X, "</em>"].
 
@@ -85,7 +91,7 @@ fmt_type(Ns, T) -> pre(do_type(Ns, T)).
 
 do_type(_Ns, A) when is_atom(A) -> bin(A); % singleton
 do_type(Ns, Ref) when is_list(Ref) -> do_type(Ns, ?REF(Ref));
-do_type(Ns, ?REF(Ref)) -> local_href(ref(Ns, Ref));
+do_type(Ns, ?REF(Ref)) -> local_struct_href(ref(Ns, Ref));
 do_type(_Ns, ?R_REF(Module, Ref)) -> do_type(hocon_schema:namespace(Module), ?REF(Ref));
 do_type(Ns, ?ARRAY(T)) -> io_lib:format("[~s]", [do_type(Ns, T)]);
 do_type(Ns, ?UNION(Ts)) -> lists:join(" | ", [do_type(Ns, T) || T <- Ts]);
@@ -94,7 +100,7 @@ do_type(Ns, ?LAZY(T)) -> do_type(Ns, T);
 do_type(Ns, ?MAP(Name, T)) -> ["{$", bin(Name), " -> ", do_type(Ns, T), "}"];
 do_type(_Ns, {'$type_refl', #{name := Type}}) -> lists:flatten(Type).
 
-ref(undefined, Name) -> Name;
+ref(undefined, Name) -> bin(Name);
 ref(Ns, Name) ->
     %% when namespace is the same as reference name
     %% we do not prepend the reference link with namespace
@@ -128,9 +134,9 @@ render([{Pattern, Value} | Rest], Bin) ->
     render(Rest, bin([H, Value, T])).
 
 fmt_index(RootFields, Structs) ->
-    [html_div(ul([li(local_href("Root Keys", bin(Name))) || {Name, _} <- RootFields])),
+    [html_div(ul([li(local_href(root_path(Name), bin(Name))) || {Name, _} <- RootFields])),
      "<hr/>\n",
-     html_div(ul([li(local_href(ref(Ns, Name))) || {Ns, Name, _} <- Structs]))
+     html_div(ul([li(local_struct_href(ref(Ns, Name))) || {Ns, Name, _} <- Structs]))
     ].
 
 html_div(X) -> ["<div>", X, "</div>\n"].
@@ -141,11 +147,11 @@ ul(X) -> ["<ul>\n", X, "</ul>\n"].
 
 li(X) -> ["<li>", X, "</li>\n"].
 
-local_anchor(Anchor) ->
-    do_anchor("name", Anchor, Anchor).
+local_anchor(Anchor, Display) ->
+    do_anchor("name", bin(Anchor), bin(Display)).
 
-local_href(Anchor) ->
-    local_href(Anchor, Anchor).
+local_struct_href(Anchor) ->
+    local_href(bin([?REF_PREFIX_STRUCT, bin(Anchor)]), bin(Anchor)).
 
 local_href(Anchor, Display) ->
     do_anchor("href", bin(["#", bin(Anchor)]), Display).
@@ -166,3 +172,10 @@ anchor(Anchor0) ->
                         re:replace(Acc, Pattern, Replace,
                                    [{return, list}, global])
                 end, Anchor, Replaces).
+
+full_path(_Ns, ?ROOT_KEYS, FieldName) ->
+    root_path(FieldName);
+full_path(Ns, StructName, FieldName) ->
+    bin([?REF_PREFIX_FIELD, bin(Ns), "-", bin(StructName), "-", bin(FieldName)]).
+
+root_path(Name) -> bin([?REF_PREFIX_ROOT, bin(Name)]).
