@@ -502,7 +502,7 @@ do_map(Fields, Value, Opts, ParentSchema) ->
     end.
 
 do_map2(Fields, Value0, Opts, _ParentSchema) ->
-    SchemaFieldNames = [N || {N, _Schema} <- Fields],
+    SchemaFieldNames = lists:map(fun({N, _Schema}) -> N end, Fields),
     DataFields0 = unbox(Opts, Value0),
     DataFields = drop_nulls(Opts, DataFields0),
     Value = boxit(Opts, DataFields, Value0),
@@ -525,7 +525,7 @@ map_fields([{FieldName, FieldSchema} | Fields], Conf0, Acc, Opts) ->
 map_one_field(FieldType, FieldSchema, FieldValue, Opts) ->
     Converter = field_schema(FieldSchema, converter),
     {Acc, NewValue} = map_field_maybe_convert(FieldType, FieldSchema, FieldValue, Opts, Converter),
-    NoConversion = maps:get(only_fill_defaults, Opts, false),
+    NoConversion = only_fill_defaults(Opts),
     Validators =
         case is_primitive_type(FieldType) of
             true ->
@@ -563,9 +563,9 @@ map_field_maybe_convert(Type, Schema, Value0, Opts, Converter) ->
         Value2 ->
             Value3 = maybe_mkrich(Opts, Value2, Value0),
             {Mapped, Value} = map_field(Type, Schema, Value3, Opts),
-            case Opts of
-                #{only_fill_defaults := true} -> {Mapped, Value0};
-                _ -> {Mapped, Value}
+            case only_fill_defaults(Opts) of
+                true -> {Mapped, ensure_bin_str(Value0)};
+                false -> {Mapped, Value}
             end
     catch
         C : E : St ->
@@ -636,11 +636,9 @@ map_field(Type, Schema, Value0, Opts) ->
     ConvertedValue = hocon_schema_builtin:convert(PlainValue, Type),
     Validators = validators(field_schema(Schema, validator)) ++ builtin_validators(Type),
     ValidationResult = validate(Opts, Schema, ConvertedValue, Validators),
-    case Opts of
-        #{only_fill_defaults := true} ->
-            {ValidationResult, Value0};
-        _ ->
-            {ValidationResult, boxit(Opts, ConvertedValue, Value0)}
+    case only_fill_defaults(Opts) of
+        true -> {ValidationResult, ensure_bin_str(Value0)};
+        false -> {ValidationResult, boxit(Opts, ConvertedValue, Value0)}
     end.
 
 is_primitive_type(Type) when ?IS_TYPEREFL(Type) -> true;
@@ -1186,3 +1184,13 @@ find_ref(Schema, Name, Acc) ->
             Fields = fields_and_meta(Schema, Name),
             find_structs(Schema, Fields, Acc#{Key => Fields})
     end.
+
+only_fill_defaults(#{only_fill_defaults := true}) -> true;
+only_fill_defaults(_) -> false.
+
+ensure_bin_str(Value) when is_list(Value) ->
+    case io_lib:printable_unicode_list(Value) of
+        true -> unicode:characters_to_binary(Value, utf8);
+        false -> Value
+    end;
+ensure_bin_str(Value) -> Value.
