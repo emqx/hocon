@@ -64,7 +64,7 @@
 
 -type typefunc() :: fun((_) -> _).
 -type translationfunc() :: fun((hocon:config()) -> hocon:config()).
--type validationfun() :: fun((hocon:config()) -> ok).
+-type validationfun() :: fun((hocon:config()) -> ok | boolean() | {error, term()}).
 -type field_schema() :: typerefl:type()
                       | ?UNION([type()])
                       | ?ARRAY(type())
@@ -76,8 +76,8 @@
         #{ type := type()
          , default => term()
          , mapping => undefined | string()
-         , converter => function()
-         , validator => function()
+         , converter => undefined | translationfunc()
+         , validator => undefined | validationfun()
          , override_env => string()
            %% set true if a field is allowed to be `undefined`
            %% NOTE: has no point setting it to `true` if field has a default value

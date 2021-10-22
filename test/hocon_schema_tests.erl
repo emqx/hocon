@@ -400,6 +400,16 @@ validator_test() ->
     ?VALIDATION_ERR(_, hocon_schema:check_plain(Sc, #{<<"f1">> => 11})),
     ok.
 
+validator_error_test() ->
+  Sc = #{ roots => [{f1, hoconsc:mk(string(), #{validator => fun not_empty/1})}]},
+  ?assertEqual(#{<<"f1">> => "1"}, hocon_schema:check_plain(Sc, #{<<"f1">> => "1"})),
+  Expect = #{path => "f1", reason => "Can not be empty", value => ""},
+  ?VALIDATION_ERR(Expect, hocon_schema:check_plain(Sc, #{<<"f1">> => ""})),
+  ok.
+
+not_empty("") -> {error, "Can not be empty"};
+not_empty(_) -> ok.
+
 validator_crash_test() ->
     Sc = #{ roots => [{f1, hoconsc:mk(integer(), #{validator => [fun(_) -> error(always) end]})}]},
     ?VALIDATION_ERR(#{reason := #{exception := {error, always}}},
