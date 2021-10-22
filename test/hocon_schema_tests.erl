@@ -935,3 +935,40 @@ override_env_with_include_abs_path_test() ->
       end, [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"},
             {"EMQX_FOO", "{include \""++ Include ++ "\"}"}
            ]).
+
+redundant_id_converter(#{<<"type">> := Type, <<"backend">> := Backend} = Conf) ->
+    ExpectedID = iolist_to_binary([Type, ":", Backend]),
+    case maps:get(<<"id">>, Conf, undefined) of
+        undefined -> Conf#{<<"id">> => ExpectedID};
+        Id when Id =:= ExpectedID -> Conf;
+        Other -> throw({invalid_id, Other})
+    end.
+
+redundant_field_test() ->
+    Sc = #{roots => [{foo, hoconsc:mk(hoconsc:ref(foo),
+                                      #{converter => fun redundant_id_converter/1}
+                                     )}
+                   ],
+           fields => fun(foo) ->
+                             [{id, hoconsc:mk(string(), #{nullable => true})},
+                              {type, string()},
+                              {backend, string()}
+                             ]
+                     end
+          },
+    Opts = #{format => map, atom_key => true},
+    Conf1 = "foo = {id = \"a:b\", type = a, backend = b}",
+    {ok, Conf1Map} = hocon:binary(Conf1, #{}),
+    Expected1 = #{foo => #{id => "a:b",
+                           type => "a",
+                           backend => "b"
+                          }},
+    ?assertEqual(Expected1, hocon_schema:check(Sc, Conf1Map, Opts)),
+    Conf2 = "foo = {type = a, backend = b}",
+    {ok, Conf2Map} = hocon:binary(Conf2, #{}),
+    ?assertEqual(Expected1, hocon_schema:check(Sc, Conf2Map, Opts)),
+    Conf3 = "foo = {id = \"a:c\", type = a, backend = b}",
+    {ok, Conf3Map} = hocon:binary(Conf3, #{}),
+    ?assertThrow({_, [{validation_error, #{reason := {invalid_id, <<"a:c">>}}}]},
+                 hocon_schema:check(Sc, Conf3Map, Opts)),
+    ok.
