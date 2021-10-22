@@ -47,7 +47,7 @@ fmt_struct(Weight, RootNs, Ns0, Name, #{fields := Fields} = Meta) ->
              true -> undefined;
              false -> Ns0
          end,
-    FieldsHtml= ul(fmt_fields(Weight + 1, Ns, Name, Fields)),
+    FieldsHtml= ul(fmt_fields(Ns, Name, Fields)),
     FullNameDisplay = ref(Ns, Name),
     [html_hd(Weight, FullNameDisplay, Meta), FieldsHtml].
 
@@ -61,25 +61,30 @@ html_hd(Weight, StructName, Meta) ->
       end
     ].
 
-fmt_fields(_Weight, _Ns, _StructName, []) -> [];
-fmt_fields(Weight, Ns, StructName, [{Name, FieldSchema} | Fields]) ->
+fmt_fields(_Ns, _StructName, []) -> [];
+fmt_fields(Ns, StructName, [{Name, FieldSchema} | Fields]) ->
+    HTML = fmt_field(Ns, StructName, Name, FieldSchema),
+    case hocon_schema:field_schema(FieldSchema, hidden) of
+        true -> fmt_fields(Ns, StructName, Fields);
+        _ -> [bin(HTML) | fmt_fields(Ns, StructName, Fields)]
+    end.
+
+fmt_field(Ns, StructName, Name, FieldSchema) ->
     Type = fmt_type(Ns, hocon_schema:field_schema(FieldSchema, type)),
     Default = fmt_default(hocon_schema:field_schema(FieldSchema, default)),
     Desc = hocon_schema:field_schema(FieldSchema, desc),
-    HTML =
-        li([ ["<p class=\"fn\">",
-              local_anchor(full_path(Ns, StructName, Name), bin(Name)), "</p>\n"]
-           , case Desc =/= undefined of
-                 true -> html_div("desc", Desc);
-                 false -> []
-             end
-           , html_div("desc", [em("type:"), Type])
-           , case Default =/= undefined of
-                 true  -> html_div("desc", [em("default:"), Default]);
-                 false -> []
-             end
-           ]),
-    [bin(HTML) | fmt_fields(Weight, Ns, StructName, Fields)].
+    li([ ["<p class=\"fn\">",
+          local_anchor(full_path(Ns, StructName, Name), bin(Name)), "</p>\n"]
+         , case Desc =/= undefined of
+               true -> html_div("desc", Desc);
+               false -> []
+           end
+         , html_div("desc", [em("type:"), Type])
+         , case Default =/= undefined of
+               true  -> html_div("desc", [em("default:"), Default]);
+               false -> []
+           end
+       ]).
 
 em(X) -> ["<em>", X, "</em>"].
 

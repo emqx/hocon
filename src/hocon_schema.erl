@@ -85,6 +85,7 @@
            %% for sensitive data obfuscation (password, token)
          , sensitive => boolean()
          , desc => iodata()
+         , hidden => boolean() %% hide it from doc generation
          }.
 
 -type field() :: {name(), typefunc() | field_schema()}.
