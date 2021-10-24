@@ -580,13 +580,17 @@ sensitive_data_obfuscation_test() ->
     Self = self(),
     with_envs(
       fun() ->
-              hocon_schema:check_plain(Sc, #{<<"secret">> => "aaa"},
-                                       #{logger => fun(_Level, Msg) -> Self ! Msg end}),
+              Checked = hocon_schema:check_plain(Sc, #{<<"secret">> => "aaa"},
+                                                 #{logger => fun(_Level, Msg) -> Self ! Msg end,
+                                                   atom_key => true
+                                                  }),
               receive
                   #{hocon_env_var_name := "OBFUSCATION_TEST", path := Path, value := Value} ->
                       ?assertEqual("secret", Path),
                       ?assertEqual("*******", Value)
-              end
+              end,
+              #{secret := Secret} = Checked,
+              ?assertEqual("bbb", hocon_secret:peek(Secret))
       end, [{"OBFUSCATION_TEST", "bbb"}]),
     ok.
 
@@ -935,3 +939,26 @@ override_env_with_include_abs_path_test() ->
       end, [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"},
             {"EMQX_FOO", "{include \""++ Include ++ "\"}"}
            ]).
+
+secret_test() ->
+    Sc = #{roots => [{foo, hoconsc:ref(bar)}],
+           fields => fun(bar) ->
+                             [ {"username", hoconsc:mk(string())}
+                             , {"password", hoconsc:mk(string(), #{sensitive => true})}
+                             ]
+                     end
+          },
+    Conf = "foo = {username=aaa,\npassword=bbb}",
+    {ok, PlainMap} = hocon:binary(Conf, #{}),
+    Opts = #{format => map},
+    Hidden = hocon_secret:hide("bbb"),
+    ?assertEqual(undefined, hocon_secret:hide(undefined)),
+    ?assertEqual(Hidden, hocon_secret:hide(Hidden)),
+    Checked = hocon_schema:check(Sc, PlainMap, Opts),
+    ?assertEqual(#{<<"foo">> => #{<<"username">> => "aaa",
+                                  <<"password">> => Hidden
+                                 }}, Checked),
+    ?assert(hocon_secret:is(Hidden)),
+    ?assertNot(hocon_secret:is(hocon_secret:peek(Hidden))),
+    ?assertEqual("bbb", hocon_secret:peek(Hidden)),
+    ?assertEqual("bbb", hocon_secret:peek("bbb")).

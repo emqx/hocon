@@ -638,7 +638,13 @@ map_field(Type, Schema, Value0, Opts) ->
     ValidationResult = validate(Opts, Schema, ConvertedValue, Validators),
     case only_fill_defaults(Opts) of
         true -> {ValidationResult, ensure_bin_str(Value0)};
-        false -> {ValidationResult, boxit(Opts, ConvertedValue, Value0)}
+        false -> {ValidationResult, boxit(Opts, maybe_hide(Schema, ConvertedValue), Value0)}
+    end.
+
+maybe_hide(Schema, Value) ->
+    case field_schema(Schema, sensitive) of
+        true -> hocon_secret:hide(Value);
+        _ -> Value
     end.
 
 is_primitive_type(Type) when ?IS_TYPEREFL(Type) -> true;
@@ -734,7 +740,9 @@ field_schema(FieldSchema, SchemaKey) when is_map(FieldSchema) ->
 maybe_mapping(undefined, _) -> []; % no mapping defined for this field
 maybe_mapping(_, undefined) -> []; % no value retrieved for this field
 maybe_mapping(MappedPath, PlainValue) ->
-    [{string:tokens(MappedPath, "."), PlainValue}].
+    %% mapping results are used to generate eterm format sys.config
+    %% so it's impossible to store hocon secrets there, have to peek.
+    [{string:tokens(MappedPath, "."), hocon_secret:peek(PlainValue)}].
 
 push_stack(#{stack := Stack} = X, New) ->
     X#{stack := [New | Stack]};
