@@ -161,9 +161,9 @@ mapping_test_() ->
     , ?_assertEqual([{["app_foo", "u"], #{<<"val">> => 44}}], F("b.u.val=44"))
     , ?_assertEqual([{["app_foo", "arr"], [#{<<"val">> => 1}, #{<<"val">> => 2}]}],
                     F("b.arr=[{val=1},{val=2}]"))
-    , ?GEN_VALIDATION_ERR(#{array_index := 3}, F("b.arr=[{val=1},{val=2},{val=a}]"))
+    , ?GEN_VALIDATION_ERR(#{path := "b.arr.3.val"}, F("b.arr=[{val=1},{val=2},{val=a}]"))
 
-    , ?GEN_VALIDATION_ERR(#{array_index := 2, reason := matched_no_union_member},
+    , ?GEN_VALIDATION_ERR(#{path := "b.ua.2", reason := matched_no_union_member},
                           F("b.ua=[{val=1},{val=a},{val=true}]"))
     , ?_assertEqual([{["app_foo", "ua"], [#{<<"val">> => 1}, #{<<"val">> => true}]}],
                     F("b.ua=[{val=1},{val=true}]"))
@@ -521,8 +521,11 @@ not_array_test() ->
     Sc = #{roots => [{f1, hoconsc:array(integer())}]
           },
     BadInput = #{<<"f1">> => 1},
-    ?VALIDATION_ERR(#{reason := not_array},
-                    hocon_schema:check_plain(Sc, BadInput)).
+    ?VALIDATION_ERR(#{expected_data_type := array, got := 1},
+                    hocon_schema:check_plain(Sc, BadInput)),
+    BadInput1 = #{<<"f1">> => <<"foo">>},
+    ?VALIDATION_ERR(#{expected_data_type := array, got := string},
+                    hocon_schema:check_plain(Sc, BadInput1)).
 
 converter_test() ->
     Sc = #{roots => [{f1, hoconsc:mk(integer(),
@@ -749,26 +752,133 @@ root_array_test_() ->
       end}
     ].
 
-% root_array_env_override_test() ->
-%     Sc = #{roots => [{array, foo}],
-%            fields => #{foo => [ {"kling", hoconsc:mk(integer())},
-%                                 {"klang", hoconsc:mk(integer())}
-%                               ]
-%                       }
-%           },
-%     with_envs(
-%       fun() ->
-%               Conf = "",
-%               {ok, PlainMap} = hocon:binary(Conf, #{}),
-%               Opts = #{format => map, nullable => true},
-%               ?assertEqual(#{<<"foo">> => [#{<<"kling">> => 111},
-%                                            #{<<"klang">> => 222}
-%                                           ]},
-%                            hocon_schema:check(Sc, PlainMap, Opts))
-%       end, [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"},
-%             {"EMQX_FOO__1__KLING", "111"},
-%             {"EMQX_FOO__2__KLANG", "222"}
-%            ]).
+root_array_env_override_test_() ->
+    [ {"richmap", fun() -> test_array_env_override(richmap) end}
+    , {"plainmap", fun() -> test_array_env_override(map) end}
+    ].
+
+test_array_env_override(Format) ->
+    Sc = #{roots => [{foo, hoconsc:array(hoconsc:ref(foo))}],
+           fields => #{foo => [ {"kling", hoconsc:mk(integer())},
+                                {"klang", hoconsc:mk(integer())}
+                              ]
+                      }
+          },
+    with_envs(
+        fun() ->
+                Conf = "",
+                {ok, Parsed} = hocon:binary(Conf, #{format => Format}),
+                Opts = #{format => Format, nullable => true},
+                ?assertEqual(#{<<"foo">> => [#{<<"kling">> => 111},
+                                             #{<<"klang">> => 222}
+                                            ]},
+                             hocon_schema:richmap_to_map(hocon_schema:check(Sc, Parsed, Opts)))
+        end, [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"},
+              {"EMQX_FOO__1__KLING", "111"},
+              {"EMQX_FOO__2__KLANG", "222"}
+             ]).
+
+array_env_override_test_() ->
+    Sc = #{roots => [foo],
+           fields => #{foo => [ {"bar", hoconsc:mk(hoconsc:array(integer()))}
+                              , {"quu", hoconsc:mk(hoconsc:array(string()))}
+                              ]
+                      }
+          },
+    EnvsFooBar13 = envs([{"EMQX_FOO__BAR__1", "1"}, {"EMQX_FOO__BAR__3", "3"}]),
+    [ {"richmap", fun() -> test_array_env_override_t2(Sc, richmap) end}
+    , {"plainmap", fun() -> test_array_env_override_t2(Sc, map) end}
+    , {"bad_sequence",
+       fun() ->
+               Throw = test_array_override(Sc, map, EnvsFooBar13),
+               ?assertMatch([{validation_error, #{expected_index := 2,
+                                                  got_index := 3}}], Throw)
+       end}
+    , {"bad_index",
+       fun() ->
+               Envs = envs([{"EMQX_FOO__BAR__not_index", "1"}]),
+               Throw = test_array_override(Sc, richmap, Envs),
+               ?assertMatch([{validation_error,
+                              #{bad_array_index_keys := [<<"not_index">>]}}], Throw)
+       end}
+    , {"bad_index-2",
+       fun() ->
+               Conf = <<"foo : {bar : [0, 2, 0]}">>,
+               Envs = envs([{"EMQX_FOO__BAR__x", "1"}]),
+               Throw = test_array_override(Sc, map, Envs, Conf),
+               ?assertMatch([{validation_error,
+                              #{bad_array_index_keys := [<<"x">>]}}], Throw)
+       end}
+    , {"bad_indexed_map",
+       fun() ->
+               Conf1 = "",
+               Envs = envs([{"EMQX_FOO__BAR", "1"}]),
+               Throw1 = test_array_override(Sc, richmap, Envs, Conf1),
+               ?assertMatch([{validation_error,
+                              #{expected_data_type := array, got := 1}}], Throw1),
+               Conf2 = "foo : {bar : [0, 2, 0]}",
+               Throw2 = test_array_override(Sc, richmap, Envs, Conf2),
+               ?assertEqual(Throw1, Throw2),
+               Throw3 = test_array_override(Sc, map, Envs, Conf2),
+               ?assertEqual(Throw1, Throw3)
+       end}
+    , {"override_parsed_array_plain",
+       fun() ->
+               Conf = <<"foo : {bar : [0, 2, 0]}">>,
+               Checked = test_array_override(Sc, map, EnvsFooBar13, Conf),
+               ?assertEqual(#{<<"foo">> => #{<<"bar">> => [1, 2, 3]}}, Checked)
+       end}
+    , {"override_parsed_array_rich",
+       fun() ->
+               Conf = <<"foo : {bar : [0, 2, 0]}">>,
+               Checked = test_array_override(Sc, richmap, EnvsFooBar13, Conf),
+               ?assertEqual(#{<<"foo">> => #{<<"bar">> => [1, 2, 3]}},
+                            hocon_schema:richmap_to_map(Checked))
+       end}
+    , {"override_parsed_non-array_plain",
+       fun() ->
+               Conf = <<"foo : {bar : 22}">>,
+               Envs = envs([{"EMQX_FOO__BAR__1", "1"}]),
+               Checked = test_array_override(Sc, map, Envs, Conf),
+               ?assertEqual(#{<<"foo">> => #{<<"bar">> => [1]}}, Checked)
+       end}
+    , {"override_parsed_non-array_rich",
+       fun() ->
+               Conf = <<"foo : {bar : notarray}">>,
+               Envs = envs([{"EMQX_FOO__BAR__1", "1"}]),
+               Checked = test_array_override(Sc, richmap, Envs, Conf),
+               ?assertEqual(#{<<"foo">> => #{<<"bar">> => [1]}},
+                            hocon_schema:richmap_to_map(Checked))
+       end}
+    ].
+
+envs(Envs) -> [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"} | Envs].
+
+test_array_override(Sc, Format, Envs) ->
+    test_array_override(Sc, Format, Envs, <<"">>).
+
+test_array_override(Sc, Format, Envs, Conf) ->
+    with_envs(fun() ->
+                      {ok, Parsed} = hocon:binary(Conf, #{format => Format}),
+                      Opts = #{format => Format, nullable => true},
+                      try hocon_schema:check(Sc, Parsed, Opts)
+                      catch throw : {_Sc, R} -> R
+                      end
+              end, Envs).
+
+test_array_env_override_t2(Sc, Format) ->
+    with_envs(
+        fun() ->
+                {ok, Parsed} = hocon:binary(<<>>, #{format => Format}),
+                Opts = #{format => Format, nullable => true},
+                ?assertEqual(#{<<"foo">> => #{<<"bar">> => [2, 1],
+                                              <<"quu">> => ["quu"]}},
+                             hocon_schema:richmap_to_map(hocon_schema:check(Sc, Parsed, Opts)))
+        end, [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"},
+              {"EMQX_FOO__bar__1", "2"},
+              {"EMQX_FOO__bar__2", "1"},
+              {"EMQX_FOO__quu__1", "quu"}
+             ]).
 
 ref_nullable_test() ->
     Sc = #{roots => [ {k, #{type => hoconsc:ref(sub),
