@@ -113,9 +113,11 @@
                  , only_fill_defaults => boolean()
                  , atom_key => boolean()
                  , return_plain => boolean()
-                   %% override_env =:= true andalso has HOCON_ENV_OVERRIDE_PREFIX env.
+                   %% apply environment variable overrides when
+                   %% apply_override_envs is set to true and also
+                   %% HOCON_ENV_OVERRIDE_PREFIX is set.
                    %% default is true.
-                 , override_env => boolean()
+                 , apply_override_envs => boolean()
                    %% By default allow all fields to be undefined.
                    %% if `nullable` is set to `false`
                    %% map or check APIs fail with validation_error.
@@ -358,6 +360,18 @@ assert_integrity(Schema, [{Name, Validator} | Rest], Conf, Acc) ->
             assert_integrity(Schema, Rest, Conf, [Error | Acc])
     end.
 
+merge_opts(Default, Opts0) ->
+    %% the boolean flag `override_env' is deprecated
+    %% use `apply_override_envs' instead
+    Override = case maps:get(override_env, Opts0, undefined) of
+                   undefined ->
+                       maps:get(apply_override_envs, Opts0, true);
+                   Bool when is_boolean(Bool) ->
+                       Bool
+               end,
+    Opts = maps:without([override_env], Opts0),
+    maps:merge(Default, Opts#{apply_override_envs => Override}).
+
 %% @doc Check richmap input against schema.
 %% Returns a new config with:
 %% 1) default values from schema if not found in input config
@@ -367,7 +381,8 @@ check(Schema, Conf) ->
     check(Schema, Conf, #{}).
 
 check(Schema, Conf, Opts0) ->
-    Opts = maps:merge(#{override_env => true, format => richmap, atom_key => false}, Opts0),
+    Opts = merge_opts(#{format => richmap,
+                        atom_key => false}, Opts0),
     do_check(Schema, Conf, Opts, all).
 
 %% @doc Check plain-map input against schema.
@@ -379,21 +394,19 @@ check_plain(Schema, Conf) ->
     check_plain(Schema, Conf, #{}).
 
 check_plain(Schema, Conf, Opts0) ->
-    Opts = maps:merge(#{format => map,
-                        override_env => true,
+    Opts = merge_opts(#{format => map,
                         atom_key => false
                        }, Opts0),
     check_plain(Schema, Conf, Opts, all).
 
 check_plain(Schema, Conf, Opts0, RootNames) ->
-    Opts = maps:merge(#{format => map,
-                        override_env => true,
+    Opts = merge_opts(#{format => map,
                         atom_key => false
                        }, Opts0),
     do_check(Schema, Conf, Opts, RootNames).
 
 do_check(Schema, Conf, Opts0, RootNames) ->
-    Opts = maps:merge(#{nullable => false}, Opts0),
+    Opts = merge_opts(#{nullable => false}, Opts0),
     %% discard mappings for check APIs
     {_DiscardMappings, NewConf} = map(Schema, Conf, RootNames, Opts),
     NewConf.
@@ -418,7 +431,9 @@ map(Schema, Conf, RootNames) ->
 map(Schema, Conf, all, Opts) ->
     map(Schema, Conf, root_names(Schema), Opts);
 map(Schema, Conf0, Roots0, Opts0) ->
-    Opts = maps:merge(#{schema => Schema, format => richmap, override_env => true}, Opts0),
+    Opts = merge_opts(#{schema => Schema,
+                        format => richmap
+                       }, Opts0),
     Roots = resolve_root_types(roots(Schema), Roots0),
     %% assert
     lists:foreach(fun({RootName, _RootSc}) ->
@@ -809,7 +824,7 @@ maybe_use_default(Default, undefined, Opts) ->
     maybe_mkrich(Opts, Default, ?META_BOX(made_for, default_value));
 maybe_use_default(_, Value, _Opts) -> Value.
 
-collect_envs(#{override_env := false}) -> {undefined, []};
+collect_envs(#{apply_override_envs := false}) -> {undefined, []};
 collect_envs(Opts) ->
     Ns = case os:getenv("HOCON_ENV_OVERRIDE_PREFIX") of
              V when V =:= false orelse V =:= [] -> undefined;
