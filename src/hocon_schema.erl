@@ -195,7 +195,7 @@ find_structs(Schema) ->
     RootFields = lists:map(fun({_BinName, {RootFieldName, RootFieldSchema}}) ->
                                    {RootFieldName, RootFieldSchema}
                            end, Roots),
-    All = find_structs(Schema, RootFields, #{}),
+    All = find_structs(Schema, RootFields, #{}, []),
     RootNs = hocon_schema:namespace(Schema),
     {RootNs, RootFields,
      [{Ns, Name, Fields} || {{Ns, Name}, Fields} <- lists:keysort(1, maps:to_list(All))]}.
@@ -790,7 +790,9 @@ push_stack(X, New) ->
     X#{stack => [New]}.
 
 %% get type validation stack.
-path(#{stack := Stack}) -> string:join(lists:reverse(lists:map(fun str/1, Stack)), ".").
+path(#{stack := Stack}) -> path(Stack);
+path(Stack) when is_list(Stack) ->
+    string:join(lists:reverse(lists:map(fun str/1, Stack)), ".").
 
 do_map_union([], _TypeCheck, PerTypeResult, Opts) ->
     validation_errs(Opts, #{reason => matched_no_union_member,
@@ -1257,43 +1259,51 @@ do_find_error([{error, E} | More], Errors) ->
 do_find_error([_ | More], Errors) ->
     do_find_error(More, Errors).
 
-find_structs(Schema, #{fields := Fields}, Acc) ->
-    find_structs(Schema, Fields, Acc);
-find_structs(_Schema, [], Acc) -> Acc;
-find_structs(Schema, [{_FieldName, FieldSchema} | Fields], Acc0) ->
+find_structs(Schema, #{fields := Fields}, Acc, Stack) ->
+    find_structs(Schema, Fields, Acc, Stack);
+find_structs(_Schema, [], Acc, _Stack) -> Acc;
+find_structs(Schema, [{_FieldName, FieldSchema} | Fields], Acc0, Stack) ->
     Type = hocon_schema:field_schema(FieldSchema, type),
-    Acc = find_structs_per_type(Schema, Type, Acc0),
-    find_structs(Schema, Fields, Acc).
+    Acc = find_structs_per_type(Schema, Type, Acc0, Stack),
+    find_structs(Schema, Fields, Acc, Stack).
 
-find_structs_per_type(Schema, Name, Acc) when is_list(Name) ->
-    find_ref(Schema, Name, Acc);
-find_structs_per_type(Schema, ?REF(Name), Acc) ->
-    find_ref(Schema, Name, Acc);
-find_structs_per_type(_Schema, ?R_REF(Module, Name), Acc) ->
-    find_ref(Module, Name, Acc);
-find_structs_per_type(Schema, ?LAZY(Type), Acc) ->
-    find_structs_per_type(Schema, Type, Acc);
-find_structs_per_type(Schema, ?ARRAY(Type), Acc) ->
-    find_structs_per_type(Schema, Type, Acc);
-find_structs_per_type(Schema, ?UNION(Types), Acc) ->
+find_structs_per_type(Schema, Name, Acc, Stack) when is_list(Name) ->
+    find_ref(Schema, Name, Acc, Stack);
+find_structs_per_type(Schema, ?REF(Name), Acc, Stack) ->
+    find_ref(Schema, Name, Acc, Stack);
+find_structs_per_type(_Schema, ?R_REF(Module, Name), Acc, Stack) ->
+    find_ref(Module, Name, Acc, Stack);
+find_structs_per_type(Schema, ?LAZY(Type), Acc, Stack) ->
+    find_structs_per_type(Schema, Type, Acc, Stack);
+find_structs_per_type(Schema, ?ARRAY(Type), Acc, Stack) ->
+    find_structs_per_type(Schema, Type, Acc, ["%1..N%" | Stack]);
+find_structs_per_type(Schema, ?UNION(Types), Acc, Stack) ->
     lists:foldl(fun(T, AccIn) ->
-                        find_structs_per_type(Schema, T, AccIn)
+                        find_structs_per_type(Schema, T, AccIn, Stack)
                 end, Acc, Types);
-find_structs_per_type(Schema, ?MAP(_Name, Type), Acc) ->
-    find_structs_per_type(Schema, Type, Acc);
-find_structs_per_type(_Schema, _Type, Acc) ->
+find_structs_per_type(Schema, ?MAP(Name, Type), Acc, Stack) ->
+    find_structs_per_type(Schema, Type, Acc, ["%" ++ str(Name) ++ "%" | Stack]);
+find_structs_per_type(_Schema, _Type, Acc, _Stack) ->
     Acc.
 
-find_ref(Schema, Name, Acc) ->
+find_ref(Schema, Name, Acc, Stack0) ->
     Namespace = hocon_schema:namespace(Schema),
     Key = {Namespace, Name},
-    case maps:find(Key, Acc) of
-        {ok, _} ->
-            %% visted before, avoid duplication
+    Stack = [Name | Stack0],
+    Path = path(lists:reverse(Stack)),
+    Paths =
+        case maps:find(Key, Acc) of
+            {ok, #{paths := Ps}} -> Ps;
+            error -> #{}
+        end,
+    case maps:is_key(Path, Paths) of
+        true ->
+            %% found it before
             Acc;
-        error ->
-            Fields = fields_and_meta(Schema, Name),
-            find_structs(Schema, Fields, Acc#{Key => Fields})
+        false ->
+            Fields0 = fields_and_meta(Schema, Name),
+            Fields = Fields0#{paths => Paths#{Path => true}},
+            find_structs(Schema, Fields, Acc#{Key => Fields}, Stack)
     end.
 
 only_fill_defaults(#{only_fill_defaults := true}) -> true;
