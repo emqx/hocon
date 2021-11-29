@@ -85,6 +85,7 @@
            %% for sensitive data obfuscation (password, token)
          , sensitive => boolean()
          , desc => iodata()
+         , hidden => boolean() %% hide it from doc generation
          }.
 
 -type field() :: {name(), typefunc() | field_schema()}.
@@ -573,6 +574,8 @@ map_field_maybe_convert(Type, Schema, Value0, Opts, Converter) ->
                 false -> {Mapped, Value}
             end
     catch
+        throw : Reason ->
+            {validation_errs(Opts, #{reason => Reason}), Value0};
         C : E : St ->
             {validation_errs(Opts, #{reason => converter_crashed,
                                      exception => {C, E},

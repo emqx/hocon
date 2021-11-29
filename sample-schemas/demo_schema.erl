@@ -30,7 +30,9 @@ fields(foo) ->
       desc => "foo doc"};
 
 fields("a_b") ->
-    [ {"some_int", hoconsc:mk(integer(), #{mapping => "a_b.some_int"})}
+    [ {"some_int", hoconsc:mk(integer(), #{mapping => "a_b.some_int",
+                                           hidden => true
+                                          })}
     ];
 
 fields("b") ->
