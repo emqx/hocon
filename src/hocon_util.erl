@@ -21,6 +21,7 @@
 -export([stack_multiple_push/2, stack_push/2, get_stack/2, top_stack/2]).
 -export([is_same_file/2, real_file_name/1]).
 -export([richmap_to_map/1]).
+-export([env_prefix/1]).
 
 -include("hocon_private.hrl").
 
@@ -90,4 +91,10 @@ richmap_to_map(Iter, Map) ->
             richmap_to_map(I, Map#{K => richmap_to_map(V)});
         none ->
             Map
+    end.
+
+env_prefix(Default) ->
+    case os:getenv("HOCON_ENV_OVERRIDE_PREFIX") of
+        V when V =:= false orelse V =:= [] -> Default;
+        Prefix -> Prefix
     end.

@@ -50,9 +50,13 @@ cli_options() ->
         "the maximum number of generated config files to keep"}
     , {now_time, $t, "now_time", string, "the time suffix for generated files"}
     , {verbose_env, $v, "verbose_env", {boolean, false}, "whether to log env overrides to stdout"}
-    , {pa, undefined, "pa", string, "like the -pa flag for erl command, "
-                                    "prepend path to load beam files, "
-                                    "comma separate multiple paths"}
+    , {pa, undefined, "pa", string,
+       "like the -pa flag for erl command, prepend path to load beam files, "
+       "comma separate multiple paths"}
+    , {doctitle, undefined, "doctitle", string,
+       "this option is only valid for docgen command, the string will be used as the head-1 title "
+       "of the generated markdown document"
+      }
     ].
 
 print_help() ->
@@ -155,7 +159,8 @@ docgen(ParsedArgs) ->
             ?STDOUT("hocon's docgen command requires a schema module, use -s option", []),
             stop_deactivate();
         Module ->
-            io:format(user, "~s", [hocon_schema_doc:gen(Module)])
+            Title = proplists:get_value(doctitle, ParsedArgs),
+            io:format(user, "~s", [hocon_schema_doc:gen(Module, Title)])
     end.
 
 load_schema(ParsedArgs) ->

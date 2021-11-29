@@ -841,10 +841,7 @@ maybe_use_default(_, Value, _Opts) -> Value.
 
 collect_envs(#{apply_override_envs := false}) -> {undefined, []};
 collect_envs(Opts) ->
-    Ns = case os:getenv("HOCON_ENV_OVERRIDE_PREFIX") of
-             V when V =:= false orelse V =:= [] -> undefined;
-             Prefix -> Prefix
-         end,
+    Ns = hocon_util:env_prefix(_Default = undefined),
     case Ns of
         undefined -> {undefined, []};
         _ -> {Ns, lists:keysort(1, collect_envs(Ns, Opts))}
@@ -1262,9 +1259,9 @@ do_find_error([_ | More], Errors) ->
 find_structs(Schema, #{fields := Fields}, Acc, Stack) ->
     find_structs(Schema, Fields, Acc, Stack);
 find_structs(_Schema, [], Acc, _Stack) -> Acc;
-find_structs(Schema, [{_FieldName, FieldSchema} | Fields], Acc0, Stack) ->
+find_structs(Schema, [{FieldName, FieldSchema} | Fields], Acc0, Stack) ->
     Type = hocon_schema:field_schema(FieldSchema, type),
-    Acc = find_structs_per_type(Schema, Type, Acc0, Stack),
+    Acc = find_structs_per_type(Schema, Type, Acc0, [str(FieldName) | Stack]),
     find_structs(Schema, Fields, Acc, Stack).
 
 find_structs_per_type(Schema, Name, Acc, Stack) when is_list(Name) ->
@@ -1276,21 +1273,20 @@ find_structs_per_type(_Schema, ?R_REF(Module, Name), Acc, Stack) ->
 find_structs_per_type(Schema, ?LAZY(Type), Acc, Stack) ->
     find_structs_per_type(Schema, Type, Acc, Stack);
 find_structs_per_type(Schema, ?ARRAY(Type), Acc, Stack) ->
-    find_structs_per_type(Schema, Type, Acc, ["%1..N%" | Stack]);
+    find_structs_per_type(Schema, Type, Acc, ["$I" | Stack]);
 find_structs_per_type(Schema, ?UNION(Types), Acc, Stack) ->
     lists:foldl(fun(T, AccIn) ->
                         find_structs_per_type(Schema, T, AccIn, Stack)
                 end, Acc, Types);
 find_structs_per_type(Schema, ?MAP(Name, Type), Acc, Stack) ->
-    find_structs_per_type(Schema, Type, Acc, ["%" ++ str(Name) ++ "%" | Stack]);
+    find_structs_per_type(Schema, Type, Acc, ["$" ++ str(Name) | Stack]);
 find_structs_per_type(_Schema, _Type, Acc, _Stack) ->
     Acc.
 
-find_ref(Schema, Name, Acc, Stack0) ->
+find_ref(Schema, Name, Acc, Stack) ->
     Namespace = hocon_schema:namespace(Schema),
     Key = {Namespace, Name},
-    Stack = [Name | Stack0],
-    Path = path(lists:reverse(Stack)),
+    Path = path(Stack),
     Paths =
         case maps:find(Key, Acc) of
             {ok, #{paths := Ps}} -> Ps;
