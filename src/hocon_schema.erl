@@ -433,6 +433,11 @@ map(Schema, Conf0, Roots0, Opts0) ->
     ok = assert_integrity(Schema, NewConf, Opts),
     {Mapped, maybe_convert_to_plain_map(NewConf, Opts)}.
 
+%% Merge environment overrides into HOCON value before checking it against the schema.
+%% An alternative implimentation is to read environment variables while checking the
+%% fields, however it is more complicated than the current approach
+%% because, for nullable fields, we may skip over the struct schema,
+%% meaning override only works if the object existed in the input Conf.
 apply_envs(_EnvNamespace, _Envs, _Opts, [], Conf) -> Conf;
 apply_envs(EnvNamespace, Envs, Opts, [{RootName, RootSc} | Roots], Conf) ->
     ShouldApply =
@@ -516,14 +521,14 @@ map_fields([], Conf, Mapped, _Opts) ->
     {Mapped, Conf};
 map_fields([{FieldName, FieldSchema} | Fields], Conf0, Acc, Opts) ->
     FieldType = field_schema(FieldSchema, type),
-    FieldValue0 = get_field(Opts, FieldName, Conf0),
+    FieldValue = get_field(Opts, FieldName, Conf0),
     NewOpts = push_stack(Opts, FieldName),
-    FieldValue = resolve_field_value(FieldSchema, FieldValue0, NewOpts),
     {FAcc, FValue} = map_one_field(FieldType, FieldSchema, FieldValue, NewOpts),
     Conf = put_value(Opts, FieldName, unbox(Opts, FValue), Conf0),
     map_fields(Fields, Conf, FAcc ++ Acc, Opts).
 
-map_one_field(FieldType, FieldSchema, FieldValue, Opts) ->
+map_one_field(FieldType, FieldSchema, FieldValue0, Opts) ->
+    FieldValue = resolve_field_value(FieldSchema, FieldValue0, Opts),
     Converter = field_schema(FieldSchema, converter),
     {Acc, NewValue} = map_field_maybe_convert(FieldType, FieldSchema, FieldValue, Opts, Converter),
     NoConversion = only_fill_defaults(Opts),
@@ -616,21 +621,34 @@ map_field(?LAZY(Type), Schema, Value, Opts) ->
 map_field(?ARRAY(Type), _Schema, Value0, Opts) ->
     %% array needs an unbox
     Array = unbox(Opts, Value0),
-    F= fun(Elem) -> map_field(Type, Type, Elem, Opts) end,
+    F = fun(I, Elem) ->
+               NewOpts = push_stack(Opts, integer_to_binary(I)),
+               map_one_field(Type, Type, Elem, NewOpts)
+       end,
+    Do = fun(ArrayForSure) ->
+                 case do_map_array(F, ArrayForSure, [], 1) of
+                     {ok, NewArray} ->
+                         true = is_list(NewArray), %% assert
+                         %% and we need to box it back
+                         {[], boxit(Opts, NewArray, Value0)};
+                     {error, Reasons} ->
+                         {[{error, Reasons}], Value0}
+                 end
+         end,
     case is_list(Array) of
-        true ->
-            case do_map_array(F, Array, [], 1) of
-                {ok, NewArray} ->
-                    true = is_list(NewArray), %% assert
-                    %% and we need to box it back
-                    {[], boxit(Opts, NewArray, Value0)};
-                {error, Reasons} ->
-                    {[{error, Reasons}], Value0}
-            end;
+        true -> Do(Array);
         false when Array =:= undefined ->
             {[], undefined};
+        false when is_map(Array) ->
+            case check_indexed_array(maps:to_list(Array)) of
+                {ok, Arr} ->
+                    Do(Arr);
+                {error, Reason} ->
+                    {validation_errs(Opts, Reason), Value0}
+            end;
         false ->
-            {validation_errs(Opts, not_array, Value0), Value0}
+            Reason = #{expected_data_type => array, got => type_hint(Array)},
+            {validation_errs(Opts, Reason), Value0}
     end;
 map_field(Type, Schema, Value0, Opts) ->
     %% primitive type
@@ -762,19 +780,14 @@ do_map_union([Type | Types], TypeCheck, PerTypeResult, Opts) ->
 do_map_array(_F, [], Elems, _Index) ->
     {ok, lists:reverse(Elems)};
 do_map_array(F, [Elem | Rest], Res, Index) ->
-    {Mapped, NewElem} = F(Elem),
+    {Mapped, NewElem} = F(Index, Elem),
     %% Mapped is only used to collect errors of array element checks,
     %% as it is impossible to apply mappings for array elements
     %% if there is such a need, use wildcard instead
     case find_errors(Mapped) of
         ok -> do_map_array(F, Rest, [NewElem | Res], Index + 1);
-        {error, Reasons} -> {error, add_index_to_error_context(Reasons, Index)}
+        {error, Reasons} -> {error, Reasons}
     end.
-
-add_index_to_error_context([], _) -> [];
-add_index_to_error_context([{validation_error, Context} | More], Index) ->
-    [{validation_error, Context#{array_index => Index}}
-     | add_index_to_error_context(More, Index)].
 
 resolve_field_value(Schema, FieldValue, Opts) ->
     case get_override_env(Schema, Opts) of
@@ -807,7 +820,7 @@ collect_envs(Opts) ->
          end,
     case Ns of
         undefined -> {undefined, []};
-        _ -> {Ns, collect_envs(Ns, Opts)}
+        _ -> {Ns, lists:keysort(1, collect_envs(Ns, Opts))}
     end.
 
 collect_envs(Ns, Opts) ->
@@ -840,17 +853,18 @@ apply_env(Ns, [{VarName, V} | More], RootName, Conf, Opts) ->
     K = string:prefix(VarName, Ns),
     Path0 = string:split(string:lowercase(K), "__", all),
     Path1 = lists:filter(fun(N) -> N =/= [] end, Path0),
-    NewConf = case Path1 =/= [] andalso bin(RootName) =:= bin(hd(Path1)) of
-                  true ->
-                      Path = string:join(Path1, "."),
-                      %% It lacks schema info here, so we need to tag the value '$FROM_ENV_VAR'
-                      %% and the value will be logged later when checking against schema
-                      %% so we know if the value is sensitive or not.
-                      %% NOTE: never translate to atom key here
-                      put_value(Opts#{atom_key => false}, Path, ?FROM_ENV_VAR(VarName, V), Conf);
-                  false ->
-                      Conf
-              end,
+    NewConf =
+        case Path1 =/= [] andalso bin(RootName) =:= bin(hd(Path1)) of
+            true ->
+                Path = string:join(Path1, "."),
+                %% It lacks schema info here, so we need to tag the value '$FROM_ENV_VAR'
+                %% and the value will be logged later when checking against schema
+                %% so we know if the value is sensitive or not.
+                %% NOTE: never translate to atom key here
+                put_value(Opts#{atom_key => false}, Path, ?FROM_ENV_VAR(VarName, V), Conf);
+            false ->
+                Conf
+        end,
     apply_env(Ns, More, RootName, NewConf, Opts).
 
 log_env_override(Schema, Opts, Var, K, V0) ->
@@ -1035,13 +1049,31 @@ do_deep_get([H | T], EnclosingMap) ->
 
 -spec plain_put(opts(), [binary()], term(), hocon:confing()) -> hocon:config().
 plain_put(_Opts, [], Value, _Old) -> Value;
-plain_put(Opts, Path, Value, undefined) ->
-    plain_put(Opts, Path, Value, #{});
-plain_put(Opts, [Name | Path], Value, Conf) when is_map(Conf) ->
+plain_put(Opts, [Name | Path], Value, Conf0) when is_list(Conf0) orelse
+                                                  is_map(Conf0) ->
+    Conf =
+        case Conf0 of
+            C when is_map(C) ->
+                C;
+            L when is_list(L) ->
+                case is_array_index(Name) of
+                    {true, _} ->
+                        %% it appears to be an array, and we try to override
+                        %% one element
+                        to_indexed_map(L, 1, Opts, #{});
+                    _ ->
+                        %% it appears to be an array, but we try to override
+                        %% a field of an object, force override
+                        #{}
+                end
+        end,
     FieldV = maps:get(Name, Conf, #{}),
     NewConf = maps:without([Name], Conf),
     NewFieldV = plain_put(Opts, Path, Value, FieldV),
-    NewConf#{maybe_atom(Opts, Name) => NewFieldV}.
+    NewConf#{maybe_atom(Opts, Name) => NewFieldV};
+plain_put(Opts, Path, Value, _Other) ->
+    %% Not a map, not an array, force override
+    plain_put(Opts, Path, Value, #{}).
 
 maybe_atom(#{atom_key := true}, Name) when is_binary(Name) ->
     try
@@ -1062,12 +1094,63 @@ deep_put(Opts, Path, Value, Conf) ->
 put_rich(_Opts, [], Value, Box) ->
     boxit(Value, Box);
 put_rich(Opts, [Name | Path], Value, Box) ->
-    BoxV = safe_unbox(Box),
-    FieldV = maps:get(Name, BoxV, #{}),
+    ValueInBox0 = safe_unbox(Box),
+    ValueInBox =
+        case is_list(ValueInBox0) andalso is_array_index(Name) of
+            {true, _} ->
+                to_indexed_map(ValueInBox0, 1, Opts,
+                               ?META_BOX(made_for, to_indexed_map));
+            false when is_map(ValueInBox0) ->
+                ValueInBox0;
+            false ->
+                #{}
+        end,
+    FieldV = maps:get(Name, ValueInBox, #{}),
     NewFieldV = put_rich(Opts, Path, Value, FieldV),
-    TmpBoxV = maps:without([Name], BoxV),
+    TmpBoxV = maps:without([Name], ValueInBox),
     NewBoxV = TmpBoxV#{maybe_atom(Opts, Name) => NewFieldV},
     boxit(NewBoxV, Box).
+
+%% trying to override array with indexed value
+%% e.g. EMQX_FOO__BAR__1 = 2
+%%      EMQX_FOO__BAR__1__F1 = "random"
+%% convert the array to a indexed map
+to_indexed_map([], _, Opts, Box) -> unbox(Opts, Box);
+to_indexed_map([Elem | Rest], I, Opts, Box) ->
+    NewBox = put_value(Opts, integer_to_binary(I), Elem, Box),
+    to_indexed_map(Rest, I + 1, Opts, NewBox).
+
+is_array_index(I) ->
+    try
+        {true, binary_to_integer(I)}
+    catch
+        _ : _ ->
+            false
+    end.
+
+check_indexed_array(List) ->
+    case check_indexed_array(List, [], []) of
+        {Good, []} -> check_index_seq(1, lists:keysort(1, Good), []);
+        {_, Bad} -> {error, #{bad_array_index_keys => Bad}}
+    end.
+
+check_indexed_array([], Good, Bad) -> {Good, Bad};
+check_indexed_array([{I, V} | Rest], Good, Bad) ->
+    case is_array_index(I) of
+        {true, Index} -> check_indexed_array(Rest, [{Index, V} | Good], Bad);
+        false -> check_indexed_array(Rest, Good, [I | Bad])
+    end.
+
+check_index_seq(_, [], Acc) ->
+    {ok, lists:reverse(Acc)};
+check_index_seq(I, [{I, V} | Rest], Acc) ->
+    check_index_seq(I + 1, Rest, [V | Acc]);
+check_index_seq(I, [{Unexpected, _} | _Rest], _) ->
+    {error, #{expected_index => I,
+              got_index => Unexpected}}.
+
+type_hint(B) when is_binary(B) -> string; %% maybe secret, do not hint value
+type_hint(X) -> X.
 
 %% @doc Convert richmap to plain-map.
 richmap_to_map(MaybeRichMap) ->

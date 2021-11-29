@@ -60,7 +60,7 @@ fields("acl_query") ->
     [ {"enable", emqx_schema:t(emqx_schema:flag(), undefined, false)}
     , {"collection", emqx_schema:t(string(), undefined, "mqtt_user")}
     , {"selector", emqx_schema:t(string(), undefined, "")}
-    , {"selectors", hoconsc:map("id", string())}
+    , {"selectors", hoconsc:array(string())}
     ].
 
 translations() -> ["emqx_auth_mongo", "mongodb"].
@@ -210,8 +210,7 @@ tr_acl_query(Conf) ->
         Collection ->
             SelectorStrList =
                 [emqx_schema:conf_get("auth.mongo.acl_query.selector", Conf, [])]
-             ++ [emqx_schema:conf_get(["auth.mongo.acl_query.selectors", Key], Conf) ||
-                    Key <- emqx_schema:keys("auth.mongo.acl_query.selectors", Conf)],
+             ++ emqx_schema:conf_get("auth.mongo.acl_query.selectors", Conf, []),
             SelectorListList =
                 lists:map(
                     fun(SelectorStr) ->
