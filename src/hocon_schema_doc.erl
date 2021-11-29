@@ -16,14 +16,16 @@
 
 -module(hocon_schema_doc).
 
--export([gen/1]).
+-export([gen/2]).
 
 -include("hoconsc.hrl").
 -include("hocon_private.hrl").
 
-gen(Schema) ->
+gen(Schema, undefined) ->
+    gen(Schema, "HOCON Document");
+gen(Schema, Title) ->
     {RootNs, RootFields, Structs} = hocon_schema:find_structs(Schema),
-    [fmt_structs(1, RootNs, [{RootNs, "Root Keys", #{fields => RootFields}}]),
+    [fmt_structs(1, RootNs, [{RootNs, Title, #{fields => RootFields}}]),
      fmt_structs(2, RootNs, Structs)].
 
 fmt_structs(_HeadWeight, _RootNs, []) -> [];
@@ -36,14 +38,38 @@ fmt_struct(HeadWeight, RootNs, Ns0, Name, #{fields := Fields} = Meta) ->
              true -> undefined;
              false -> Ns0
          end,
-    FieldMd = fmt_fields(Ns, Fields),
+    Paths = case Meta of
+                #{paths := Ps} -> lists:sort(maps:keys(Ps));
+                _ -> []
+            end,
     FullNameDisplay = ref(Ns, Name),
-    [ hocon_md:h(HeadWeight, FullNameDisplay), FieldMd,
-      case Meta of
-          #{desc := StructDoc} -> ["\n", StructDoc];
+    [ hocon_md:h(HeadWeight, FullNameDisplay)
+    , fmt_paths(Paths)
+    , case Meta of
+          #{desc := StructDoc} -> StructDoc;
           _ -> []
       end
+    , "\n**Fields**\n\n"
+    , fmt_fields(Ns, Fields)
     ].
+
+fmt_paths([]) -> [];
+fmt_paths(Paths) ->
+    Envs = lists:map(fun(Path0) ->
+                              Path = string:tokens(Path0, "."),
+                              Env = string:uppercase(string:join(Path, "__")),
+                              hocon_util:env_prefix("EMQX_") ++ Env
+                      end, Paths),
+    ["\n**Config paths**\n\n",
+     simple_list(Paths),
+     "\n"
+     "\n**Env overrides**\n\n",
+     simple_list(Envs),
+     "\n"
+    ].
+
+simple_list(L) ->
+    [[" - ", hocon_md:code(I), "\n"] || I <- L].
 
 fmt_fields(_Ns, []) -> [];
 fmt_fields(Ns, [{Name, FieldSchema} | Fields]) ->
@@ -57,20 +83,21 @@ fmt_field(Ns, Name, FieldSchema) ->
     Default = fmt_default(hocon_schema:field_schema(FieldSchema, default)),
     Desc = hocon_schema:field_schema(FieldSchema, desc),
     [ ["- ", bin(Name), ": ", Type, "\n"]
-    , case Desc =/= undefined of
-          true -> ["  - Description: ", Desc, "\n"];
-          false -> []
-      end
     , case Default =/= undefined of
-          true  -> ["  - Default:", Default, "\n"];
+          true  -> ["\n", hocon_md:indent(2, [["Default = ", Default]]), "\n"];
           false -> []
       end
+    , case Desc =/= undefined of
+          true -> ["\n", hocon_md:indent(2, [Desc]), "\n"];
+          false -> []
+      end
+    , "\n"
     ].
 
 fmt_default(undefined) -> undefined;
 fmt_default(Value) ->
     case hocon_pp:do(Value, #{newline => "", embedded => true}) of
-        [OneLine] -> [" `", OneLine, "`"];
+        [OneLine] -> ["`", OneLine, "`"];
         Lines -> ["\n```\n", [[L, "\n"] || L <- Lines], "```"]
     end.
 

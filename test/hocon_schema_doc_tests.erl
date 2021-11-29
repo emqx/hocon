@@ -33,4 +33,4 @@ no_crash_test_() ->
            })}
     ].
 
-gen(Schema) -> fun() -> hocon_schema_doc:gen(Schema) end.
+gen(Schema) -> fun() -> hocon_schema_doc:gen(Schema, "test") end.
