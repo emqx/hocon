@@ -36,7 +36,7 @@ fmt_struct(HeadWeight, RootNs, Ns0, Name, #{fields := Fields} = Meta) ->
              true -> undefined;
              false -> Ns0
          end,
-    FieldMd = fmt_fields(HeadWeight + 1, Ns, Fields),
+    FieldMd = fmt_fields(Ns, Fields),
     FullNameDisplay = ref(Ns, Name),
     [ hocon_md:h(HeadWeight, FullNameDisplay), FieldMd,
       case Meta of
@@ -45,24 +45,27 @@ fmt_struct(HeadWeight, RootNs, Ns0, Name, #{fields := Fields} = Meta) ->
       end
     ].
 
+fmt_fields(_Ns, []) -> [];
+fmt_fields(Ns, [{Name, FieldSchema} | Fields]) ->
+    case hocon_schema:field_schema(FieldSchema, hidden) of
+        true -> fmt_fields(Ns, Fields);
+        _ -> [bin(fmt_field(Ns, Name, FieldSchema)) | fmt_fields(Ns, Fields)]
+    end.
 
-fmt_fields(_Weight, _Ns, []) -> [];
-fmt_fields(Weight, Ns, [{Name, FieldSchema} | Fields]) ->
+fmt_field(Ns, Name, FieldSchema) ->
     Type = fmt_type(Ns, hocon_schema:field_schema(FieldSchema, type)),
     Default = fmt_default(hocon_schema:field_schema(FieldSchema, default)),
     Desc = hocon_schema:field_schema(FieldSchema, desc),
-    NewMd =
-        [ ["- ", bin(Name), ": ", Type, "\n"]
-        , case Desc =/= undefined of
-              true -> ["  - Description: ", Desc, "\n"];
-              false -> []
-          end
-        , case Default =/= undefined of
-            true  -> ["  - Default:", Default, "\n"];
-            false -> []
-          end
-        ],
-    [bin(NewMd) | fmt_fields(Weight, Ns, Fields)].
+    [ ["- ", bin(Name), ": ", Type, "\n"]
+    , case Desc =/= undefined of
+          true -> ["  - Description: ", Desc, "\n"];
+          false -> []
+      end
+    , case Default =/= undefined of
+          true  -> ["  - Default:", Default, "\n"];
+          false -> []
+      end
+    ].
 
 fmt_default(undefined) -> undefined;
 fmt_default(Value) ->
