@@ -441,18 +441,29 @@ map(Schema, Conf0, Roots0, Opts0) ->
                           ok = assert_no_dot(Schema, RootName)
                   end, Roots),
     Conf1 = filter_by_roots(Opts, Conf0, Roots),
-    {EnvNamespace, Envs} = collect_envs(Opts),
-    Conf = apply_envs(EnvNamespace, Envs, Opts, Roots, Conf1),
-    {Mapped, NewConf} = do_map(Roots, Conf, Opts, ?MAGIC_SCHEMA),
-    ok = assert_no_error(Schema, Mapped),
+    Conf = apply_envs(Conf1, Opts, Roots),
+    {Mapped0, NewConf} = do_map(Roots, Conf, Opts, ?MAGIC_SCHEMA),
+    ok = assert_no_error(Schema, Mapped0),
     ok = assert_integrity(Schema, NewConf, Opts),
+    Mapped = log_and_drop_env_overrides(Opts, Mapped0),
     {Mapped, maybe_convert_to_plain_map(NewConf, Opts)}.
+
+log_and_drop_env_overrides(_Opts, []) -> [];
+log_and_drop_env_overrides(Opts, [#{hocon_env_var_name := _} = H | T]) ->
+    log(Opts, info, H),
+    log_and_drop_env_overrides(Opts, T);
+log_and_drop_env_overrides(Opts, [H | T]) ->
+    [H | log_and_drop_env_overrides(Opts, T)].
 
 %% Merge environment overrides into HOCON value before checking it against the schema.
 %% An alternative implimentation is to read environment variables while checking the
 %% fields, however it is more complicated than the current approach
 %% because, for nullable fields, we may skip over the struct schema,
 %% meaning override only works if the object existed in the input Conf.
+apply_envs(Conf, Opts, Roots) ->
+    {EnvNamespace, Envs} = collect_envs(Opts),
+    apply_envs(EnvNamespace, Envs, Opts, Roots, Conf).
+
 apply_envs(_EnvNamespace, _Envs, _Opts, [], Conf) -> Conf;
 apply_envs(EnvNamespace, Envs, Opts, [{RootName, RootSc} | Roots], Conf) ->
     ShouldApply =
@@ -543,9 +554,10 @@ map_fields([{FieldName, FieldSchema} | Fields], Conf0, Acc, Opts) ->
     map_fields(Fields, Conf, FAcc ++ Acc, Opts).
 
 map_one_field(FieldType, FieldSchema, FieldValue0, Opts) ->
-    FieldValue = resolve_field_value(FieldSchema, FieldValue0, Opts),
+    {MaybeLog, FieldValue} = resolve_field_value(FieldSchema, FieldValue0, Opts),
     Converter = field_schema(FieldSchema, converter),
-    {Acc, NewValue} = map_field_maybe_convert(FieldType, FieldSchema, FieldValue, Opts, Converter),
+    {Acc0, NewValue} = map_field_maybe_convert(FieldType, FieldSchema, FieldValue, Opts, Converter),
+    Acc = MaybeLog ++ Acc0,
     NoConversion = only_fill_defaults(Opts),
     Validators =
         case is_primitive_type(FieldType) of
@@ -641,11 +653,11 @@ map_field(?ARRAY(Type), _Schema, Value0, Opts) ->
                map_one_field(Type, Type, Elem, NewOpts)
        end,
     Do = fun(ArrayForSure) ->
-                 case do_map_array(F, ArrayForSure, [], 1) of
-                     {ok, NewArray} ->
+                 case do_map_array(F, ArrayForSure, [], 1, []) of
+                     {ok, {NewArray, Mapped}} ->
                          true = is_list(NewArray), %% assert
                          %% and we need to box it back
-                         {[], boxit(Opts, NewArray, Value0)};
+                         {Mapped, boxit(Opts, NewArray, Value0)};
                      {error, Reasons} ->
                          {[{error, Reasons}], Value0}
                  end
@@ -792,15 +804,12 @@ do_map_union([Type | Types], TypeCheck, PerTypeResult, Opts) ->
             do_map_union(Types, TypeCheck, PerTypeResult#{Type => Reasons}, Opts)
     end.
 
-do_map_array(_F, [], Elems, _Index) ->
-    {ok, lists:reverse(Elems)};
-do_map_array(F, [Elem | Rest], Res, Index) ->
+do_map_array(_F, [], Elems, _Index, Acc) ->
+    {ok, {lists:reverse(Elems), Acc}};
+do_map_array(F, [Elem | Rest], Res, Index, Acc) ->
     {Mapped, NewElem} = F(Index, Elem),
-    %% Mapped is only used to collect errors of array element checks,
-    %% as it is impossible to apply mappings for array elements
-    %% if there is such a need, use wildcard instead
     case find_errors(Mapped) of
-        ok -> do_map_array(F, Rest, [NewElem | Res], Index + 1);
+        ok -> do_map_array(F, Rest, [NewElem | Res], Index + 1, Mapped ++ Acc);
         {error, Reasons} -> {error, Reasons}
     end.
 
@@ -808,17 +817,18 @@ resolve_field_value(Schema, FieldValue, Opts) ->
     case get_override_env(Schema, Opts) of
         undefined ->
             resolve_default_override(Schema, FieldValue, Opts);
-        {Name, EnvValue} ->
-            maybe_mkrich(Opts, EnvValue, ?META_BOX(from_env, Name))
+        {Log, Name, EnvValue} ->
+            {[Log], maybe_mkrich(Opts, EnvValue, ?META_BOX(from_env, Name))}
     end.
 
 resolve_default_override(Schema, FieldValue, Opts) ->
     case unbox(Opts, FieldValue) of
         ?FROM_ENV_VAR(EnvName, EnvValue) ->
-            log_env_override(Schema, Opts, EnvName, path(Opts), EnvValue),
-            maybe_mkrich(Opts, EnvValue, ?META_BOX(from_env, EnvName));
+            {[env_override_for_log(Schema, EnvName, path(Opts), EnvValue)],
+             maybe_mkrich(Opts, EnvValue, ?META_BOX(from_env, EnvName))};
         _ ->
-            maybe_use_default(field_schema(Schema, default), FieldValue, Opts)
+            {[],
+             maybe_use_default(field_schema(Schema, default), FieldValue, Opts)}
     end.
 
 %% use default value if field value is 'undefined'
@@ -882,9 +892,9 @@ apply_env(Ns, [{VarName, V} | More], RootName, Conf, Opts) ->
         end,
     apply_env(Ns, More, RootName, NewConf, Opts).
 
-log_env_override(Schema, Opts, Var, K, V0) ->
+env_override_for_log(Schema, Var, K, V0) ->
     V = obfuscate(Schema, V0),
-    log(Opts, info, #{hocon_env_var_name => Var, path => K, value => V}).
+    #{hocon_env_var_name => Var, path => K, value => V}.
 
 obfuscate(Schema, Value) ->
     case field_schema(Schema, sensitive) of
@@ -969,8 +979,8 @@ get_override_env(Schema, Opts) ->
                 V when V =:= false orelse V =:= [] ->
                     undefined;
                 V ->
-                    log_env_override(Schema, Opts, Var, path(Opts), V),
-                    {str(Var), read_hocon_val(V, Opts)}
+                    {env_override_for_log(Schema, Var, path(Opts), V),
+                     str(Var), read_hocon_val(V, Opts)}
             end
     end.
 
