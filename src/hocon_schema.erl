@@ -154,6 +154,7 @@
 
 -define(DEFAULT_NULLABLE, true).
 
+-define(EMPTY_MAP, #{}).
 -define(META_BOX(Tag, Metadata), #{?METADATA => #{Tag => Metadata}}).
 -define(NULL_BOX, #{?METADATA => #{made_for => null_value}}).
 -define(MAGIC, '$magic_chicken').
@@ -195,7 +196,7 @@ find_structs(Schema) ->
     RootFields = lists:map(fun({_BinName, {RootFieldName, RootFieldSchema}}) ->
                                    {RootFieldName, RootFieldSchema}
                            end, Roots),
-    All = find_structs(Schema, RootFields, #{}, []),
+    All = find_structs(Schema, RootFields, #{}, _ValueStack = [], _TypeStack = []),
     RootNs = hocon_schema:namespace(Schema),
     {RootNs, RootFields,
      [{Ns, Name, Fields} || {{Ns, Name}, Fields} <- lists:keysort(1, maps:to_list(All))]}.
@@ -549,7 +550,23 @@ map_fields([{FieldName, FieldSchema} | Fields], Conf0, Acc, Opts) ->
     FieldType = field_schema(FieldSchema, type),
     FieldValue = get_field(Opts, FieldName, Conf0),
     NewOpts = push_stack(Opts, FieldName),
-    {FAcc, FValue} = map_one_field(FieldType, FieldSchema, FieldValue, NewOpts),
+    {FAcc, FValue} =
+        try
+            map_one_field(FieldType, FieldSchema, FieldValue, NewOpts)
+        catch
+            %% there is no test coverage for these lines
+            %% if this happens, it's a bug!
+            C : #{reason := failed_to_check_field} = E : St ->
+                erlang:raise(C, E, St);
+            C : E : St ->
+                Err = #{reason => failed_to_check_field,
+                        field => FieldName,
+                        path => try path(Opts) catch _ : _ -> [] end,
+                        exception => E},
+                catch log(Opts, error, io_lib:format("input-config:~n~p~n~p~n",
+                                                     [FieldValue, Err])),
+                erlang:raise(C, Err, St)
+        end,
     Conf = put_value(Opts, FieldName, unbox(Opts, FValue), Conf0),
     map_fields(Fields, Conf, FAcc ++ Acc, Opts).
 
@@ -885,7 +902,18 @@ apply_env(Ns, [{VarName, V} | More], RootName, Conf, Opts) ->
                 %% and the value will be logged later when checking against schema
                 %% so we know if the value is sensitive or not.
                 %% NOTE: never translate to atom key here
-                put_value(Opts#{atom_key => false}, Path, ?FROM_ENV_VAR(VarName, V), Conf);
+                Value = case only_fill_defaults(Opts) of
+                            true -> V;
+                            false -> ?FROM_ENV_VAR(VarName, V)
+                        end,
+                try
+                    put_value(Opts#{atom_key => false}, Path, Value, Conf)
+                catch
+                    throw : {bad_array_index, Reason} ->
+                        Msg = ["bad_array_index from ",  VarName, ", ", Reason],
+                        log(Opts, error, iolist_to_binary(Msg)),
+                        error({bad_array_index, VarName})
+                end;
             false ->
                 Conf
         end,
@@ -923,7 +951,7 @@ unbox(Boxed) ->
 
 safe_unbox(MaybeBox) ->
     case maps:get(?HOCON_V, MaybeBox, undefined) of
-        undefined -> #{};
+        undefined -> ?EMPTY_MAP;
         Value -> Value
     end.
 
@@ -1071,34 +1099,6 @@ do_deep_get([H | T], EnclosingMap) ->
             undefined
     end.
 
--spec plain_put(opts(), [binary()], term(), hocon:confing()) -> hocon:config().
-plain_put(_Opts, [], Value, _Old) -> Value;
-plain_put(Opts, [Name | Path], Value, Conf0) when is_list(Conf0) orelse
-                                                  is_map(Conf0) ->
-    Conf =
-        case Conf0 of
-            C when is_map(C) ->
-                C;
-            L when is_list(L) ->
-                case is_array_index(Name) of
-                    {true, _} ->
-                        %% it appears to be an array, and we try to override
-                        %% one element
-                        to_indexed_map(L, 1, Opts, #{});
-                    _ ->
-                        %% it appears to be an array, but we try to override
-                        %% a field of an object, force override
-                        #{}
-                end
-        end,
-    FieldV = maps:get(Name, Conf, #{}),
-    NewConf = maps:without([Name], Conf),
-    NewFieldV = plain_put(Opts, Path, Value, FieldV),
-    NewConf#{maybe_atom(Opts, Name) => NewFieldV};
-plain_put(Opts, Path, Value, _Other) ->
-    %% Not a map, not an array, force override
-    plain_put(Opts, Path, Value, #{}).
-
 maybe_atom(#{atom_key := true}, Name) when is_binary(Name) ->
     try
         binary_to_existing_atom(Name, utf8)
@@ -1109,6 +1109,12 @@ maybe_atom(#{atom_key := true}, Name) when is_binary(Name) ->
 maybe_atom(_Opts, Name) ->
     Name.
 
+-spec plain_put(opts(), [binary()], term(), hocon:confing()) -> hocon:config().
+plain_put(_Opts, [], Value, _Old) -> Value;
+plain_put(Opts, [Name | Path], Value, Conf0) ->
+    GoDeep = fun(V) -> plain_put(Opts, Path, Value, V) end,
+    do_put(Opts, Conf0, Name, GoDeep).
+
 %% put unboxed value to the richmap box
 %% this function is called places where there is no boxing context
 %% so it has to accept unboxed value.
@@ -1118,31 +1124,52 @@ deep_put(Opts, Path, Value, Conf) ->
 put_rich(_Opts, [], Value, Box) ->
     boxit(Value, Box);
 put_rich(Opts, [Name | Path], Value, Box) ->
-    ValueInBox0 = safe_unbox(Box),
-    ValueInBox =
-        case is_list(ValueInBox0) andalso is_array_index(Name) of
-            {true, _} ->
-                to_indexed_map(ValueInBox0, 1, Opts,
-                               ?META_BOX(made_for, to_indexed_map));
-            false when is_map(ValueInBox0) ->
-                ValueInBox0;
-            false ->
-                #{}
-        end,
-    FieldV = maps:get(Name, ValueInBox, #{}),
-    NewFieldV = put_rich(Opts, Path, Value, FieldV),
-    TmpBoxV = maps:without([Name], ValueInBox),
-    NewBoxV = TmpBoxV#{maybe_atom(Opts, Name) => NewFieldV},
-    boxit(NewBoxV, Box).
+    V0 = safe_unbox(Box),
+    GoDeep = fun(Elem) -> put_rich(Opts, Path, Value, Elem) end,
+    V = do_put(Opts, V0, Name, GoDeep),
+    boxit(V, Box).
 
-%% trying to override array with indexed value
-%% e.g. EMQX_FOO__BAR__1 = 2
-%%      EMQX_FOO__BAR__1__F1 = "random"
-%% convert the array to a indexed map
-to_indexed_map([], _, Opts, Box) -> unbox(Opts, Box);
-to_indexed_map([Elem | Rest], I, Opts, Box) ->
-    NewBox = put_value(Opts, integer_to_binary(I), Elem, Box),
-    to_indexed_map(Rest, I + 1, Opts, NewBox).
+do_put(Opts, V, Name, GoDeep) ->
+    case maybe_array(V) andalso is_array_index(Name) of
+        {true, Index} -> update_array_element(V, Index, GoDeep);
+        false when is_map(V) -> update_map_field(Opts, V, Name, GoDeep);
+        false -> update_map_field(Opts, #{}, Name, GoDeep)
+    end.
+
+maybe_array(V) when is_list(V) -> true;
+maybe_array(V) -> V =:= ?EMPTY_MAP.
+
+update_array_element(?EMPTY_MAP, Index, GoDeep) ->
+    update_array_element([], Index, GoDeep);
+update_array_element(List, Index, GoDeep) when is_list(List) ->
+    MinIndex = 1,
+    MaxIndex = length(List) + 1,
+    Index < MinIndex andalso throw({bad_array_index, "index starts from 1"}),
+    Index > MaxIndex andalso
+    begin
+        Msg0 = io_lib:format("should not be greater than ~p.", [MaxIndex]),
+        Msg1 = case Index > 9 of
+                   true ->
+                       "~nEnvironment variable overrides applied in alphabetical "
+                       "make sure to use zero paddings such as '02' to ensure "
+                       "10 is ordered after it";
+                   false ->
+                       []
+               end,
+        throw({bad_array_index, [Msg0, Msg1]})
+    end,
+    {Head, Tail0} = lists:split(Index - 1, List),
+    {Nth, Tail} = case Tail0 of
+                      [] -> {?EMPTY_MAP, []};
+                      [H | T] -> {H, T}
+                  end,
+    Head ++ [GoDeep(Nth) | Tail].
+
+update_map_field(Opts, Map, FieldName, GoDeep) ->
+    FieldV0 = maps:get(FieldName, Map, ?EMPTY_MAP),
+    FieldV = GoDeep(FieldV0),
+    Map1 = maps:without([FieldName], Map),
+    Map1#{maybe_atom(Opts, FieldName) => FieldV}.
 
 is_array_index(I) ->
     try
@@ -1167,11 +1194,14 @@ check_indexed_array([{I, V} | Rest], Good, Bad) ->
 
 check_index_seq(_, [], Acc) ->
     {ok, lists:reverse(Acc)};
-check_index_seq(I, [{I, V} | Rest], Acc) ->
-    check_index_seq(I + 1, Rest, [V | Acc]);
-check_index_seq(I, [{Unexpected, _} | _Rest], _) ->
-    {error, #{expected_index => I,
-              got_index => Unexpected}}.
+check_index_seq(I, [{Index, V} | Rest], Acc) ->
+    case I =:= Index of
+        true ->
+            check_index_seq(I + 1, Rest, [V | Acc]);
+        false ->
+            {error, #{expected_index => I,
+                      got_index => Index}}
+    end.
 
 type_hint(B) when is_binary(B) -> string; %% maybe secret, do not hint value
 type_hint(X) -> X.
@@ -1256,34 +1286,34 @@ do_find_error([{error, E} | More], Errors) ->
 do_find_error([_ | More], Errors) ->
     do_find_error(More, Errors).
 
-find_structs(Schema, #{fields := Fields}, Acc, Stack) ->
-    find_structs(Schema, Fields, Acc, Stack);
-find_structs(_Schema, [], Acc, _Stack) -> Acc;
-find_structs(Schema, [{FieldName, FieldSchema} | Fields], Acc0, Stack) ->
+find_structs(Schema, #{fields := Fields}, Acc, Stack, TStack) ->
+    find_structs(Schema, Fields, Acc, Stack, TStack);
+find_structs(_Schema, [], Acc, _Stack, _TStack) -> Acc;
+find_structs(Schema, [{FieldName, FieldSchema} | Fields], Acc0, Stack, TStack) ->
     Type = hocon_schema:field_schema(FieldSchema, type),
-    Acc = find_structs_per_type(Schema, Type, Acc0, [str(FieldName) | Stack]),
-    find_structs(Schema, Fields, Acc, Stack).
+    Acc = find_structs_per_type(Schema, Type, Acc0, [str(FieldName) | Stack], TStack),
+    find_structs(Schema, Fields, Acc, Stack, TStack).
 
-find_structs_per_type(Schema, Name, Acc, Stack) when is_list(Name) ->
-    find_ref(Schema, Name, Acc, Stack);
-find_structs_per_type(Schema, ?REF(Name), Acc, Stack) ->
-    find_ref(Schema, Name, Acc, Stack);
-find_structs_per_type(_Schema, ?R_REF(Module, Name), Acc, Stack) ->
-    find_ref(Module, Name, Acc, Stack);
-find_structs_per_type(Schema, ?LAZY(Type), Acc, Stack) ->
-    find_structs_per_type(Schema, Type, Acc, Stack);
-find_structs_per_type(Schema, ?ARRAY(Type), Acc, Stack) ->
-    find_structs_per_type(Schema, Type, Acc, ["$I" | Stack]);
-find_structs_per_type(Schema, ?UNION(Types), Acc, Stack) ->
+find_structs_per_type(Schema, Name, Acc, Stack, TStack) when is_list(Name) ->
+    find_ref(Schema, Name, Acc, Stack, TStack);
+find_structs_per_type(Schema, ?REF(Name), Acc, Stack, TStack) ->
+    find_ref(Schema, Name, Acc, Stack, TStack);
+find_structs_per_type(_Schema, ?R_REF(Module, Name), Acc, Stack, TStack) ->
+    find_ref(Module, Name, Acc, Stack, TStack);
+find_structs_per_type(Schema, ?LAZY(Type), Acc, Stack, TStack) ->
+    find_structs_per_type(Schema, Type, Acc, Stack, TStack);
+find_structs_per_type(Schema, ?ARRAY(Type), Acc, Stack, TStack) ->
+    find_structs_per_type(Schema, Type, Acc, ["$I" | Stack], TStack);
+find_structs_per_type(Schema, ?UNION(Types), Acc, Stack, TStack) ->
     lists:foldl(fun(T, AccIn) ->
-                        find_structs_per_type(Schema, T, AccIn, Stack)
+                        find_structs_per_type(Schema, T, AccIn, Stack, TStack)
                 end, Acc, Types);
-find_structs_per_type(Schema, ?MAP(Name, Type), Acc, Stack) ->
-    find_structs_per_type(Schema, Type, Acc, ["$" ++ str(Name) | Stack]);
-find_structs_per_type(_Schema, _Type, Acc, _Stack) ->
+find_structs_per_type(Schema, ?MAP(Name, Type), Acc, Stack, TStack) ->
+    find_structs_per_type(Schema, Type, Acc, ["$" ++ str(Name) | Stack], TStack);
+find_structs_per_type(_Schema, _Type, Acc, _Stack, _TStack) ->
     Acc.
 
-find_ref(Schema, Name, Acc, Stack) ->
+find_ref(Schema, Name, Acc, Stack, TStack) ->
     Namespace = hocon_schema:namespace(Schema),
     Key = {Namespace, Name},
     Path = path(Stack),
@@ -1297,9 +1327,15 @@ find_ref(Schema, Name, Acc, Stack) ->
             %% found it before
             Acc;
         false ->
-            Fields0 = fields_and_meta(Schema, Name),
-            Fields = Fields0#{paths => Paths#{Path => true}},
-            find_structs(Schema, Fields, Acc#{Key => Fields}, Stack)
+            case lists:member(Key, TStack) of
+                true ->
+                    %% loop reference
+                    Acc;
+                false ->
+                    Fields0 = fields_and_meta(Schema, Name),
+                    Fields = Fields0#{paths => Paths#{Path => true}},
+                    find_structs(Schema, Fields, Acc#{Key => Fields}, Stack, [Key | TStack])
+            end
     end.
 
 only_fill_defaults(#{only_fill_defaults := true}) -> true;
@@ -1311,3 +1347,4 @@ ensure_bin_str(Value) when is_list(Value) ->
         false -> Value
     end;
 ensure_bin_str(Value) -> Value.
+

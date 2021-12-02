@@ -14,24 +14,21 @@
 %% limitations under the License.
 %%--------------------------------------------------------------------
 
--module(hocon_schema_doc_tests).
+-module(demo_schema3).
+-include_lib("typerefl/include/types.hrl").
+-behaviour(hocon_schema).
 
--include_lib("eunit/include/eunit.hrl").
+-export([namespace/0, roots/0, fields/1]).
 
-no_crash_test_() ->
-    [{"demo_schema", gen(demo_schema)},
-     {"demo_schema2", gen(demo_schema2)},
-     {"demo_schema3", gen(demo_schema3)},
-     {"emqx_schema", gen(emqx_schema)},
-     {"arbitrary1", gen(#{namespace => dummy,
-                          roots => [foo],
-                          fields => #{foo => [{"f1", hoconsc:enum([bar])}]}
-                         })},
-     {"arbitrary2",
-      gen(#{namespace => dummy,
-            roots => [foo],
-            fields => #{foo => [{"f1", hoconsc:mk(hoconsc:ref(emqx_schema, "zone"))}]}
-           })}
+namespace() -> undefined.
+
+roots() ->
+    [ {foo, hoconsc:array(hoconsc:ref(foo))}
     ].
 
-gen(Schema) -> fun() -> hocon_schema_doc:gen(Schema, "test") end.
+fields(foo) ->
+    [ {bar, hoconsc:ref(bar)}
+    ];
+fields(bar) ->
+    Sc = hoconsc:union([hoconsc:ref(foo), null]),
+    [{"baz", Sc}].
