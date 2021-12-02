@@ -791,6 +791,21 @@ bad_indexed_map_test() ->
                                            path := "foo.bar"}}]},
                  hocon_schema:check(Sc, Conf, #{format => map})).
 
+
+fill_defaults_with_env_override_test() ->
+    Sc = #{roots => [foo],
+           fields => #{foo => [ {"bar", integer()}
+                              ]
+                      }
+          },
+    with_envs(
+      fun() ->
+              Conf0 = "foo={bar=121}",
+              {ok, Conf} = hocon:binary(Conf0),
+              Res = hocon_schema:check_plain(Sc, Conf, #{only_fill_defaults => true}),
+              ?assertEqual(#{<<"foo">> => #{<<"bar">> => 122}}, Res)
+      end, envs([{"EMQX_FOO__BAR", "122"}])).
+
 array_env_override_test_() ->
     Sc = #{roots => [foo],
            fields => #{foo => [ {"bar", hoconsc:mk(hoconsc:array(integer()))}

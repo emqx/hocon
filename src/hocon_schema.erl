@@ -902,8 +902,12 @@ apply_env(Ns, [{VarName, V} | More], RootName, Conf, Opts) ->
                 %% and the value will be logged later when checking against schema
                 %% so we know if the value is sensitive or not.
                 %% NOTE: never translate to atom key here
+                Value = case only_fill_defaults(Opts) of
+                            true -> V;
+                            false -> ?FROM_ENV_VAR(VarName, V)
+                        end,
                 try
-                    put_value(Opts#{atom_key => false}, Path, ?FROM_ENV_VAR(VarName, V), Conf)
+                    put_value(Opts#{atom_key => false}, Path, Value, Conf)
                 catch
                     throw : {bad_array_index, Reason} ->
                         Msg = ["bad_array_index from ",  VarName, ", ", Reason],
