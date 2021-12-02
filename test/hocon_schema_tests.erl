@@ -778,6 +778,19 @@ test_array_env_override(Format) ->
               {"EMQX_FOO__2__KLANG", "222"}
              ]).
 
+bad_indexed_map_test() ->
+    Sc = #{roots => [foo],
+           fields => #{foo => [ {"bar", hoconsc:mk(hoconsc:array(integer()))}
+                              ]
+                      }
+          },
+    Array = #{<<"1">> => 1, <<"2">> => 2, <<"4">> => 4}, %% 3 missing
+    Conf = #{<<"foo">> => #{<<"bar">> => Array}},
+    ?assertThrow({_, [{validation_error, #{expected_index := 3,
+                                           got_index := 4,
+                                           path := "foo.bar"}}]},
+                 hocon_schema:check(Sc, Conf, #{format => map})).
+
 array_env_override_test_() ->
     Sc = #{roots => [foo],
            fields => #{foo => [ {"bar", hoconsc:mk(hoconsc:array(integer()))}
@@ -790,9 +803,11 @@ array_env_override_test_() ->
     , {"plainmap", fun() -> test_array_env_override_t2(Sc, map) end}
     , {"bad_sequence",
        fun() ->
-               Throw = test_array_override(Sc, map, EnvsFooBar13),
-               ?assertMatch([{validation_error, #{expected_index := 2,
-                                                  got_index := 3}}], Throw)
+               ?assertError({bad_array_index, "EMQX_FOO__BAR__3"},
+                             test_array_override(Sc, map, EnvsFooBar13)),
+               Envs = EnvsFooBar13 ++ [{"EMQX_FOO__BAR__10", "10"}],
+               ?assertError({bad_array_index, "EMQX_FOO__BAR__10"},
+                             test_array_override(Sc, map, Envs))
        end}
     , {"bad_index",
        fun() ->
