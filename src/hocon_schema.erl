@@ -196,7 +196,7 @@ find_structs(Schema) ->
     RootFields = lists:map(fun({_BinName, {RootFieldName, RootFieldSchema}}) ->
                                    {RootFieldName, RootFieldSchema}
                            end, Roots),
-    All = find_structs(Schema, RootFields, #{}, _ValueStack = [], _TypeStack = []),
+    All = find_structs(Schema, RootFields),
     RootNs = hocon_schema:namespace(Schema),
     {RootNs, RootFields,
      [{Ns, Name, Fields} || {{Ns, Name}, Fields} <- lists:keysort(1, maps:to_list(All))]}.
@@ -1285,6 +1285,9 @@ do_find_error([{error, E} | More], Errors) ->
     do_find_error(More, [E | Errors]);
 do_find_error([_ | More], Errors) ->
     do_find_error(More, Errors).
+
+find_structs(Schema, Fields) ->
+    find_structs(Schema, Fields, #{}, _ValueStack = [], _TypeStack = []).
 
 find_structs(Schema, #{fields := Fields}, Acc, Stack, TStack) ->
     find_structs(Schema, Fields, Acc, Stack, TStack);
