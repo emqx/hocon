@@ -73,16 +73,23 @@ env_override_test() ->
     with_envs(
       fun() ->
               Conf = "{\"bar.field1\": \"foo\"}",
-              Res = check(Conf, #{format => richmap, apply_override_envs => true}),
+              Opts = #{format => richmap},
+              Res = check(Conf, Opts#{apply_override_envs => true}),
               ?assertEqual(Res, check_plain(Conf, #{logger => fun(_, _) -> ok end,
                                                     apply_override_envs => true
                                                    })),
               ?assertEqual(#{<<"bar">> => #{ <<"union_with_default">> => #{<<"val">> => 111},
-                                             <<"field1">> => ""}}, Res)
-      end, [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"},
-            {"EMQX_BAR__UNION_WITH_DEFAULT__VAL", "111"},
+                                             <<"field1">> => ""}}, Res),
+
+              {ok, Conf1} = hocon:binary(Conf, Opts),
+              Conf2 = hocon_schema:merge_env_overrides(?MODULE, Conf1, all, Opts),
+              Conf3 = hocon_schema:check(?MODULE, Conf2, Opts#{apply_override_envs => false}),
+              Conf4 = hocon_schema:richmap_to_map(Conf3),
+              ?assertEqual(Res, Conf4)
+      end,
+      envs([{"EMQX_BAR__UNION_WITH_DEFAULT__VAL", "111"},
             {"EMQX_bar__field1", ""}
-           ]).
+           ])).
 
 env_override_false_test() ->
    with_envs(

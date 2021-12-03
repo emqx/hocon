@@ -27,11 +27,15 @@
         , validations/1
         ]).
 
+%% data validation and transformation
 -export([map/2, map/3, map/4]).
 -export([translate/3]).
 -export([generate/2, generate/3, map_translate/3]).
 -export([check/2, check/3, check_plain/2, check_plain/3, check_plain/4]).
+-export([merge_env_overrides/4]).
 -export([richmap_to_map/1, get_value/2, get_value/3]).
+
+%% schema access
 -export([namespace/1, resolve_struct_name/2, root_names/1]).
 -export([field_schema/2, override/2]).
 
@@ -451,18 +455,27 @@ map(Schema, Conf0, Roots0, Opts0) ->
     Mapped = log_and_drop_env_overrides(Opts, Mapped0),
     {Mapped, maybe_convert_to_plain_map(NewConf, Opts)}.
 
+%% @doc Apply environment variable overrides on top of the given Conf0
+merge_env_overrides(Schema, Conf0, all, Opts) ->
+    merge_env_overrides(Schema, Conf0, root_names(Schema), Opts);
+merge_env_overrides(Schema, Conf0, Roots0, Opts0) ->
+    Opts = Opts0#{apply_override_envs => true}, %% force
+    Roots = resolve_root_types(roots(Schema), Roots0),
+    Conf = filter_by_roots(Opts, Conf0, Roots),
+    apply_envs(Schema, Conf, Opts, Roots).
+
+%% the config 'map' call returns env overrides in mapping
+%% resutls, this function helps to drop them from  the list
+%% and log the overrides
 log_and_drop_env_overrides(_Opts, []) -> [];
 log_and_drop_env_overrides(Opts, [#{hocon_env_var_name := _} = H | T]) ->
-    log(Opts, info, H),
+    _ = log(Opts, info, H),
     log_and_drop_env_overrides(Opts, T);
 log_and_drop_env_overrides(Opts, [H | T]) ->
     [H | log_and_drop_env_overrides(Opts, T)].
 
 %% Merge environment overrides into HOCON value before checking it against the schema.
-%% An alternative implimentation is to read environment variables while checking the
-%% fields, however it is more complicated than the current approach
-%% because, for nullable fields, we may skip over the struct schema,
-%% meaning override only works if the object existed in the input Conf.
+apply_envs(_Schema, Conf, #{apply_override_envs := false}, _Roots) -> Conf;
 apply_envs(Schema, Conf, Opts, Roots) ->
     {EnvNamespace, Envs} = collect_envs(Schema, Opts, Roots),
     do_apply_envs(EnvNamespace, Envs, Opts, Roots, Conf).
@@ -848,8 +861,6 @@ maybe_use_default(Default, undefined, Opts) ->
     maybe_mkrich(Opts, Default, ?META_BOX(made_for, default_value));
 maybe_use_default(_, Value, _Opts) -> Value.
 
-collect_envs(_, #{apply_override_envs := false}, _) ->
-    {undefined, []};
 collect_envs(Schema, Opts, Roots) ->
     Ns = hocon_util:env_prefix(_Default = undefined),
     case Ns of
