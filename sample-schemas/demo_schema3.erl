@@ -20,15 +20,24 @@
 
 -export([namespace/0, roots/0, fields/1]).
 
-namespace() -> undefined.
+namespace() -> ?MODULE.
 
 roots() ->
     [ {foo, hoconsc:array(hoconsc:ref(foo))}
+    , {bar, hoconsc:ref(parent)}
     ].
 
 fields(foo) ->
     [ {bar, hoconsc:ref(bar)}
     ];
 fields(bar) ->
-    Sc = hoconsc:union([hoconsc:ref(foo), null]),
-    [{"baz", Sc}].
+    Sc = hoconsc:union([hoconsc:ref(foo), null]), %% cyclic refs
+    [{"baz", Sc}];
+%% below fields are to cover the test where identical paths for the same name
+%% i.e. bar.f1.subf.baz can be reached from both "sub1" and "sub2"
+fields(parent) ->
+    [{"f1", hoconsc:union([hoconsc:ref("sub1"), hoconsc:ref("sub2")])}];
+fields("sub1") ->
+    [{"sub_f", hoconsc:ref(bar)}]; %% both sub1 and sub2 refs to bar
+fields("sub2") ->
+    [{"sub_f", hoconsc:ref(bar)}]. %% both sub1 and sub2 refs to bar

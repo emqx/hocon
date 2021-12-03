@@ -1388,20 +1388,14 @@ find_ref(Schema, Name, Acc, Stack, TStack) ->
             {ok, #{paths := Ps}} -> Ps;
             error -> #{}
         end,
-    case maps:is_key(Path, Paths) of
+    case lists:member(Key, TStack) of
         true ->
-            %% found it before
+            %% loop reference, break here, otherwise never exit
             Acc;
         false ->
-            case lists:member(Key, TStack) of
-                true ->
-                    %% loop reference
-                    Acc;
-                false ->
-                    Fields0 = fields_and_meta(Schema, Name),
-                    Fields = Fields0#{paths => Paths#{Path => true}},
-                    find_structs(Schema, Fields, Acc#{Key => Fields}, Stack, [Key | TStack])
-            end
+            Fields0 = fields_and_meta(Schema, Name),
+            Fields = Fields0#{paths => Paths#{Path => true}},
+            find_structs(Schema, Fields, Acc#{Key => Fields}, Stack, [Key | TStack])
     end.
 
 only_fill_defaults(#{only_fill_defaults := true}) -> true;
