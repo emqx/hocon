@@ -1353,7 +1353,7 @@ find_structs_per_type(_Schema, ?R_REF(Module, Name), Acc, Stack, TStack) ->
 find_structs_per_type(Schema, ?LAZY(Type), Acc, Stack, TStack) ->
     find_structs_per_type(Schema, Type, Acc, Stack, TStack);
 find_structs_per_type(Schema, ?ARRAY(Type), Acc, Stack, TStack) ->
-    find_structs_per_type(Schema, Type, Acc, ["$I" | Stack], TStack);
+    find_structs_per_type(Schema, Type, Acc, ["$INDEX" | Stack], TStack);
 find_structs_per_type(Schema, ?UNION(Types), Acc, Stack, TStack) ->
     lists:foldl(fun(T, AccIn) ->
                         find_structs_per_type(Schema, T, AccIn, Stack, TStack)
