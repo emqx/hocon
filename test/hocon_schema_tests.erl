@@ -91,19 +91,19 @@ env_override_test() ->
             {"EMQX_bar__field1", ""}
            ])).
 
-env_override_false_test() ->
+%% by defualt apply_override_envs is false
+no_env_override_test() ->
    with_envs(
      fun() ->
              Conf = "{\"bar.field1\": \"foo\"}",
-             Res = check(Conf, #{override_env => false, format => richmap}),
-             PlainRes = check_plain(Conf, #{logger => fun(_, _) -> ok end, override_env => false}),
+             Res = check(Conf, #{format => richmap}),
+             PlainRes = check_plain(Conf, #{logger => fun(_, _) -> ok end}),
              ?assertEqual(Res, PlainRes),
-             ?assertEqual(#{<<"bar">> => #{ <<"union_with_default">> => dummy,
-             <<"field1">> => "foo"}}, Res)
-     end, [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"},
-           {"EMQX_BAR__UNION_WITH_DEFAULT__VAL", "211"},
-           {"EMQX_bar__field1", ""}
-    ]).
+             ?assertEqual(#{<<"bar">> => #{<<"union_with_default">> => dummy,
+                                           <<"field1">> => "foo"}}, Res)
+     end,
+     envs([{"EMQX_BAR__UNION_WITH_DEFAULT__VAL", "211"},
+           {"EMQX_bar__field1", ""}])). %% the envs are not expected to be applied
 
 unknown_env_test() ->
     Tester = self(),
@@ -125,11 +125,7 @@ unknown_env_test() ->
            , {"EMQX_UNKNOWNx", "x"}
            , {"EMQX___", "x"}
            ])),
-    Unknown =
-        iolist_to_binary(
-          io_lib:format("~p", [lists:sort(["EMQX___",
-                                           "EMQX_UNKNOWNx",
-                                           "EMQX_BAR__UNKNOWNx"])])),
+    Unknown = iolist_to_binary(io_lib:format("~p", [["EMQX_BAR__UNKNOWNx"]])),
     receive
         {Ref, Level, Msg} ->
             ?assertEqual(warning, Level),
@@ -140,7 +136,7 @@ unknown_env_test() ->
 
 check(Str, Opts) ->
     {ok, RichMap} = hocon:binary(Str, Opts),
-    RichMap2 = hocon_schema:check(?MODULE, RichMap, Opts#{apply_override_envs => true}),
+    RichMap2 = hocon_schema:check(?MODULE, RichMap, Opts),
     hocon_schema:richmap_to_map(RichMap2).
 
 check_plain(Str) ->
@@ -275,8 +271,6 @@ env_test_() ->
         end,
     [ ?_assertEqual([{["app_foo", "setting"], "hi"}],
                     F("foo.setting=hello", [{"EMQX_FOO__SETTING", "hi"}]))
-    , ?_assertEqual([{["app_foo", "setting"], "yo"}],
-                    F("foo.setting=hello", [{"MY_OVERRIDE", "yo"}]))
     , ?_assertEqual([{["app_foo", "numbers"], [4, 5, 6]}],
                     F("foo.numbers=[1,2,3]", [{"EMQX_FOO__NUMBERS", "[4,5,6]"}]))
     , ?_assertEqual([{["app_foo", "greet"], "hello"}],
@@ -606,10 +600,7 @@ resolve_struct_name_test() ->
                  hocon_schema:resolve_struct_name(demo_schema, "noexist")).
 
 sensitive_data_obfuscation_test() ->
-    Sc = #{roots => [{secret, hoconsc:mk(string(),
-                                        #{sensitive => true,
-                                          override_env => "OBFUSCATION_TEST"
-                                         })}]},
+    Sc = #{roots => [{secret, hoconsc:mk(string(), #{sensitive => true})}]},
     Self = self(),
     with_envs(
       fun() ->
@@ -618,11 +609,11 @@ sensitive_data_obfuscation_test() ->
                                          apply_override_envs => true
                                         }),
               receive
-                  #{hocon_env_var_name := "OBFUSCATION_TEST", path := Path, value := Value} ->
+                  #{hocon_env_var_name := "EMQX_SECRET", path := Path, value := Value} ->
                       ?assertEqual("secret", Path),
                       ?assertEqual("*******", Value)
               end
-      end, [{"OBFUSCATION_TEST", "bbb"}]),
+      end, envs([{"EMQX_SECRET", "bbb"}])),
     ok.
 
 remote_ref_test() ->

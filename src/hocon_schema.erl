@@ -81,7 +81,6 @@
          , mapping => undefined | string()
          , converter => undefined | translationfunc()
          , validator => undefined | validationfun()
-         , override_env => string()
            %% set true if a field is allowed to be `undefined`
            %% NOTE: has no point setting it to `true` if field has a default value
          , nullable => true | false | {true, recursively} % default = true
@@ -368,17 +367,10 @@ assert_integrity(Schema, [{Name, Validator} | Rest], Conf, Acc) ->
             assert_integrity(Schema, Rest, Conf, [Error | Acc])
     end.
 
-merge_opts(Default, Opts0) ->
-    %% the boolean flag `override_env' is deprecated
-    %% use `apply_override_envs' instead
-    Override = case maps:get(override_env, Opts0, undefined) of
-                   undefined ->
-                       maps:get(apply_override_envs, Opts0, false);
-                   Bool when is_boolean(Bool) ->
-                       Bool
-               end,
-    Opts = maps:without([override_env], Opts0),
-    maps:merge(Default, Opts#{apply_override_envs => Override}).
+merge_opts(Default, Opts) ->
+    maps:merge(Default#{apply_override_envs => false,
+                        atom_key => false
+                       }, Opts).
 
 %% @doc Check richmap input against schema.
 %% Returns a new config with:
@@ -389,8 +381,7 @@ check(Schema, Conf) ->
     check(Schema, Conf, #{}).
 
 check(Schema, Conf, Opts0) ->
-    Opts = merge_opts(#{format => richmap,
-                        atom_key => false}, Opts0),
+    Opts = merge_opts(#{format => richmap}, Opts0),
     do_check(Schema, Conf, Opts, all).
 
 %% @doc Check plain-map input against schema.
@@ -402,15 +393,11 @@ check_plain(Schema, Conf) ->
     check_plain(Schema, Conf, #{}).
 
 check_plain(Schema, Conf, Opts0) ->
-    Opts = merge_opts(#{format => map,
-                        atom_key => false
-                       }, Opts0),
+    Opts = merge_opts(#{format => map}, Opts0),
     check_plain(Schema, Conf, Opts, all).
 
 check_plain(Schema, Conf, Opts0, RootNames) ->
-    Opts = merge_opts(#{format => map,
-                        atom_key => false
-                       }, Opts0),
+    Opts = merge_opts(#{format => map}, Opts0),
     do_check(Schema, Conf, Opts, RootNames).
 
 do_check(Schema, Conf, Opts0, RootNames) ->
@@ -838,14 +825,6 @@ do_map_array(F, [Elem | Rest], Res, Index, Acc) ->
     end.
 
 resolve_field_value(Schema, FieldValue, Opts) ->
-    case get_override_env(Schema, Opts) of
-        undefined ->
-            resolve_default_override(Schema, FieldValue, Opts);
-        {Log, Name, EnvValue} ->
-            {[Log], maybe_mkrich(Opts, EnvValue, ?META_BOX(from_env, Name))}
-    end.
-
-resolve_default_override(Schema, FieldValue, Opts) ->
     case unbox(Opts, FieldValue) of
         ?FROM_ENV_VAR(EnvName, EnvValue) ->
             {[env_override_for_log(Schema, EnvName, path(Opts), EnvValue)],
@@ -873,26 +852,34 @@ collect_envs(Schema, Ns, Opts, Roots) ->
                  [Name, Value] = string:split(KV, "="),
                  {Name, Value}
              end || KV <- os:getenv(), string:prefix(KV, Ns) =/= nomatch],
-    {Matched, Unknown} =
-        lists:partition(fun({N, _}) -> is_known_env(Schema, Roots, Ns, N) end, Pairs),
-    case Unknown =/= [] of
-        true ->
-            UnknownVars = lists:sort([N || {N, _} <- Unknown]),
+    Envs = lists:map(fun({N, V}) ->
+                             {check_env(Schema, Roots, Ns, N), N, V}
+                     end, Pairs),
+    case [Name || {warn, Name, _} <- Envs] of
+        [] -> ok;
+        Names ->
+            UnknownVars = lists:sort(Names),
             Msg = bin(io_lib:format("unknown_env_vars: ~p", [UnknownVars])),
-            log(Opts, warning, Msg);
-        false ->
-            ok
+            log(Opts, warning, Msg)
     end,
-    [{Name, read_hocon_val(Value, Opts)} || {Name, Value} <- Matched].
+    [{Name, read_hocon_val(Value, Opts)} || {keep, Name, Value} <- Envs].
 
-is_known_env(Schema, Roots, Ns, EnvVarName) ->
+%% return keep | warn | ignore for the given environment variable
+check_env(Schema, Roots, Ns, EnvVarName) ->
     case env_name_to_path(Ns, EnvVarName) of
         false ->
-            false;
+            %% bad format
+            ignore;
         [RootName | Path] ->
             case is_field(Roots, RootName) of
-                {true, Type} -> is_path(Schema, Type, Path);
-                false -> false
+                {true, Type} ->
+                    case is_path(Schema, Type, Path) of
+                        true -> keep;
+                        false -> warn
+                    end;
+                false ->
+                    %% unknown root
+                    ignore
             end
     end.
 
@@ -1068,20 +1055,6 @@ do_split(Path) when ?IS_NON_EMPTY_STRING(Path) ->
     [bin(I) || I <- string:tokens(Path, ".")];
 do_split([H | T]) ->
     [do_split(H) | do_split(T)].
-
-get_override_env(Schema, Opts) ->
-    case field_schema(Schema, override_env) of
-        undefined ->
-            undefined;
-        Var ->
-            case os:getenv(str(Var)) of
-                V when V =:= false orelse V =:= [] ->
-                    undefined;
-                V ->
-                    {env_override_for_log(Schema, Var, path(Opts), V),
-                     str(Var), read_hocon_val(V, Opts)}
-            end
-    end.
 
 validators(undefined) -> [];
 validators(Validator) when is_function(Validator) ->

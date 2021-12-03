@@ -79,7 +79,6 @@ translation("app_foo") ->
 
 setting(mapping) -> "app_foo.setting";
 setting(type) -> string();
-setting(override_env) -> "MY_OVERRIDE";
 setting(_) -> undefined.
 
 range(Conf) ->
