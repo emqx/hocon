@@ -64,7 +64,7 @@ union_with_default(_) -> undefined.
 
 default_value_test() ->
     Conf = "{\"bar.field1\": \"foo\"}",
-    Res = check(Conf),
+    Res = check(Conf, #{format => richmap}),
     ?assertEqual(Res, check_plain(Conf)),
     ?assertEqual(#{<<"bar">> => #{ <<"union_with_default">> => dummy,
                                    <<"field1">> => "foo"}}, Res).
@@ -73,8 +73,10 @@ env_override_test() ->
     with_envs(
       fun() ->
               Conf = "{\"bar.field1\": \"foo\"}",
-              Res = check(Conf),
-              ?assertEqual(Res, check_plain(Conf, #{logger => fun(_, _) -> ok end})),
+              Res = check(Conf, #{format => richmap, apply_override_envs => true}),
+              ?assertEqual(Res, check_plain(Conf, #{logger => fun(_, _) -> ok end,
+                                                    apply_override_envs => true
+                                                   })),
               ?assertEqual(#{<<"bar">> => #{ <<"union_with_default">> => #{<<"val">> => 111},
                                              <<"field1">> => ""}}, Res)
       end, [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"},
@@ -108,23 +110,30 @@ unknown_env_test() ->
                                  end
                       },
               {ok, RichMap} = hocon:binary(Conf, #{format => richmap}),
-              hocon_schema:check(?MODULE, RichMap, Opts)
-      end, [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"},
-            {"EMQX_BAR__UNION_WITH_DEFAULT__VAL", "111"},
-            {"EMQX_bar__field1", ""},
-            {"EMQX_BAR__UNKNOWNx", "x"}
-           ]),
+              hocon_schema:check(?MODULE, RichMap, Opts#{apply_override_envs => true})
+      end,
+      envs([ {"EMQX_BAR__UNION_WITH_DEFAULT__VAL", "111"}
+           , {"EMQX_bar__field1", ""}
+           , {"EMQX_BAR__UNKNOWNx", "x"}
+           , {"EMQX_UNKNOWNx", "x"}
+           , {"EMQX___", "x"}
+           ])),
+    Unknown =
+        iolist_to_binary(
+          io_lib:format("~p", [lists:sort(["EMQX___",
+                                           "EMQX_UNKNOWNx",
+                                           "EMQX_BAR__UNKNOWNx"])])),
     receive
         {Ref, Level, Msg} ->
             ?assertEqual(warning, Level),
-            ?assertEqual(<<"unknown_environment_variable_discarded: EMQX_BAR__UNKNOWNx">>, Msg)
+            io:format(user, "expected: ~p", [Unknown]),
+            io:format(user, "     got: ~p", [Msg]),
+            ?assertEqual(<<"unknown_env_vars: ", Unknown/binary>>, Msg)
     end.
-
-check(Str) -> check(Str, #{format => richmap}).
 
 check(Str, Opts) ->
     {ok, RichMap} = hocon:binary(Str, Opts),
-    RichMap2 = hocon_schema:check(?MODULE, RichMap, Opts),
+    RichMap2 = hocon_schema:check(?MODULE, RichMap, Opts#{apply_override_envs => true}),
     hocon_schema:richmap_to_map(RichMap2).
 
 check_plain(Str) ->
@@ -252,7 +261,8 @@ richmap_to_map_test_() ->
 env_test_() ->
     F = fun (Str, Envs) ->
                     {ok, M} = hocon:binary(Str, #{format => richmap}),
-                    {Mapped, _} = with_envs(fun hocon_schema:map/2, [demo_schema, M],
+                    Opts = #{apply_override_envs => true},
+                    {Mapped, _} = with_envs(fun hocon_schema:map/4, [demo_schema, M, all, Opts],
                                             Envs ++ [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"}]),
                     Mapped
         end,
@@ -275,7 +285,7 @@ env_object_val_test() ->
     Conf = "root = {val = {f1 = 43}}",
     {ok, PlainMap} = hocon:binary(Conf, #{}),
     ?assertEqual(#{<<"root">> => #{<<"val">> => #{<<"f1">> => 42}}},
-        with_envs(fun hocon_schema:check_plain/2, [Sc, PlainMap],
+        with_envs(fun hocon_schema:check_plain/3, [Sc, PlainMap, #{apply_override_envs => true}],
             [ {"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"}
             , {"EMQX_ROOT__VAL", "{f1:42}"}
             ])).
@@ -285,17 +295,23 @@ env_array_val_test() ->
     Conf = "val = [a,b]",
     {ok, PlainMap} = hocon:binary(Conf, #{}),
     ?assertEqual(#{<<"val">> => ["c", "d"]},
-        with_envs(fun hocon_schema:check_plain/2, [Sc, PlainMap],
-            [ {"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"}
-            , {"EMQX_VAL", "[c, d]"}
-            ])).
+        with_envs(fun hocon_schema:check_plain/3, [Sc, PlainMap, #{apply_override_envs => true}],
+                  envs([{"EMQX_VAL", "[c, d]"}, {"EMQX___", "discard"}]))).
+
+env_map_val_test() ->
+    Sc = #{roots => [{"val", hoconsc:map(key, string())}]},
+    Conf = "val = {key = value}",
+    {ok, Map} = hocon:binary(Conf, #{format => map}),
+    ?assertEqual(#{<<"val">> => #{<<"key">> => "value2"}},
+        with_envs(fun hocon_schema:check_plain/3, [Sc, Map, #{apply_override_envs => true}],
+                  envs([{"EMQX_VAL__KEY", "value2"}]))).
 
 env_ip_port_test() ->
     Sc = #{roots => [{"val", string()}]},
     Conf = "val = \"127.0.0.1:1990\"",
     {ok, PlainMap} = hocon:binary(Conf, #{}),
     ?assertEqual(#{<<"val">> => "192.168.0.1:1991"},
-        with_envs(fun hocon_schema:check_plain/2, [Sc, PlainMap],
+        with_envs(fun hocon_schema:check_plain/3, [Sc, PlainMap, #{apply_override_envs => true}],
             [ {"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"}
             , {"EMQX_VAL", "192.168.0.1:1991"}
             ])).
@@ -340,6 +356,13 @@ real_enum_test() ->
     ?VALIDATION_ERR(#{reason := unable_to_convert_to_enum_symbol,
                       value := {"badvalue"}},
                     hocon_schema:check_plain(Sc, #{<<"val">> => {"badvalue"}})).
+bad_array_index_test() ->
+    Sc = #{roots => [{val, hoconsc:array(integer())}]},
+    Conf = "val = {first = 1}",
+    {ok, PlainMap} = hocon:binary(Conf, #{}),
+    ?assertThrow({_, [{validation_error, #{bad_array_index_keys := [<<"first">>],
+                                           path := "val"}}]},
+                 hocon_schema:check_plain(Sc, PlainMap)).
 
 array_of_enum_test() ->
     Sc = #{roots => [{val, hoconsc:array(hoconsc:enum([a, b, c]))}]},
@@ -584,7 +607,9 @@ sensitive_data_obfuscation_test() ->
     with_envs(
       fun() ->
               hocon_schema:check_plain(Sc, #{<<"secret">> => "aaa"},
-                                       #{logger => fun(_Level, Msg) -> Self ! Msg end}),
+                                       #{logger => fun(_Level, Msg) -> Self ! Msg end,
+                                         apply_override_envs => true
+                                        }),
               receive
                   #{hocon_env_var_name := "OBFUSCATION_TEST", path := Path, value := Value} ->
                       ?assertEqual("secret", Path),
@@ -768,7 +793,7 @@ test_array_env_override(Format) ->
         fun() ->
                 Conf = "",
                 {ok, Parsed} = hocon:binary(Conf, #{format => Format}),
-                Opts = #{format => Format, nullable => true},
+                Opts = #{format => Format, nullable => true, apply_override_envs => true},
                 ?assertEqual(#{<<"foo">> => [#{<<"kling">> => 111},
                                              #{<<"klang">> => 222}
                                             ]},
@@ -777,6 +802,18 @@ test_array_env_override(Format) ->
               {"EMQX_FOO__1__KLING", "111"},
               {"EMQX_FOO__2__KLANG", "222"}
              ]).
+
+array_env_override_ignore_test() ->
+    Sc = #{roots => [{foo, hoconsc:array(hoconsc:ref(foo))}],
+           fields => #{foo => [ {"intf", hoconsc:mk(integer())}]}
+          },
+    with_envs(
+        fun() ->
+                Conf = "",
+                {ok, Parsed} = hocon:binary(Conf, #{format => map}),
+                Opts = #{format => map, nullable => true, apply_override_envs => true},
+                ?assertEqual(#{}, hocon_schema:check(Sc, Parsed, Opts))
+        end, envs([{"EMQX_FOO__first__intf", "111"}])).
 
 bad_indexed_map_test() ->
     Sc = #{roots => [foo],
@@ -802,7 +839,8 @@ fill_defaults_with_env_override_test() ->
       fun() ->
               Conf0 = "foo={bar=121}",
               {ok, Conf} = hocon:binary(Conf0),
-              Res = hocon_schema:check_plain(Sc, Conf, #{only_fill_defaults => true}),
+              Res = hocon_schema:check_plain(Sc, Conf, #{only_fill_defaults => true,
+                                                         apply_override_envs => true}),
               ?assertEqual(#{<<"foo">> => #{<<"bar">> => 122}}, Res)
       end, envs([{"EMQX_FOO__BAR", "122"}])).
 
@@ -823,21 +861,6 @@ array_env_override_test_() ->
                Envs = EnvsFooBar13 ++ [{"EMQX_FOO__BAR__10", "10"}],
                ?assertError({bad_array_index, "EMQX_FOO__BAR__10"},
                              test_array_override(Sc, map, Envs))
-       end}
-    , {"bad_index",
-       fun() ->
-               Envs = envs([{"EMQX_FOO__BAR__not_index", "1"}]),
-               Throw = test_array_override(Sc, richmap, Envs),
-               ?assertMatch([{validation_error,
-                              #{bad_array_index_keys := [<<"not_index">>]}}], Throw)
-       end}
-    , {"bad_index-2",
-       fun() ->
-               Conf = <<"foo : {bar : [0, 2, 0]}">>,
-               Envs = envs([{"EMQX_FOO__BAR__x", "1"}]),
-               Throw = test_array_override(Sc, map, Envs, Conf),
-               ?assertMatch([{validation_error,
-                              #{bad_array_index_keys := [<<"x">>]}}], Throw)
        end}
     , {"bad_indexed_map",
        fun() ->
@@ -890,7 +913,8 @@ test_array_override(Sc, Format, Envs) ->
 test_array_override(Sc, Format, Envs, Conf) ->
     with_envs(fun() ->
                       {ok, Parsed} = hocon:binary(Conf, #{format => Format}),
-                      Opts = #{format => Format, nullable => true},
+                      Opts = #{format => Format, nullable => true,
+                               apply_override_envs => true},
                       try hocon_schema:check(Sc, Parsed, Opts)
                       catch throw : {_Sc, R} -> R
                       end
@@ -900,7 +924,7 @@ test_array_env_override_t2(Sc, Format) ->
     with_envs(
         fun() ->
                 {ok, Parsed} = hocon:binary(<<>>, #{format => Format}),
-                Opts = #{format => Format, nullable => true},
+                Opts = #{format => Format, nullable => true, apply_override_envs => true},
                 ?assertEqual(#{<<"foo">> => #{<<"bar">> => [2, 1],
                                               <<"quu">> => ["quu"]}},
                              hocon_schema:richmap_to_map(hocon_schema:check(Sc, Parsed, Opts)))
@@ -925,8 +949,9 @@ ref_nullable_test() ->
     ?assertEqual(#{<<"x">> => "y"}, hocon_schema:check_plain(Sc, Map)),
     with_envs(
       fun() ->
+            Opts = #{apply_override_envs => true},
             {ok, Map2} = hocon:binary("k = {a: a, b: b}, x = y", #{format => map}),
-            ?assertEqual(#{<<"x">> => "y"}, hocon_schema:check_plain(Sc, Map2))
+            ?assertEqual(#{<<"x">> => "y"}, hocon_schema:check_plain(Sc, Map2, Opts))
       end, [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"},
             {"EMQX_K", "null"}
            ]).
@@ -964,7 +989,7 @@ lazy_root_env_override_test() ->
       fun() ->
               Conf = "foo = {kling = 1}",
               {ok, PlainMap} = hocon:binary(Conf, #{}),
-              Opts = #{format => map, nullable => true},
+              Opts = #{format => map, nullable => true, apply_override_envs => true},
               ?assertEqual(#{<<"foo">> => #{<<"kling">> => 1}},
                            hocon_schema:check(Sc, PlainMap, Opts)),
               ?assertEqual(#{<<"foo">> => #{<<"kling">> => 111,
@@ -1045,7 +1070,7 @@ override_env_with_include_test() ->
       fun() ->
               Conf = "foo = {kling = 1}",
               {ok, PlainMap} = hocon:binary(Conf, #{}),
-              Opts = #{format => map, nullable => true},
+              Opts = #{format => map, nullable => true, apply_override_envs => true},
               ?assertEqual(#{<<"foo">> => #{<<"kling">> => 1,
                                             <<"klang">> => 233}},
                            hocon_schema:check(Sc, PlainMap, Opts#{check_lazy => true}))
@@ -1067,11 +1092,12 @@ override_env_with_include_abs_path_test() ->
     with_envs(
       fun() ->
               Conf = "foo = {kling = 1}",
-              {ok, PlainMap} = hocon:binary(Conf, #{}),
-              Opts = #{format => map, nullable => true},
+              {ok, PlainMap} = hocon:binary(Conf, #{apply_override_envs => true}),
+              Opts = #{format => map, nullable => true, apply_override_envs => true},
               ?assertEqual(#{<<"foo">> => #{<<"kling">> => 123,
                                             <<"klang">> => 456}},
-                           hocon_schema:check(Sc, PlainMap, Opts#{check_lazy => true}))
+                           hocon_schema:check(Sc, PlainMap, Opts#{check_lazy => true,
+                                                                  apply_override_envs => true}))
       end, [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"},
             {"EMQX_FOO", "{include \""++ Include ++ "\"}"}
            ]).
@@ -1112,3 +1138,4 @@ redundant_field_test() ->
     ?assertThrow({_, [{validation_error, #{reason := {invalid_id, <<"a:c">>}}}]},
                  hocon_schema:check(Sc, Conf3Map, Opts)),
     ok.
+

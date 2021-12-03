@@ -143,8 +143,8 @@ get(ParsedArgs, [Query | _]) ->
     [RootName0 | _] = string:tokens(Query, "."),
     RootName = hocon_schema:resolve_struct_name(Schema, RootName0),
     %% do not log anything for `get` commands
-    DummyLogger = #{logger => fun(_, _) -> ok end},
-    {_, NewConf} = hocon_schema:map(Schema, Conf, [RootName], DummyLogger),
+    Opts = #{logger => fun(_, _) -> ok end, apply_override_envs => true},
+    {_, NewConf} = hocon_schema:map(Schema, Conf, [RootName], Opts),
     ?STDOUT("~0p", [hocon_schema:get_value(Query, NewConf)]),
     stop_ok().
 
@@ -251,7 +251,8 @@ generate(ParsedArgs) ->
                  true -> fun log_for_generator/2;
                  false -> fun(_, _) -> ok end
              end,
-    try hocon_schema:generate(Schema, Conf, #{logger => LogFun}) of
+    Opts = #{logger => LogFun, apply_override_envs => true},
+    try hocon_schema:generate(Schema, Conf, Opts) of
         NewConfig ->
             AppConfig = proplists:delete(vm_args, NewConfig),
             VmArgs = stringify(proplists:get_value(vm_args, NewConfig)),
