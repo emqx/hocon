@@ -22,11 +22,17 @@
 -include("hocon_private.hrl").
 
 gen(Schema, undefined) ->
-    gen(Schema, "HOCON Document");
-gen(Schema, Title) ->
+    gen(Schema, "# HOCON Document");
+gen(Schema, Title) when is_list(Title) orelse is_binary(Title) ->
+    gen(Schema, #{title => Title, body => <<>>});
+gen(Schema, #{title := Title, body := Body}) ->
     {RootNs, RootFields, Structs} = hocon_schema:find_structs(Schema),
-    [fmt_structs(1, RootNs, [{RootNs, Title, #{fields => RootFields}}]),
-     fmt_structs(2, RootNs, Structs)].
+    [Title,
+     "\n",
+     Body,
+     "\n",
+     fmt_structs(2, RootNs, [{RootNs, "Root Config Keys", #{fields => RootFields}}]),
+     fmt_structs(3, RootNs, Structs)].
 
 fmt_structs(_HeadWeight, _RootNs, []) -> [];
 fmt_structs(HeadWeight, RootNs, [{Ns, Name, Fields} | Rest]) ->
