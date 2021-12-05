@@ -192,12 +192,12 @@ HOCON schema also supports below field metadata.
   the value is as expected. NOTE: the input to validator after convert (if present) is applied.
 * `default`: default value of the field. NOTE that default values are to be treated as raw inputs,
   meaning they are put hrough  the `converter`s and `validator`s etc, and then type-checked.
-* `override_env`: special environment variable name to override this field value.
-  NOTE: For generic override, see [below](#default_override_rule) for more info
 * `nullable`: set to `true` if this field is allowed to be `undefined`.
   NOTE: there is no point setting it to `true` if fields has a default value.
 * `sensitive`: set to `true` if this field's value is sensitive so we will obfuscate the log
   with `********` when logging.
+* `desc`: text for document generation
+* `hidden`: a boolean flag to hide it from appearing in config document
 
 <a name="default_override_rule"></a>
 
