@@ -514,3 +514,40 @@ binary(B) when is_binary(B) ->
     {ok, R} = hocon:binary(B),
     R;
 binary(IO) -> binary(iolist_to_binary(IO)).
+
+array_mrege_test_() ->
+    Parse = fun(Input) ->
+                    {ok, RichRes} = hocon:binary(Input, #{format => richmap}),
+                    {ok, Res} = hocon:binary(Input, #{format => map}),
+                    ?assertEqual(Res, hocon_util:richmap_to_map(RichRes)),
+                    Res
+            end,
+    [ {"empty_base", ?_assertEqual(#{<<"a">> => [42]}, Parse("a=[], a.1=42"))}
+    , {"override_1", ?_assertEqual(#{<<"a">> => [42]}, Parse("a=[1], a.1=42"))}
+    , {"override_2", ?_assertEqual(#{<<"a">> => [42, 43]},
+                                   Parse("a=[1], a:{\"1\":42,\"2\":43}"))}
+    , {"append_1", ?_assertEqual(#{<<"a">> => [1, 42]}, Parse("a=[1], a.2=42"))}
+    , {"no_array_convert", ?_assertEqual(#{<<"a">> => #{<<"1">> => 42}},
+                                         Parse("a=one, a.1=42"))}
+    , {"empty_base_nested",
+       ?_assertEqual(#{<<"a">> => [#{<<"b">> => 1}]}, Parse("a=[], a.1.b=1"))}
+    , {"empty_base_nested_overrite",
+       ?_assertEqual(#{<<"a">> => [#{<<"b">> => 1}]}, Parse("a=[x], a.1.b=1"))}
+    , {"override_10_elements_test",
+       ?_assertEqual(#{<<"a">> => [#{<<"b">> => 1}, #{<<"b">> => 2}, #{<<"b">> => 3},
+                                   #{<<"b">> => 4}, #{<<"b">> => 5}, #{<<"b">> => 6},
+                                   #{<<"b">> => 7}, #{<<"b">> => 8},
+                                   #{<<"b">> => 9}, #{<<"b">> => 10}
+                                  ]},
+                     Parse("a=[x]," "a.1.b=1, a.2.b=2, a.3.b=3,"
+                           "a.4.b=4, a.5.b=5, a.6.b=6,a.7.b=7, a.8.b=8, a.9.b=9" "a.10.b=10")
+                    )}
+    , {"array_of_arrays",
+       ?_assertEqual(#{<<"a">> => [[1, 2], [3, 4]]},
+                     Parse("a=[[],[]], a.1.1=1, a.1.2=2, a.2.1=3, a.2.2=4"))}
+    , {"array_of_arrays_2",
+       ?_assertEqual(#{<<"a">> => [[1, 2], #{<<"1">> => 3, <<"2">> => 4}]},
+                     Parse("a=[[]], a.1.1=1, a.1.2=2, a.2.1=3, a.2.2=4"))}
+    , {"array_override_by_obj",
+       ?_assertEqual(#{<<"a">> => #{<<"b">> => 1}}, Parse("a=[1, 2,], a.b=1"))}
+    ].

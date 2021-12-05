@@ -53,7 +53,8 @@ load(Filename0, Opts) ->
     Ctx = hocon_util:stack_multiple_push(CtxList, #{}),
     try
         Bytes = hocon_token:read(Filename),
-        Conf = transform(do_binary(Bytes, Ctx), Opts),
+        Map = do_binary(Bytes, Ctx),
+        Conf = transform(Map, Opts),
         {ok, apply_opts(Conf, Opts)}
     catch
         throw:Reason -> {error, Reason}
@@ -102,9 +103,26 @@ binary(Binary, Opts) ->
     end.
 
 %% @doc Recursively merge two maps.
-%% NOTE: arrays are not merged.
+%% There are two array representations supported
+%% * as list, e.g. foo=[{bar=1},{bar=2}]
+%% * as indexed-map: e.g. foo={"1"={bar=1},"2"={bar=2}}
+%% When merging two values, if the `Base' is a list
+%% indexed map elements respects the base representation, that is
+%% the result of such merge is also a list.
+%% Otherwise indexed-map is used.
+%%
+%% When both `Base' and `Override' are lists, the elements
+%% are not merged, rather, the overriding-array replaces the whole base-array.
+%%
+%% NOTE: when merging indexed-map to list, the index boundary
+%% is checked to ensure the elements are consecutive
 -spec deep_merge(undefined | map(), map()) -> map().
 deep_merge(Base, Override) -> hocon_util:deep_merge(Base, Override).
+
+%% @doc Recursively merge two maps.
+%% Arrays are not merged as deep_merge/2.
+-spec deep_map_merge(undefined | map(), map()) -> map().
+deep_map_merge(Base, Override) -> hocon_util:deep_map_merge(Base, Override).
 
 do_binary(String, Ctx) when is_list(String) ->
     do_binary(iolist_to_binary(String), Ctx);
@@ -281,7 +299,7 @@ do_concat(Concat, Location) ->
 do_concat([], _, []) ->
     nothing;
 do_concat([], MetaKey, [{#{?METADATA := MetaFirstElem}, _V} = F | _Fs] = Acc) when ?IS_FIELD(F) ->
-    Metadata = deep_merge(MetaFirstElem, MetaKey),
+    Metadata = deep_map_merge(MetaFirstElem, MetaKey),
     case lists:all(fun (F0) -> ?IS_FIELD(F0) end, Acc) of
         true ->
             #{?HOCON_T => object, ?HOCON_V => lists:reverse(Acc), ?METADATA => Metadata};
@@ -289,7 +307,7 @@ do_concat([], MetaKey, [{#{?METADATA := MetaFirstElem}, _V} = F | _Fs] = Acc) wh
             concat_error(lists:reverse(Acc), #{?METADATA => Metadata})
     end;
 do_concat([], MetaKey, [#{?HOCON_T := string, ?METADATA := MetaFirstElem} | _] = Acc) ->
-    Metadata = deep_merge(MetaFirstElem, MetaKey),
+    Metadata = deep_map_merge(MetaFirstElem, MetaKey),
     case lists:all(fun (A) -> type_of(A) =:= string end, Acc) of
         true ->
             BinList = lists:map(fun(M) -> maps:get(?HOCON_V , M) end, lists:reverse(Acc)),
@@ -298,7 +316,7 @@ do_concat([], MetaKey, [#{?HOCON_T := string, ?METADATA := MetaFirstElem} | _] =
             concat_error(lists:reverse(Acc), #{?METADATA => Metadata})
     end;
 do_concat([], MetaKey, [#{?HOCON_T := array, ?METADATA := MetaFirstElem} | _] = Acc) ->
-    Metadata = deep_merge(MetaFirstElem, MetaKey),
+    Metadata = deep_map_merge(MetaFirstElem, MetaKey),
     case lists:all(fun (A) -> type_of(A) =:= array end, Acc) of
         true ->
             NewValue = lists:append(lists:reverse(lists:map(fun value_of/1, Acc))),
@@ -335,7 +353,9 @@ transform(#{?HOCON_T := object, ?HOCON_V := V}, Opts) ->
 
 do_transform([], Map, _Opts) -> Map;
 do_transform([{Key, Value} | More], Map, Opts) ->
-    do_transform(More, merge(hd(paths(hocon_token:value_of(Key))), unpack(Value, Opts), Map), Opts).
+    [KeyReal] = paths(hocon_token:value_of(Key)),
+    ValueReal = unpack(Value, Opts),
+    do_transform(More, merge(KeyReal, ValueReal, Map), Opts).
 
 unpack(#{?HOCON_T := object, ?HOCON_V := V} = O, #{format := richmap} = Opts) ->
     O#{?HOCON_V => do_transform(remove_nothing(V), #{}, Opts)};
@@ -361,9 +381,10 @@ paths(Key) when is_list(Key) ->
 
 merge(Key, Val, Map) when is_map(Val) ->
     case maps:find(Key, Map) of
-        {ok, MVal} when is_map(MVal) ->
-            maps:put(Key, deep_merge(MVal, Val), Map);
-        _Other -> maps:put(Key, Val, Map)
+        {ok, MVal} ->
+            maps:put(Key, hocon_util:deep_merge(MVal, Val), Map);
+        _Other ->
+            maps:put(Key, Val, Map)
     end;
 merge(Key, Val, Map) -> maps:put(Key, Val, Map).
 

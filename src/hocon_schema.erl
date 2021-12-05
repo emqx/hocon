@@ -1187,28 +1187,7 @@ maybe_array(V) -> V =:= ?EMPTY_MAP.
 update_array_element(?EMPTY_MAP, Index, GoDeep) ->
     update_array_element([], Index, GoDeep);
 update_array_element(List, Index, GoDeep) when is_list(List) ->
-    MinIndex = 1,
-    MaxIndex = length(List) + 1,
-    Index < MinIndex andalso throw({bad_array_index, "index starts from 1"}),
-    Index > MaxIndex andalso
-    begin
-        Msg0 = io_lib:format("should not be greater than ~p.", [MaxIndex]),
-        Msg1 = case Index > 9 of
-                   true ->
-                       "~nEnvironment variable overrides applied in alphabetical "
-                       "make sure to use zero paddings such as '02' to ensure "
-                       "10 is ordered after it";
-                   false ->
-                       []
-               end,
-        throw({bad_array_index, [Msg0, Msg1]})
-    end,
-    {Head, Tail0} = lists:split(Index - 1, List),
-    {Nth, Tail} = case Tail0 of
-                      [] -> {?EMPTY_MAP, []};
-                      [H | T] -> {H, T}
-                  end,
-    Head ++ [GoDeep(Nth) | Tail].
+    hocon_util:update_array_element(List, Index, GoDeep).
 
 update_map_field(Opts, Map, FieldName, GoDeep) ->
     FieldV0 = maps:get(FieldName, Map, ?EMPTY_MAP),
@@ -1216,15 +1195,10 @@ update_map_field(Opts, Map, FieldName, GoDeep) ->
     Map1 = maps:without([FieldName], Map),
     Map1#{maybe_atom(Opts, FieldName) => FieldV}.
 
+%% {true, integer()} if yes, otherwise false
 is_array_index(L) when is_list(L) ->
     is_array_index(list_to_binary(L));
-is_array_index(I) ->
-    try
-        {true, binary_to_integer(I)}
-    catch
-        _ : _ ->
-            false
-    end.
+is_array_index(I) -> hocon_util:is_array_index(I).
 
 check_indexed_array(List) ->
     case check_indexed_array(List, [], []) of
