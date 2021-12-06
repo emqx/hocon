@@ -35,3 +35,12 @@ no_crash_test_() ->
     ].
 
 gen(Schema) -> fun() -> hocon_schema_doc:gen(Schema, "test") end.
+
+find_structs_test() ->
+    {demo_schema3, _Roots, Subs} = hocon_schema:find_structs(demo_schema3),
+    Find = fun(N) -> is_tuple(lists:keyfind(N, 2, Subs)) end,
+    ?assert(Find(bar)),
+    ?assert(Find(foo)),
+    ?assert(Find(parent)),
+    ?assert(Find("sub1")),
+    ?assert(Find("sub2")).

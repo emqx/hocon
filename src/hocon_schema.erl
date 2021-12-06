@@ -27,12 +27,15 @@
         , validations/1
         ]).
 
-
+%% data validation and transformation
 -export([map/2, map/3, map/4]).
 -export([translate/3]).
 -export([generate/2, generate/3, map_translate/3]).
 -export([check/2, check/3, check_plain/2, check_plain/3, check_plain/4]).
+-export([merge_env_overrides/4]).
 -export([richmap_to_map/1, get_value/2, get_value/3]).
+
+%% schema access
 -export([namespace/1, resolve_struct_name/2, root_names/1]).
 -export([field_schema/2, override/2]).
 
@@ -78,7 +81,6 @@
          , mapping => undefined | string()
          , converter => undefined | translationfunc()
          , validator => undefined | validationfun()
-         , override_env => string()
            %% set true if a field is allowed to be `undefined`
            %% NOTE: has no point setting it to `true` if field has a default value
          , nullable => true | false | {true, recursively} % default = true
@@ -192,14 +194,17 @@ roots(Schema) ->
         {RootNs :: name(), RootFields :: [field()],
          [{Namespace :: name(), Name :: name(), fields()}]}.
 find_structs(Schema) ->
-    Roots = ?MODULE:roots(Schema),
-    RootFields = lists:map(fun({_BinName, {RootFieldName, RootFieldSchema}}) ->
-                                   {RootFieldName, RootFieldSchema}
-                           end, Roots),
-    All = find_structs(Schema, RootFields, #{}, _ValueStack = [], _TypeStack = []),
+    RootFields = unify_roots(Schema),
+    All = find_structs(Schema, RootFields),
     RootNs = hocon_schema:namespace(Schema),
     {RootNs, RootFields,
      [{Ns, Name, Fields} || {{Ns, Name}, Fields} <- lists:keysort(1, maps:to_list(All))]}.
+
+unify_roots(Schema) ->
+    Roots = ?MODULE:roots(Schema),
+    lists:map(fun({_BinName, {RootFieldName, RootFieldSchema}}) ->
+                      {RootFieldName, RootFieldSchema}
+              end, Roots).
 
 do_roots(Mod) when is_atom(Mod) -> Mod:roots();
 do_roots(#{roots := Names}) -> Names.
@@ -362,17 +367,10 @@ assert_integrity(Schema, [{Name, Validator} | Rest], Conf, Acc) ->
             assert_integrity(Schema, Rest, Conf, [Error | Acc])
     end.
 
-merge_opts(Default, Opts0) ->
-    %% the boolean flag `override_env' is deprecated
-    %% use `apply_override_envs' instead
-    Override = case maps:get(override_env, Opts0, undefined) of
-                   undefined ->
-                       maps:get(apply_override_envs, Opts0, true);
-                   Bool when is_boolean(Bool) ->
-                       Bool
-               end,
-    Opts = maps:without([override_env], Opts0),
-    maps:merge(Default, Opts#{apply_override_envs => Override}).
+merge_opts(Default, Opts) ->
+    maps:merge(Default#{apply_override_envs => false,
+                        atom_key => false
+                       }, Opts).
 
 %% @doc Check richmap input against schema.
 %% Returns a new config with:
@@ -383,8 +381,7 @@ check(Schema, Conf) ->
     check(Schema, Conf, #{}).
 
 check(Schema, Conf, Opts0) ->
-    Opts = merge_opts(#{format => richmap,
-                        atom_key => false}, Opts0),
+    Opts = merge_opts(#{format => richmap}, Opts0),
     do_check(Schema, Conf, Opts, all).
 
 %% @doc Check plain-map input against schema.
@@ -396,15 +393,11 @@ check_plain(Schema, Conf) ->
     check_plain(Schema, Conf, #{}).
 
 check_plain(Schema, Conf, Opts0) ->
-    Opts = merge_opts(#{format => map,
-                        atom_key => false
-                       }, Opts0),
+    Opts = merge_opts(#{format => map}, Opts0),
     check_plain(Schema, Conf, Opts, all).
 
 check_plain(Schema, Conf, Opts0, RootNames) ->
-    Opts = merge_opts(#{format => map,
-                        atom_key => false
-                       }, Opts0),
+    Opts = merge_opts(#{format => map}, Opts0),
     do_check(Schema, Conf, Opts, RootNames).
 
 do_check(Schema, Conf, Opts0, RootNames) ->
@@ -442,31 +435,40 @@ map(Schema, Conf0, Roots0, Opts0) ->
                           ok = assert_no_dot(Schema, RootName)
                   end, Roots),
     Conf1 = filter_by_roots(Opts, Conf0, Roots),
-    Conf = apply_envs(Conf1, Opts, Roots),
+    Conf = apply_envs(Schema, Conf1, Opts, Roots),
     {Mapped0, NewConf} = do_map(Roots, Conf, Opts, ?MAGIC_SCHEMA),
     ok = assert_no_error(Schema, Mapped0),
     ok = assert_integrity(Schema, NewConf, Opts),
     Mapped = log_and_drop_env_overrides(Opts, Mapped0),
     {Mapped, maybe_convert_to_plain_map(NewConf, Opts)}.
 
+%% @doc Apply environment variable overrides on top of the given Conf0
+merge_env_overrides(Schema, Conf0, all, Opts) ->
+    merge_env_overrides(Schema, Conf0, root_names(Schema), Opts);
+merge_env_overrides(Schema, Conf0, Roots0, Opts0) ->
+    Opts = Opts0#{apply_override_envs => true}, %% force
+    Roots = resolve_root_types(roots(Schema), Roots0),
+    Conf = filter_by_roots(Opts, Conf0, Roots),
+    apply_envs(Schema, Conf, Opts, Roots).
+
+%% the config 'map' call returns env overrides in mapping
+%% resutls, this function helps to drop them from  the list
+%% and log the overrides
 log_and_drop_env_overrides(_Opts, []) -> [];
 log_and_drop_env_overrides(Opts, [#{hocon_env_var_name := _} = H | T]) ->
-    log(Opts, info, H),
+    _ = log(Opts, info, H),
     log_and_drop_env_overrides(Opts, T);
 log_and_drop_env_overrides(Opts, [H | T]) ->
     [H | log_and_drop_env_overrides(Opts, T)].
 
 %% Merge environment overrides into HOCON value before checking it against the schema.
-%% An alternative implimentation is to read environment variables while checking the
-%% fields, however it is more complicated than the current approach
-%% because, for nullable fields, we may skip over the struct schema,
-%% meaning override only works if the object existed in the input Conf.
-apply_envs(Conf, Opts, Roots) ->
-    {EnvNamespace, Envs} = collect_envs(Opts),
-    apply_envs(EnvNamespace, Envs, Opts, Roots, Conf).
+apply_envs(_Schema, Conf, #{apply_override_envs := false}, _Roots) -> Conf;
+apply_envs(Schema, Conf, Opts, Roots) ->
+    {EnvNamespace, Envs} = collect_envs(Schema, Opts, Roots),
+    do_apply_envs(EnvNamespace, Envs, Opts, Roots, Conf).
 
-apply_envs(_EnvNamespace, _Envs, _Opts, [], Conf) -> Conf;
-apply_envs(EnvNamespace, Envs, Opts, [{RootName, RootSc} | Roots], Conf) ->
+do_apply_envs(_EnvNamespace, _Envs, _Opts, [], Conf) -> Conf;
+do_apply_envs(EnvNamespace, Envs, Opts, [{RootName, RootSc} | Roots], Conf) ->
     ShouldApply =
         case field_schema(RootSc, type) of
             ?LAZY(_) -> maps:get(check_lazy, Opts, false);
@@ -476,7 +478,7 @@ apply_envs(EnvNamespace, Envs, Opts, [{RootName, RootSc} | Roots], Conf) ->
                   true -> apply_env(EnvNamespace, Envs, RootName, Conf, Opts);
                   false -> Conf
                 end,
-    apply_envs(EnvNamespace, Envs, Opts, Roots, NewConf).
+    do_apply_envs(EnvNamespace, Envs, Opts, Roots, NewConf).
 
 %% silently drop unknown data (root level only)
 filter_by_roots(Opts, Conf, Roots) ->
@@ -724,7 +726,7 @@ maps_keys(undefined) -> [];
 maps_keys(Map) -> maps:keys(Map).
 
 check_unknown_fields(Opts, SchemaFieldNames, DataFields) ->
-    case find_unknown_fields(Opts, SchemaFieldNames, DataFields) of
+    case find_unknown_fields(SchemaFieldNames, DataFields) of
         [] ->
             ok;
         Unknowns ->
@@ -736,11 +738,11 @@ check_unknown_fields(Opts, SchemaFieldNames, DataFields) ->
             validation_errs(Opts, Err)
     end.
 
-find_unknown_fields(_Opts, _SchemaFieldNames, undefined) -> [];
-find_unknown_fields(Opts, SchemaFieldNames0, DataFields) ->
+find_unknown_fields(_SchemaFieldNames, undefined) -> [];
+find_unknown_fields(SchemaFieldNames0, DataFields) ->
     SchemaFieldNames = lists:map(fun bin/1, SchemaFieldNames0),
     maps:fold(fun(DfName, DfValue, Acc) ->
-                      case is_known_field(Opts, DfName, DfValue, SchemaFieldNames) of
+                      case is_known_name(DfName, SchemaFieldNames) of
                           true ->
                               Acc;
                           false ->
@@ -751,16 +753,6 @@ find_unknown_fields(Opts, SchemaFieldNames0, DataFields) ->
                               [Unknown | Acc]
                       end
               end, [], DataFields).
-
-is_known_field(Opts, Name, Value, ExpectedNames) ->
-    is_known_name(Name, ExpectedNames) orelse
-    case Value of
-        #{?HOCON_V := ?FROM_ENV_VAR(EnvName, _)} ->
-            log(Opts, warning, bin(["unknown_environment_variable_discarded: ", EnvName])),
-            true;
-        _ ->
-            false
-    end.
 
 is_known_name(Name, ExpectedNames) ->
     lists:any(fun(N) -> N =:= bin(Name) end, ExpectedNames).
@@ -833,14 +825,6 @@ do_map_array(F, [Elem | Rest], Res, Index, Acc) ->
     end.
 
 resolve_field_value(Schema, FieldValue, Opts) ->
-    case get_override_env(Schema, Opts) of
-        undefined ->
-            resolve_default_override(Schema, FieldValue, Opts);
-        {Log, Name, EnvValue} ->
-            {[Log], maybe_mkrich(Opts, EnvValue, ?META_BOX(from_env, Name))}
-    end.
-
-resolve_default_override(Schema, FieldValue, Opts) ->
     case unbox(Opts, FieldValue) of
         ?FROM_ENV_VAR(EnvName, EnvValue) ->
             {[env_override_for_log(Schema, EnvName, path(Opts), EnvValue)],
@@ -856,19 +840,95 @@ maybe_use_default(Default, undefined, Opts) ->
     maybe_mkrich(Opts, Default, ?META_BOX(made_for, default_value));
 maybe_use_default(_, Value, _Opts) -> Value.
 
-collect_envs(#{apply_override_envs := false}) -> {undefined, []};
-collect_envs(Opts) ->
+collect_envs(Schema, Opts, Roots) ->
     Ns = hocon_util:env_prefix(_Default = undefined),
     case Ns of
         undefined -> {undefined, []};
-        _ -> {Ns, lists:keysort(1, collect_envs(Ns, Opts))}
+        _ -> {Ns, lists:keysort(1, collect_envs(Schema, Ns, Opts, Roots))}
     end.
 
-collect_envs(Ns, Opts) ->
-    [begin
-         [Name, Value] = string:split(KV, "="),
-         {Name, read_hocon_val(Value, Opts)}
-     end || KV <- os:getenv(), string:prefix(KV, Ns) =/= nomatch].
+collect_envs(Schema, Ns, Opts, Roots) ->
+    Pairs = [begin
+                 [Name, Value] = string:split(KV, "="),
+                 {Name, Value}
+             end || KV <- os:getenv(), string:prefix(KV, Ns) =/= nomatch],
+    Envs = lists:map(fun({N, V}) ->
+                             {check_env(Schema, Roots, Ns, N), N, V}
+                     end, Pairs),
+    case [Name || {warn, Name, _} <- Envs] of
+        [] -> ok;
+        Names ->
+            UnknownVars = lists:sort(Names),
+            Msg = bin(io_lib:format("unknown_env_vars: ~p", [UnknownVars])),
+            log(Opts, warning, Msg)
+    end,
+    [{Name, read_hocon_val(Value, Opts)} || {keep, Name, Value} <- Envs].
+
+%% return keep | warn | ignore for the given environment variable
+check_env(Schema, Roots, Ns, EnvVarName) ->
+    case env_name_to_path(Ns, EnvVarName) of
+        false ->
+            %% bad format
+            ignore;
+        [RootName | Path] ->
+            case is_field(Roots, RootName) of
+                {true, Type} ->
+                    case is_path(Schema, Type, Path) of
+                        true -> keep;
+                        false -> warn
+                    end;
+                false ->
+                    %% unknown root
+                    ignore
+            end
+    end.
+
+is_field([], _Name) -> false;
+is_field([{FN, FT} | Fields], Name) ->
+    case bin(FN) =:= bin(Name) of
+        true ->
+            Type = hocon_schema:field_schema(FT, type),
+            {true, Type};
+        false ->
+            is_field(Fields, Name)
+    end.
+
+is_path(_Schema, _Name, []) -> true;
+is_path(Schema, Name, Path) when is_list(Name) ->
+    is_path2(Schema, Name, Path);
+is_path(Schema, ?REF(Name), Path) ->
+    is_path2(Schema, Name, Path);
+is_path(_Schema, ?R_REF(Module, Name), Path) ->
+    is_path2(Module, Name, Path);
+is_path(Schema, ?LAZY(Type), Path) ->
+    is_path(Schema, Type, Path);
+is_path(Schema, ?ARRAY(Type), [Name | Path]) ->
+    case is_array_index(Name) of
+        {true, _} -> is_path(Schema, Type, Path);
+        false -> false
+    end;
+is_path(Schema, ?UNION(Types), Path) ->
+    lists:any(fun(T) -> is_path(Schema, T, Path) end, Types);
+is_path(Schema, ?MAP(_, Type), [_ | Path]) ->
+    is_path(Schema, Type, Path);
+is_path(_Schema, _Type, _Path) ->
+    false.
+
+is_path2(Schema, RefName, [Name | Path]) ->
+    Fields = fields(Schema, RefName),
+    case is_field(Fields, Name) of
+        {true, Type} -> is_path(Schema, Type, Path);
+        false -> false
+    end.
+
+%% EMQX_FOO__BAR -> ["foo", "bar"]
+env_name_to_path(Ns, VarName) ->
+    K = string:prefix(VarName, Ns),
+    Path0 = string:split(string:lowercase(K), "__", all),
+    case lists:filter(fun(N) -> N =/= [] end, Path0) of
+        [] -> false;
+        Path -> Path
+    end.
 
 read_hocon_val("", _Opts) -> "";
 read_hocon_val(Value, Opts) ->
@@ -891,13 +951,12 @@ read_informal_hocon_val(Value, Opts) ->
 
 apply_env(_Ns, [], _RootName, Conf, _Opts) -> Conf;
 apply_env(Ns, [{VarName, V} | More], RootName, Conf, Opts) ->
-    K = string:prefix(VarName, Ns),
-    Path0 = string:split(string:lowercase(K), "__", all),
-    Path1 = lists:filter(fun(N) -> N =/= [] end, Path0),
+    %% match [_ | _] here because the name is already validated
+    [_ | _] = Path0 = env_name_to_path(Ns, VarName),
     NewConf =
-        case Path1 =/= [] andalso bin(RootName) =:= bin(hd(Path1)) of
+        case Path0 =/= [] andalso bin(RootName) =:= bin(hd(Path0)) of
             true ->
-                Path = string:join(Path1, "."),
+                Path = string:join(Path0, "."),
                 %% It lacks schema info here, so we need to tag the value '$FROM_ENV_VAR'
                 %% and the value will be logged later when checking against schema
                 %% so we know if the value is sensitive or not.
@@ -996,20 +1055,6 @@ do_split(Path) when ?IS_NON_EMPTY_STRING(Path) ->
     [bin(I) || I <- string:tokens(Path, ".")];
 do_split([H | T]) ->
     [do_split(H) | do_split(T)].
-
-get_override_env(Schema, Opts) ->
-    case field_schema(Schema, override_env) of
-        undefined ->
-            undefined;
-        Var ->
-            case os:getenv(str(Var)) of
-                V when V =:= false orelse V =:= [] ->
-                    undefined;
-                V ->
-                    {env_override_for_log(Schema, Var, path(Opts), V),
-                     str(Var), read_hocon_val(V, Opts)}
-            end
-    end.
 
 validators(undefined) -> [];
 validators(Validator) when is_function(Validator) ->
@@ -1142,28 +1187,7 @@ maybe_array(V) -> V =:= ?EMPTY_MAP.
 update_array_element(?EMPTY_MAP, Index, GoDeep) ->
     update_array_element([], Index, GoDeep);
 update_array_element(List, Index, GoDeep) when is_list(List) ->
-    MinIndex = 1,
-    MaxIndex = length(List) + 1,
-    Index < MinIndex andalso throw({bad_array_index, "index starts from 1"}),
-    Index > MaxIndex andalso
-    begin
-        Msg0 = io_lib:format("should not be greater than ~p.", [MaxIndex]),
-        Msg1 = case Index > 9 of
-                   true ->
-                       "~nEnvironment variable overrides applied in alphabetical "
-                       "make sure to use zero paddings such as '02' to ensure "
-                       "10 is ordered after it";
-                   false ->
-                       []
-               end,
-        throw({bad_array_index, [Msg0, Msg1]})
-    end,
-    {Head, Tail0} = lists:split(Index - 1, List),
-    {Nth, Tail} = case Tail0 of
-                      [] -> {?EMPTY_MAP, []};
-                      [H | T] -> {H, T}
-                  end,
-    Head ++ [GoDeep(Nth) | Tail].
+    hocon_util:update_array_element(List, Index, GoDeep).
 
 update_map_field(Opts, Map, FieldName, GoDeep) ->
     FieldV0 = maps:get(FieldName, Map, ?EMPTY_MAP),
@@ -1171,13 +1195,10 @@ update_map_field(Opts, Map, FieldName, GoDeep) ->
     Map1 = maps:without([FieldName], Map),
     Map1#{maybe_atom(Opts, FieldName) => FieldV}.
 
-is_array_index(I) ->
-    try
-        {true, binary_to_integer(I)}
-    catch
-        _ : _ ->
-            false
-    end.
+%% {true, integer()} if yes, otherwise false
+is_array_index(L) when is_list(L) ->
+    is_array_index(list_to_binary(L));
+is_array_index(I) -> hocon_util:is_array_index(I).
 
 check_indexed_array(List) ->
     case check_indexed_array(List, [], []) of
@@ -1286,6 +1307,9 @@ do_find_error([{error, E} | More], Errors) ->
 do_find_error([_ | More], Errors) ->
     do_find_error(More, Errors).
 
+find_structs(Schema, Fields) ->
+    find_structs(Schema, Fields, #{}, _ValueStack = [], _TypeStack = []).
+
 find_structs(Schema, #{fields := Fields}, Acc, Stack, TStack) ->
     find_structs(Schema, Fields, Acc, Stack, TStack);
 find_structs(_Schema, [], Acc, _Stack, _TStack) -> Acc;
@@ -1303,7 +1327,7 @@ find_structs_per_type(_Schema, ?R_REF(Module, Name), Acc, Stack, TStack) ->
 find_structs_per_type(Schema, ?LAZY(Type), Acc, Stack, TStack) ->
     find_structs_per_type(Schema, Type, Acc, Stack, TStack);
 find_structs_per_type(Schema, ?ARRAY(Type), Acc, Stack, TStack) ->
-    find_structs_per_type(Schema, Type, Acc, ["$I" | Stack], TStack);
+    find_structs_per_type(Schema, Type, Acc, ["$INDEX" | Stack], TStack);
 find_structs_per_type(Schema, ?UNION(Types), Acc, Stack, TStack) ->
     lists:foldl(fun(T, AccIn) ->
                         find_structs_per_type(Schema, T, AccIn, Stack, TStack)
@@ -1322,20 +1346,14 @@ find_ref(Schema, Name, Acc, Stack, TStack) ->
             {ok, #{paths := Ps}} -> Ps;
             error -> #{}
         end,
-    case maps:is_key(Path, Paths) of
+    case lists:member(Key, TStack) of
         true ->
-            %% found it before
+            %% loop reference, break here, otherwise never exit
             Acc;
         false ->
-            case lists:member(Key, TStack) of
-                true ->
-                    %% loop reference
-                    Acc;
-                false ->
-                    Fields0 = fields_and_meta(Schema, Name),
-                    Fields = Fields0#{paths => Paths#{Path => true}},
-                    find_structs(Schema, Fields, Acc#{Key => Fields}, Stack, [Key | TStack])
-            end
+            Fields0 = fields_and_meta(Schema, Name),
+            Fields = Fields0#{paths => Paths#{Path => true}},
+            find_structs(Schema, Fields, Acc#{Key => Fields}, Stack, [Key | TStack])
     end.
 
 only_fill_defaults(#{only_fill_defaults := true}) -> true;
