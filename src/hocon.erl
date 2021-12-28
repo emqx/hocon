@@ -48,7 +48,7 @@ load(Filename0) ->
 -spec(load(file:filename(), opts()) -> {ok, config()} | {error, term()}).
 load(Filename0, Opts) ->
     Filename = hocon_util:real_file_name(filename:absname(Filename0)),
-    IncludeDirs = [filename:dirname(Dir) || Dir <- maps:get(include_dirs, Opts, [])],
+    IncludeDirs = maps:get(include_dirs, Opts, []),
     CtxList = [{path, '$root'}, {filename, Filename}, {include_dirs, IncludeDirs}],
     Ctx = hocon_util:stack_multiple_push(CtxList, #{}),
     try
@@ -93,7 +93,7 @@ binary(Binary) ->
 
 binary(Binary, Opts) ->
     try
-        IncludeDirs = [filename:dirname(Dir)  || Dir <-maps:get(include_dirs, Opts, [])],
+        IncludeDirs = maps:get(include_dirs, Opts, []),
         CtxList = [{path, '$root'}, {filename, undefined}, {include_dirs, IncludeDirs}],
         Ctx = hocon_util:stack_multiple_push(CtxList, #{}),
         Map = transform(do_binary(Binary, Ctx), Opts),
