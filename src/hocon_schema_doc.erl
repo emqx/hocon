@@ -32,14 +32,14 @@ gen(Schema, #{title := Title, body := Body}) ->
      Body,
      "\n",
      fmt_structs(2, RootNs, [{RootNs, "Root Config Keys", #{fields => RootFields}}]),
-     fmt_structs(3, RootNs, Structs)].
+     fmt_structs(2, RootNs, Structs)].
 
-fmt_structs(_HeadWeight, _RootNs, []) -> [];
-fmt_structs(HeadWeight, RootNs, [{Ns, Name, Fields} | Rest]) ->
-    [fmt_struct(HeadWeight, RootNs, Ns, Name, Fields), "\n" |
-     fmt_structs(HeadWeight, RootNs, Rest)].
+fmt_structs(_Weight, _RootNs, []) -> [];
+fmt_structs(Weight, RootNs, [{Ns, Name, Fields} | Rest]) ->
+    [fmt_struct(Weight, RootNs, Ns, Name, Fields), "\n" |
+     fmt_structs(Weight, RootNs, Rest)].
 
-fmt_struct(HeadWeight, RootNs, Ns0, Name, #{fields := Fields} = Meta) ->
+fmt_struct(Weight, RootNs, Ns0, Name, #{fields := Fields} = Meta) ->
     Ns = case RootNs =:= Ns0 of
              true -> undefined;
              false -> Ns0
@@ -49,7 +49,7 @@ fmt_struct(HeadWeight, RootNs, Ns0, Name, #{fields := Fields} = Meta) ->
                 _ -> []
             end,
     FullNameDisplay = ref(Ns, Name),
-    [ hocon_md:h(HeadWeight, FullNameDisplay)
+    [ hocon_md:h(Weight, FullNameDisplay)
     , fmt_paths(Paths)
     , case Meta of
           #{desc := StructDoc} -> StructDoc;

@@ -67,11 +67,13 @@ infix([X], _) -> [X];
 infix([H | T], In) -> [H, In | infix(T, In)].
 
 %% ref: https://gist.github.com/asabaylus/3071099
+%% GitHub flavored markdown likes ':' being removed
+%% VuePress likes ':' being replaced by '-'
 anchor(Anchor0) ->
     Anchor = string:lowercase(bin(Anchor0)),
     Replaces = [{<<"\\.">>, <<"">>}, %% no dot
                 {<<"'">>, <<"">>}, %% no single quotes
-                {<<":">>, <<"">>}, %% no colon
+                {<<":">>, <<"-">>}, %% vuepress
                 {<<"\\s">>, <<"-">>} %% space replaced by hyphen
                ],
     lists:foldl(fun({Pattern, Replace}, Acc) ->
