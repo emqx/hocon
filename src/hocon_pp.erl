@@ -68,7 +68,8 @@ gen(M, Opts) when is_map(M) ->
              true -> "";
              false -> ?NL
          end,
-    [gen_map(M, Opts), NL].
+    [gen_map(M, Opts), NL];
+gen({K, V}, Opts) -> gen(#{K => V}, Opts).
 
 gen_list(L, Opts) ->
     case is_oneliner(L) of
