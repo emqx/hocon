@@ -5,7 +5,7 @@ by [basho cuttlefish](https://github.com/basho/cuttlefish)
 
 ## Types
 
-There are two high level kinds of data types defined in HOCON schema: `primitve` and `complex`.
+There are two high level kinds of data types defined in HOCON schema: `primitive` and `complex`.
 If we think of Erlang data structure as a 'tree', then `primitive` types denote the 'leaves'
 of the 'tree'. aka the terminal values.
 While the `complex` types denote the values which enclose either other `complex` or `primitive` values.
