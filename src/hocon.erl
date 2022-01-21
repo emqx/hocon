@@ -344,7 +344,7 @@ do_concat([{#{?HOCON_T := key}=K, Value} | More], Metadata, Acc) ->
 do_concat([Other | More], Metadata, Acc) ->
     do_concat(More, Metadata, [Other | Acc]).
 
--spec(transform(hocon_token:boxed(), map()) -> hocon:config()).
+-spec(transform(hocon_token:boxed(), map()) -> config()).
 transform(#{?HOCON_T := object, ?HOCON_V := V} = O, #{format := richmap} = Opts) ->
     NewV = do_transform(remove_nothing(V), #{}, Opts),
     O#{?HOCON_V => NewV};

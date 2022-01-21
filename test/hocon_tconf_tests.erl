@@ -1,5 +1,5 @@
 %%--------------------------------------------------------------------
-%% Copyright (c) 2021 EMQ Technologies Co., Ltd. All Rights Reserved.
+%% Copyright (c) 2021-2022 EMQ Technologies Co., Ltd. All Rights Reserved.
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 %%--------------------------------------------------------------------
--module(hocon_schema_tests).
+-module(hocon_tconf_tests).
 
 -include_lib("typerefl/include/types.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -45,11 +45,11 @@ validations() -> [{check_child_name, fun check_child_name/1}].
 
 check_child_name(Conf) ->
     %% nobody names their kid with single letters.
-    case hocon_schema:get_value("parent", Conf) of
+    case hocon_maps:get("parent", Conf) of
         undefined ->
             ok;
         P ->
-            length(hocon_schema:get_value("child.name", P)) > 1
+            length(hocon_maps:get("child.name", P)) > 1
     end.
 
 field1(type) -> string();
@@ -82,9 +82,9 @@ env_override_test() ->
                                              <<"field1">> => ""}}, Res),
 
               {ok, Conf1} = hocon:binary(Conf, Opts),
-              Conf2 = hocon_schema:merge_env_overrides(?MODULE, Conf1, all, Opts),
-              Conf3 = hocon_schema:check(?MODULE, Conf2, Opts#{apply_override_envs => false}),
-              Conf4 = hocon_schema:richmap_to_map(Conf3),
+              Conf2 = hocon_tconf:merge_env_overrides(?MODULE, Conf1, all, Opts),
+              Conf3 = hocon_tconf:check(?MODULE, Conf2, Opts#{apply_override_envs => false}),
+              Conf4 = richmap_to_map(Conf3),
               ?assertEqual(Res, Conf4)
       end,
       envs([{"EMQX_BAR__UNION_WITH_DEFAULT__VAL", "111"},
@@ -117,7 +117,7 @@ unknown_env_test() ->
                                  end
                       },
               {ok, RichMap} = hocon:binary(Conf, #{format => richmap}),
-              hocon_schema:check(?MODULE, RichMap, Opts#{apply_override_envs => true})
+              hocon_tconf:check(?MODULE, RichMap, Opts#{apply_override_envs => true})
       end,
       envs([ {"EMQX_BAR__UNION_WITH_DEFAULT__VAL", "111"}
            , {"EMQX_bar__field1", ""}
@@ -129,26 +129,24 @@ unknown_env_test() ->
     receive
         {Ref, Level, Msg} ->
             ?assertEqual(warning, Level),
-            io:format(user, "expected: ~p", [Unknown]),
-            io:format(user, "     got: ~p", [Msg]),
             ?assertEqual(<<"unknown_env_vars: ", Unknown/binary>>, Msg)
     end.
 
 check(Str, Opts) ->
     {ok, RichMap} = hocon:binary(Str, Opts),
-    RichMap2 = hocon_schema:check(?MODULE, RichMap, Opts),
-    hocon_schema:richmap_to_map(RichMap2).
+    RichMap2 = hocon_tconf:check(?MODULE, RichMap, Opts),
+    richmap_to_map(RichMap2).
 
 check_plain(Str) ->
     check_plain(Str, #{}) .
 
 check_plain(Str, Opts) ->
     {ok, Map} = hocon:binary(Str, #{}),
-    hocon_schema:check_plain(?MODULE, Map, Opts).
+    hocon_tconf:check_plain(?MODULE, Map, Opts).
 
 mapping_test_() ->
     F = fun (Str) -> {ok, M} = hocon:binary(Str, #{format => richmap}),
-                     {Mapped, _} = hocon_schema:map(demo_schema, M),
+                     {Mapped, _} = hocon_tconf:map(demo_schema, M),
                      Mapped end,
     [ ?_assertEqual([{["app_foo", "setting"], "hello"}], F("foo.setting=hello"))
     , ?_assertEqual([{["app_foo", "setting"], "1"}], F("foo.setting=1"))
@@ -218,54 +216,17 @@ generate_compatibility_test() ->
                                #{format => richmap}),
 
     [{app_foo, C0}] = cuttlefish_generator:map({Translations, Mappings, []}, Conf),
-    [{app_foo, C1}] = hocon_schema:generate(demo_schema, Hocon),
-    {[{app_foo, C1}], Conf1} = hocon_schema:map_translate(demo_schema, Hocon, #{}),
+    [{app_foo, C1}] = hocon_tconf:generate(demo_schema, Hocon),
+    {[{app_foo, C1}], Conf1} = hocon_tconf:map_translate(demo_schema, Hocon, #{}),
     ?assertMatch(#{<<"foo">> := #{<<"max">> := 2, <<"min">> := 1, <<"setting">> := "val"}},
-        hocon_schema:richmap_to_map(Conf1)),
+        richmap_to_map(Conf1)),
     ?assertEqual(lists:ukeysort(1, C0), lists:ukeysort(1, C1)).
-
-deep_get_test_() ->
-    F = fun(Str, Key, Param) ->
-                {ok, M} = hocon:binary(Str, #{format => richmap}),
-                deep_get(Key, M, Param)
-        end,
-    [ ?_assertEqual(1, F("a=1", "a", ?HOCON_V))
-    , ?_assertMatch(#{line := 1}, F("a=1", "a", ?METADATA))
-    , ?_assertEqual(1, F("a={b=1}", "a.b", ?HOCON_V))
-    , ?_assertEqual(undefined, F("a={b=1}", "a.c", ?HOCON_V))
-    ].
-
-deep_get(Path, Conf, Param) ->
-    case hocon_schema:deep_get(Path, Conf) of
-        undefined -> undefined;
-        Map -> maps:get(Param, Map, undefined)
-    end.
-
-deep_put_test_() ->
-    F = fun(Str, Key, Value) ->
-                {ok, M} = hocon:binary(Str, #{format => richmap}),
-                NewM = hocon_schema:deep_put(#{}, Key, Value, M),
-                deep_get(Key, NewM, ?HOCON_V)
-        end,
-    [ ?_assertEqual(2, F("a=1", "a", 2))
-    , ?_assertEqual(2, F("a={b=1}", "a.b", 2))
-    , ?_assertEqual(#{x => 1}, F("a={b=1}", "a.b", #{x => 1}))
-    ].
-
-richmap_to_map_test_() ->
-    F = fun(Str) -> {ok, M} = hocon:binary(Str, #{format => richmap}),
-                    hocon_schema:richmap_to_map(M) end,
-    [ ?_assertEqual(#{<<"a">> => #{<<"b">> => 1}}, F("a.b=1"))
-    , ?_assertEqual(#{<<"a">> => #{<<"b">> => [1, 2, 3]}}, F("a.b = [1,2,3]"))
-    , ?_assertEqual(#{<<"a">> =>
-                      #{<<"b">> => [1, 2, #{<<"x">> => <<"foo">>}]}}, F("a.b = [1,2,{x=foo}]"))
-    ].
 
 env_test_() ->
     F = fun (Str, Envs) ->
                     {ok, M} = hocon:binary(Str, #{format => richmap}),
                     Opts = #{apply_override_envs => true},
-                    {Mapped, _} = with_envs(fun hocon_schema:map/4, [demo_schema, M, all, Opts],
+                    {Mapped, _} = with_envs(fun hocon_tconf:map/4, [demo_schema, M, all, Opts],
                                             Envs ++ [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"}]),
                     Mapped
         end,
@@ -286,7 +247,7 @@ env_object_val_test() ->
     Conf = "root = {val = {f1 = 43}}",
     {ok, PlainMap} = hocon:binary(Conf, #{}),
     ?assertEqual(#{<<"root">> => #{<<"val">> => #{<<"f1">> => 42}}},
-        with_envs(fun hocon_schema:check_plain/3, [Sc, PlainMap, #{apply_override_envs => true}],
+        with_envs(fun hocon_tconf:check_plain/3, [Sc, PlainMap, #{apply_override_envs => true}],
             [ {"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"}
             , {"EMQX_ROOT__VAL", "{f1:42}"}
             ])).
@@ -296,7 +257,7 @@ env_array_val_test() ->
     Conf = "val = [a,b]",
     {ok, PlainMap} = hocon:binary(Conf, #{}),
     ?assertEqual(#{<<"val">> => ["c", "d"]},
-        with_envs(fun hocon_schema:check_plain/3, [Sc, PlainMap, #{apply_override_envs => true}],
+        with_envs(fun hocon_tconf:check_plain/3, [Sc, PlainMap, #{apply_override_envs => true}],
                   envs([{"EMQX_VAL", "[c, d]"}, {"EMQX___", "discard"}]))).
 
 env_map_val_test() ->
@@ -304,7 +265,7 @@ env_map_val_test() ->
     Conf = "val = {key = value}",
     {ok, Map} = hocon:binary(Conf, #{format => map}),
     ?assertEqual(#{<<"val">> => #{<<"key">> => "value2"}},
-        with_envs(fun hocon_schema:check_plain/3, [Sc, Map, #{apply_override_envs => true}],
+        with_envs(fun hocon_tconf:check_plain/3, [Sc, Map, #{apply_override_envs => true}],
                   envs([{"EMQX_VAL__KEY", "value2"}]))).
 
 env_ip_port_test() ->
@@ -312,15 +273,15 @@ env_ip_port_test() ->
     Conf = "val = \"127.0.0.1:1990\"",
     {ok, PlainMap} = hocon:binary(Conf, #{}),
     ?assertEqual(#{<<"val">> => "192.168.0.1:1991"},
-        with_envs(fun hocon_schema:check_plain/3, [Sc, PlainMap, #{apply_override_envs => true}],
+        with_envs(fun hocon_tconf:check_plain/3, [Sc, PlainMap, #{apply_override_envs => true}],
             [ {"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"}
             , {"EMQX_VAL", "192.168.0.1:1991"}
             ])).
 
 translate_test_() ->
     F = fun (Str) -> {ok, M} = hocon:binary(Str, #{format => richmap}),
-                     {Mapped, Conf} = hocon_schema:map(demo_schema, M),
-                     hocon_schema:translate(demo_schema, Conf, Mapped) end,
+                     {Mapped, Conf} = hocon_tconf:map(demo_schema, M),
+                     hocon_tconf:translate(demo_schema, Conf, Mapped) end,
     [ ?_assertEqual([{["app_foo", "range"], {1, 2}}],
                     F("foo.min=1, foo.max=2"))
     , ?_assertEqual([], F("foo.min=2, foo.max=1"))
@@ -328,11 +289,11 @@ translate_test_() ->
 
 nest_test_() ->
     [ ?_assertEqual([{a, [{b, {1, 2}}]}],
-                    hocon_schema:nest([{["a", "b"], {1, 2}}]))
+                    hocon_tconf:nest([{["a", "b"], {1, 2}}]))
     , ?_assertEqual([{a, [{b, 1}, {c, 2}]}],
-                    hocon_schema:nest([{["a", "b"], 1}, {["a", "c"], 2}]))
+                    hocon_tconf:nest([{["a", "b"], 1}, {["a", "c"], 2}]))
     , ?_assertEqual([{a, [{b, 1}, {z, 2}]}, {x, [{a, 3}]}],
-                    hocon_schema:nest([{["a", "b"], 1}, {["a", "z"], 2}, {["x", "a"], 3}]))
+                    hocon_tconf:nest([{["a", "b"], 1}, {["a", "z"], 2}, {["x", "a"], 3}]))
     ].
 
 with_envs(Fun, Envs) -> hocon_test_lib:with_envs(Fun, Envs).
@@ -341,35 +302,35 @@ with_envs(Fun, Args, Envs) -> hocon_test_lib:with_envs(Fun, Args, Envs).
 union_as_enum_test() ->
     Sc = #{roots => [{enum, hoconsc:union([a, b, c])}]},
     ?assertEqual(#{<<"enum">> => a},
-                 hocon_schema:check_plain(Sc, #{<<"enum">> => a})),
+                 hocon_tconf:check_plain(Sc, #{<<"enum">> => a})),
     ?VALIDATION_ERR(#{reason := matched_no_union_member},
-                    hocon_schema:check_plain(Sc, #{<<"enum">> => x})).
+                    hocon_tconf:check_plain(Sc, #{<<"enum">> => x})).
 
 real_enum_test() ->
     Sc = #{roots => [{val, hoconsc:enum([a, b, c])}]
           },
     ?assertEqual(#{<<"val">> => a},
-                 hocon_schema:check_plain(Sc, #{<<"val">> => <<"a">>})),
+                 hocon_tconf:check_plain(Sc, #{<<"val">> => <<"a">>})),
     ?assertEqual(#{val => a},
-                 hocon_schema:check_plain(Sc, #{<<"val">> => <<"a">>}, #{atom_key => true})),
+                 hocon_tconf:check_plain(Sc, #{<<"val">> => <<"a">>}, #{atom_key => true})),
     ?VALIDATION_ERR(#{reason := not_a_enum_symbol, value := x},
-                    hocon_schema:check_plain(Sc, #{<<"val">> => <<"x">>})),
+                    hocon_tconf:check_plain(Sc, #{<<"val">> => <<"x">>})),
     ?VALIDATION_ERR(#{reason := unable_to_convert_to_enum_symbol,
                       value := {"badvalue"}},
-                    hocon_schema:check_plain(Sc, #{<<"val">> => {"badvalue"}})).
+                    hocon_tconf:check_plain(Sc, #{<<"val">> => {"badvalue"}})).
 bad_array_index_test() ->
     Sc = #{roots => [{val, hoconsc:array(integer())}]},
     Conf = "val = {first = 1}",
     {ok, PlainMap} = hocon:binary(Conf, #{}),
     ?assertThrow({_, [{validation_error, #{bad_array_index_keys := [<<"first">>],
                                            path := "val"}}]},
-                 hocon_schema:check_plain(Sc, PlainMap)).
+                 hocon_tconf:check_plain(Sc, PlainMap)).
 
 array_of_enum_test() ->
     Sc = #{roots => [{val, hoconsc:array(hoconsc:enum([a, b, c]))}]},
     Conf = "val = [a,b]",
     {ok, PlainMap} = hocon:binary(Conf, #{}),
-    ?assertEqual(#{<<"val">> => [a, b]}, hocon_schema:check_plain(Sc, PlainMap)).
+    ?assertEqual(#{<<"val">> => [a, b]}, hocon_tconf:check_plain(Sc, PlainMap)).
 
 atom_key_test() ->
     Sc = #{roots => [{val, binary()}]},
@@ -377,13 +338,13 @@ atom_key_test() ->
     {ok, PlainMap} = hocon:binary(Conf, #{}),
     {ok, RichMap} = hocon:binary(Conf, #{format => richmap}),
     ?assertEqual(#{<<"val">> => <<"a">>},
-                 hocon_schema:check_plain(Sc, PlainMap)),
+                 hocon_tconf:check_plain(Sc, PlainMap)),
     ?assertEqual(#{val => <<"a">>},
-                 hocon_schema:check_plain(Sc, PlainMap, #{atom_key => true})),
+                 hocon_tconf:check_plain(Sc, PlainMap, #{atom_key => true})),
     ?assertEqual(#{<<"val">> => <<"a">>},
-                 hocon_schema:richmap_to_map(hocon_schema:check(Sc, RichMap))),
+                 richmap_to_map(hocon_tconf:check(Sc, RichMap))),
     ?assertEqual(#{val => <<"a">>},
-                 hocon_schema:richmap_to_map(hocon_schema:check(Sc, RichMap, #{atom_key => true}))).
+                 richmap_to_map(hocon_tconf:check(Sc, RichMap, #{atom_key => true}))).
 
 atom_key_array_test() ->
    Sc = #{roots => [{arr, hoconsc:array("sub")}],
@@ -392,9 +353,9 @@ atom_key_array_test() ->
     Conf = "arr = [{id = 1}, {id = 2}]",
     {ok, PlainMap} = hocon:binary(Conf, #{}),
     ?assertEqual(#{arr => [#{id => 1}, #{id => 2}]},
-                 hocon_schema:check_plain(Sc, PlainMap, #{atom_key => true})),
+                 hocon_tconf:check_plain(Sc, PlainMap, #{atom_key => true})),
     ?assertMatch({_, #{arr := [#{id := 1}, #{id := 2}]}},
-                 hocon_schema:map(Sc, PlainMap, all, #{format => map, atom_key => true})).
+                 hocon_tconf:map(Sc, PlainMap, all, #{format => map, atom_key => true})).
 
 %% if convert to non-existing atom
 atom_key_failure_test() ->
@@ -402,7 +363,7 @@ atom_key_failure_test() ->
     Conf = "non_existing_atom_as_key=1",
     {ok, PlainMap} = hocon:binary(Conf, #{}),
     ?assertError({non_existing_atom, <<"non_existing_atom_as_key">>},
-                 hocon_schema:map(Sc, PlainMap, all, #{format => map, atom_key => true})).
+                 hocon_tconf:map(Sc, PlainMap, all, #{format => map, atom_key => true})).
 
 return_plain_test_() ->
     Sc = #{roots => [ {metadata, hoconsc:mk(string())}
@@ -413,22 +374,22 @@ return_plain_test_() ->
     {ok, Conf} = hocon:binary(StrConf, #{format => richmap}),
     Opts = #{atom_key => true, return_plain => true},
     [ ?_assertMatch(#{metadata := "m", type := "t", value := "v"},
-            hocon_schema:check(Sc, Conf, Opts))
+            hocon_tconf:check(Sc, Conf, Opts))
     , ?_assertMatch({_, #{metadata := "m", type := "t", value := "v"}},
-            hocon_schema:map(Sc, Conf, all, Opts))
+            hocon_tconf:map(Sc, Conf, all, Opts))
     ].
 
 validator_test() ->
     Sc = #{ roots => [{f1, hoconsc:mk(integer(), #{validator => fun(X) -> X < 10 end})}]},
-    ?assertEqual(#{<<"f1">> => 1}, hocon_schema:check_plain(Sc, #{<<"f1">> => 1})),
-    ?VALIDATION_ERR(_, hocon_schema:check_plain(Sc, #{<<"f1">> => 11})),
+    ?assertEqual(#{<<"f1">> => 1}, hocon_tconf:check_plain(Sc, #{<<"f1">> => 1})),
+    ?VALIDATION_ERR(_, hocon_tconf:check_plain(Sc, #{<<"f1">> => 11})),
     ok.
 
 validator_error_test() ->
   Sc = #{ roots => [{f1, hoconsc:mk(string(), #{validator => fun not_empty/1})}]},
-  ?assertEqual(#{<<"f1">> => "1"}, hocon_schema:check_plain(Sc, #{<<"f1">> => "1"})),
+  ?assertEqual(#{<<"f1">> => "1"}, hocon_tconf:check_plain(Sc, #{<<"f1">> => "1"})),
   Expect = #{path => "f1", reason => "Can not be empty", value => ""},
-  ?VALIDATION_ERR(Expect, hocon_schema:check_plain(Sc, #{<<"f1">> => ""})),
+  ?VALIDATION_ERR(Expect, hocon_tconf:check_plain(Sc, #{<<"f1">> => ""})),
   ok.
 
 not_empty("") -> {error, "Can not be empty"};
@@ -437,7 +398,7 @@ not_empty(_) -> ok.
 validator_crash_test() ->
     Sc = #{ roots => [{f1, hoconsc:mk(integer(), #{validator => [fun(_) -> error(always) end]})}]},
     ?VALIDATION_ERR(#{reason := #{exception := {error, always}}},
-                    hocon_schema:check_plain(Sc, #{<<"f1">> => 11})),
+                    hocon_tconf:check_plain(Sc, #{<<"f1">> => 11})),
     ok.
 
 nullable_test() ->
@@ -447,10 +408,10 @@ nullable_test() ->
                       ]
           },
     ?assertEqual(#{<<"f2">> => "string", <<"f3">> => 0},
-                 hocon_schema:check_plain(Sc, #{<<"f2">> => <<"string">>},
+                 hocon_tconf:check_plain(Sc, #{<<"f2">> => <<"string">>},
                                           #{nullable => true})),
     ?VALIDATION_ERR(#{reason := not_nullable, path := "f1"},
-                    hocon_schema:check_plain(Sc, #{<<"f2">> => <<"string">>},
+                    hocon_tconf:check_plain(Sc, #{<<"f2">> => <<"string">>},
                                              #{nullable => false})),
     ok.
 
@@ -461,7 +422,7 @@ bad_root_test() ->
     Input1 = "ab=1",
     {ok, Data1} = hocon:binary(Input1),
     ?VALIDATION_ERR(#{reason := bad_value_for_struct},
-                    hocon_schema:check_plain(Sc, Data1)),
+                    hocon_tconf:check_plain(Sc, Data1)),
     ok.
 
 bad_value_test() ->
@@ -469,20 +430,20 @@ bad_value_test() ->
     {ok, M} = hocon:binary(Conf, #{format => richmap}),
     ?VALIDATION_ERR(#{reason := bad_value_for_struct},
                     begin
-                        {Mapped, _} = hocon_schema:map(demo_schema, M),
+                        {Mapped, _} = hocon_tconf:map(demo_schema, M),
                         Mapped
                     end).
 
 no_translation_test() ->
     ConfIn = "bar={field1=w}",
     {ok, M} = hocon:binary(ConfIn, #{format => richmap}),
-    {Mapped, Conf} = hocon_schema:map(?MODULE, M),
-    ?assertEqual(Mapped, hocon_schema:translate(?MODULE, Conf, Mapped)).
+    {Mapped, Conf} = hocon_tconf:map(?MODULE, M),
+    ?assertEqual(Mapped, hocon_tconf:translate(?MODULE, Conf, Mapped)).
 
 no_translation2_test() ->
     Sc = #{roots => [{f1, integer()}]
           },
-    ?assertEqual([], hocon_schema:translate(Sc, #{}, [])).
+    ?assertEqual([], hocon_tconf:translate(Sc, #{}, [])).
 
 translation_crash_test() ->
     Sc = #{roots => [{f1, hoconsc:mk(integer())},
@@ -491,9 +452,9 @@ translation_crash_test() ->
            translations => #{"tr1" => [{"f3", fun(_Conf) -> error(always) end}]}
           },
     {ok, Data} = hocon:binary("f1=12,f2=foo", #{format => richmap}),
-    {Mapped, Conf} = hocon_schema:map(Sc, Data),
+    {Mapped, Conf} = hocon_tconf:map(Sc, Data),
     ?assertThrow({_, [{translation_error, #{reason := always, exception := error}}]},
-                 hocon_schema:translate(Sc, Conf, Mapped)).
+                 hocon_tconf:translate(Sc, Conf, Mapped)).
 
 %% a schema module may have multiple root names (which the roots/0 returns)
 %% map/2 checks maps all the roots
@@ -506,9 +467,9 @@ map_just_one_root_test() ->
                                ]}
           },
     {ok, Data} = hocon:binary("root={f1=1,f2=bar}", #{format => richmap}),
-    {[], NewData} = hocon_schema:map(Sc, Data, [root]),
+    {[], NewData} = hocon_tconf:map(Sc, Data, [root]),
     ?assertEqual(#{<<"root">> => #{<<"f2">> => "bar", <<"f1">> => 1}},
-                 hocon_schema:richmap_to_map(NewData)).
+                 richmap_to_map(NewData)).
 
 validation_error_if_not_nullable_test() ->
   Sc = #{roots => [root],
@@ -518,20 +479,20 @@ validation_error_if_not_nullable_test() ->
         },
     Data = #{},
     ?VALIDATION_ERR(#{reason := not_nullable},
-                    hocon_schema:check_plain(Sc, Data, #{nullable => false})).
+                    hocon_tconf:check_plain(Sc, Data, #{nullable => false})).
 
 unknown_fields_test_() ->
     Conf = "person.id.num=123,person.name=mike",
     {ok, M} = hocon:binary(Conf, #{format => richmap}),
     ?GEN_VALIDATION_ERR(#{reason := unknown_fields,
                           unknown := [{<<"name">>, #{line := 1}}]
-                         }, hocon_schema:map(demo_schema, M, all)).
+                         }, hocon_tconf:map(demo_schema, M, all)).
 
 nullable_field_test() ->
     Sc = #{roots => [{f1, hoconsc:mk(integer(), #{nullable => false})}]
           },
     ?VALIDATION_ERR(#{reason := not_nullable, path := "f1"},
-                    hocon_schema:check_plain(Sc, #{})),
+                    hocon_tconf:check_plain(Sc, #{})),
     ok.
 
 bad_input_test() ->
@@ -539,17 +500,17 @@ bad_input_test() ->
           },
     %% NOTE: this is not a valid richmap, intended to test a crash
     BadInput = #{?HOCON_V => #{<<"f1">> => 1}},
-    ?assertError({bad_richmap, 1}, hocon_schema:map(Sc, BadInput)).
+    ?assertError({bad_richmap, 1}, hocon_tconf:map(Sc, BadInput)).
 
 not_array_test() ->
     Sc = #{roots => [{f1, hoconsc:array(integer())}]
           },
     BadInput = #{<<"f1">> => 1},
     ?VALIDATION_ERR(#{expected_data_type := array, got := 1},
-                    hocon_schema:check_plain(Sc, BadInput)),
+                    hocon_tconf:check_plain(Sc, BadInput)),
     BadInput1 = #{<<"f1">> => <<"foo">>},
     ?VALIDATION_ERR(#{expected_data_type := array, got := string},
-                    hocon_schema:check_plain(Sc, BadInput1)).
+                    hocon_tconf:check_plain(Sc, BadInput1)).
 
 converter_test() ->
     Sc = #{roots => [{f1, hoconsc:mk(integer(),
@@ -557,16 +518,16 @@ converter_test() ->
           },
     Input = #{<<"f1">> => <<"one">>},
     BadIn = #{<<"f1">> => <<"two">>},
-    ?assertEqual(#{<<"f1">> => 1}, hocon_schema:check_plain(Sc, Input)),
+    ?assertEqual(#{<<"f1">> => 1}, hocon_tconf:check_plain(Sc, Input)),
     ?VALIDATION_ERR(#{reason := converter_crashed},
-                    hocon_schema:check_plain(Sc, BadIn)).
+                    hocon_tconf:check_plain(Sc, BadIn)).
 
 no_dot_in_root_name_test() ->
     Sc = #{roots => ["a.b"],
            fields => [{f1, hoconsc:mk(integer())}]
           },
     ?assertError({bad_root_name, _, "a.b"},
-                hocon_schema:check(Sc, #{<<"whateverbi">> => 1})).
+                hocon_tconf:check(Sc, #{<<"whateverbi">> => 1})).
 
 union_of_roots_test() ->
     Sc = #{roots => [{f1, hoconsc:union([dummy, "m1", "m2"])}],
@@ -592,7 +553,7 @@ multiple_errors_test() ->
 
 check_return_atom_keys(Sc, Input) ->
     {ok, Map} = hocon:binary(Input),
-    hocon_schema:check_plain(Sc, Map, #{atom_key => true}).
+    hocon_tconf:check_plain(Sc, Map, #{atom_key => true}).
 
 resolve_struct_name_test() ->
     ?assertEqual(foo, hocon_schema:resolve_struct_name(demo_schema, "foo")),
@@ -604,7 +565,7 @@ sensitive_data_obfuscation_test() ->
     Self = self(),
     with_envs(
       fun() ->
-              hocon_schema:check_plain(Sc, #{<<"secret">> => "aaa"},
+              hocon_tconf:check_plain(Sc, #{<<"secret">> => "aaa"},
                                        #{logger => fun(_Level, Msg) -> Self ! Msg end,
                                          apply_override_envs => true
                                         }),
@@ -623,14 +584,14 @@ remote_ref_test() ->
           },
     {ok, Data} = hocon:binary("root={f1={field1=foo}}", #{}),
     ?assertMatch(#{root := #{f1 := #{field1 := "foo"}}},
-                 hocon_schema:check_plain(Sc, Data, #{atom_key => true})),
+                 hocon_tconf:check_plain(Sc, Data, #{atom_key => true})),
     ok.
 
 local_ref_test() ->
     Input = "parent={child={name=marribay}}",
     {ok, Data} = hocon:binary(Input, #{}),
     ?assertMatch(#{parent := #{child := #{name := "marribay"}}},
-                 hocon_schema:check_plain(?MODULE, Data, #{atom_key => true}, [parent])),
+                 hocon_tconf:check_plain(?MODULE, Data, #{atom_key => true}, [parent])),
     ok.
 
 integrity_check_test() ->
@@ -640,8 +601,8 @@ integrity_check_test() ->
                                ]},
            validations => [{"f1 > f2",
                             fun(C) ->
-                                    F1 = hocon_schema:get_value("root.f1", C),
-                                    F2 = hocon_schema:get_value("root.f2", C),
+                                    F1 = hocon_maps:get("root.f1", C),
+                                    F2 = hocon_maps:get("root.f2", C),
                                     F1 > F2
                             end
                            }]
@@ -670,7 +631,7 @@ integrity_crash_test() ->
 
 check_plain_bin(Sc, Data, Opts) ->
     {ok, Conf} = hocon:binary(Data, #{}),
-    hocon_schema:check_plain(Sc, Conf, Opts).
+    hocon_tconf:check_plain(Sc, Conf, Opts).
 
 default_value_for_array_field_test() ->
     Sc = #{roots => [ {k, hoconsc:mk(hoconsc:array(string()), #{default => [<<"a">>, <<"b">>]})}
@@ -679,8 +640,8 @@ default_value_for_array_field_test() ->
           },
     Conf = "x = y",
     {ok, RichMap} = hocon:binary(Conf, #{format => richmap}),
-    ?assertEqual(#{<<"k">> => ["a", "b"], <<"x">> => "y"}, hocon_schema:richmap_to_map(
-       hocon_schema:check(Sc, RichMap))).
+    ?assertEqual(#{<<"k">> => ["a", "b"], <<"x">> => "y"}, richmap_to_map(
+       hocon_tconf:check(Sc, RichMap))).
 
 default_value_map_field_test() ->
     Sc = #{roots => [ {k, #{type => hoconsc:ref(sub),
@@ -695,7 +656,7 @@ default_value_map_field_test() ->
     ?assertEqual(#{<<"k">> => #{<<"a">> => "foo",
                                 <<"b">> => "bar"},
                    <<"x">> => "y"},
-                 hocon_schema:richmap_to_map(hocon_schema:check(Sc, RichMap))).
+                 richmap_to_map(hocon_tconf:check(Sc, RichMap))).
 
 default_value_for_null_enclosing_struct_test() ->
     Sc = #{roots => [ {"l1", #{type => hoconsc:ref("l2")}} ],
@@ -707,9 +668,9 @@ default_value_for_null_enclosing_struct_test() ->
     {ok, PlainMap} = hocon:binary(Conf, #{}),
     {ok, RichMap} = hocon:binary(Conf, #{format => richmap}),
     ?assertEqual(#{<<"l1">> => #{<<"l2">> => 22}},
-                 hocon_schema:check_plain(Sc, PlainMap, #{nullable => true})),
+                 hocon_tconf:check_plain(Sc, PlainMap, #{nullable => true})),
     ?assertEqual(#{<<"l1">> => #{<<"l2">> => 22}},
-                 hocon_schema:check(Sc, RichMap, #{nullable => true, return_plain => true})).
+                 hocon_tconf:check(Sc, RichMap, #{nullable => true, return_plain => true})).
 
 fill_primitive_defaults_test() ->
     Sc = #{roots => ["a"],
@@ -722,9 +683,9 @@ fill_primitive_defaults_test() ->
                ]}
           },
     ?assertMatch(#{<<"a">> := #{<<"b">> := 888, <<"c">> := 15000, <<"d">> := 16}},
-        hocon_schema:check_plain(Sc, #{}, #{nullable => true})),
+        hocon_tconf:check_plain(Sc, #{}, #{nullable => true})),
     ?assertMatch(#{<<"a">> := #{<<"b">> := 888, <<"c">> := <<"15s">>, <<"d">> := <<"16">>}},
-        hocon_schema:check_plain(Sc, #{}, #{nullable => true, only_fill_defaults => true})),
+        hocon_tconf:check_plain(Sc, #{}, #{nullable => true, only_fill_defaults => true})),
     ok.
 
 fill_complex_defaults_test() ->
@@ -737,7 +698,7 @@ fill_complex_defaults_test() ->
           },
     %% ensure integer array is not converted to a string
     ?assertMatch(#{<<"a">> := #{<<"c">> := 2, <<"d">> := [90, 91, 92]}},
-        hocon_schema:check_plain(Sc, #{}, #{only_fill_defaults => true})),
+        hocon_tconf:check_plain(Sc, #{}, #{only_fill_defaults => true})),
     ok.
 
 root_array_test_() ->
@@ -756,7 +717,7 @@ root_array_test_() ->
               ?assertEqual(#{<<"foo">> => [#{<<"kling">> => 1, <<"klang">> => 2},
                                            #{<<"kling">> => 2, <<"klang">> => 4},
                                            #{<<"kling">> => 3, <<"klang">> => 6}]},
-                           hocon_schema:richmap_to_map(hocon_schema:check(Sc, RichMap)))
+                           richmap_to_map(hocon_tconf:check(Sc, RichMap)))
       end},
      {"plainmap",
       fun() ->
@@ -764,14 +725,14 @@ root_array_test_() ->
               ?assertEqual(#{<<"foo">> => [#{<<"kling">> => 1, <<"klang">> => 2},
                                            #{<<"kling">> => 2, <<"klang">> => 4},
                                            #{<<"kling">> => 3, <<"klang">> => 6}]},
-                           hocon_schema:check(Sc, PlainMap, #{format => map}))
+                           hocon_tconf:check(Sc, PlainMap, #{format => map}))
       end},
      {"empty",
       fun() ->
               {ok, Map} = hocon:binary("foo = []", #{format => richmap}),
               ?assertEqual(#{<<"foo">> => []},
-                           hocon_schema:richmap_to_map(
-                                hocon_schema:check(Sc, Map, #{format => richmap})))
+                           richmap_to_map(
+                                hocon_tconf:check(Sc, Map, #{format => richmap})))
       end}
     ].
 
@@ -795,7 +756,7 @@ test_array_env_override(Format) ->
                 ?assertEqual(#{<<"foo">> => [#{<<"kling">> => 111},
                                              #{<<"klang">> => 222}
                                             ]},
-                             hocon_schema:richmap_to_map(hocon_schema:check(Sc, Parsed, Opts)))
+                             richmap_to_map(hocon_tconf:check(Sc, Parsed, Opts)))
         end, [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"},
               {"EMQX_FOO__1__KLING", "111"},
               {"EMQX_FOO__2__KLANG", "222"}
@@ -810,7 +771,7 @@ array_env_override_ignore_test() ->
                 Conf = "",
                 {ok, Parsed} = hocon:binary(Conf, #{format => map}),
                 Opts = #{format => map, nullable => true, apply_override_envs => true},
-                ?assertEqual(#{}, hocon_schema:check(Sc, Parsed, Opts))
+                ?assertEqual(#{}, hocon_tconf:check(Sc, Parsed, Opts))
         end, envs([{"EMQX_FOO__first__intf", "111"}])).
 
 bad_indexed_map_test() ->
@@ -824,7 +785,7 @@ bad_indexed_map_test() ->
     ?assertThrow({_, [{validation_error, #{expected_index := 3,
                                            got_index := 4,
                                            path := "foo.bar"}}]},
-                 hocon_schema:check(Sc, Conf, #{format => map})).
+                 hocon_tconf:check(Sc, Conf, #{format => map})).
 
 
 fill_defaults_with_env_override_test() ->
@@ -837,7 +798,7 @@ fill_defaults_with_env_override_test() ->
       fun() ->
               Conf0 = "foo={bar=121}",
               {ok, Conf} = hocon:binary(Conf0),
-              Res = hocon_schema:check_plain(Sc, Conf, #{only_fill_defaults => true,
+              Res = hocon_tconf:check_plain(Sc, Conf, #{only_fill_defaults => true,
                                                          apply_override_envs => true}),
               ?assertEqual(#{<<"foo">> => #{<<"bar">> => 122}}, Res)
       end, envs([{"EMQX_FOO__BAR", "122"}])).
@@ -884,7 +845,7 @@ array_env_override_test_() ->
                Conf = <<"foo : {bar : [0, 2, 0]}">>,
                Checked = test_array_override(Sc, richmap, EnvsFooBar13, Conf),
                ?assertEqual(#{<<"foo">> => #{<<"bar">> => [1, 2, 3]}},
-                            hocon_schema:richmap_to_map(Checked))
+                            richmap_to_map(Checked))
        end}
     , {"override_parsed_non-array_plain",
        fun() ->
@@ -899,7 +860,7 @@ array_env_override_test_() ->
                Envs = envs([{"EMQX_FOO__BAR__1", "1"}]),
                Checked = test_array_override(Sc, richmap, Envs, Conf),
                ?assertEqual(#{<<"foo">> => #{<<"bar">> => [1]}},
-                            hocon_schema:richmap_to_map(Checked))
+                            richmap_to_map(Checked))
        end}
     ].
 
@@ -913,7 +874,7 @@ test_array_override(Sc, Format, Envs, Conf) ->
                       {ok, Parsed} = hocon:binary(Conf, #{format => Format}),
                       Opts = #{format => Format, nullable => true,
                                apply_override_envs => true},
-                      try hocon_schema:check(Sc, Parsed, Opts)
+                      try hocon_tconf:check(Sc, Parsed, Opts)
                       catch throw : {_Sc, R} -> R
                       end
               end, Envs).
@@ -925,7 +886,7 @@ test_array_env_override_t2(Sc, Format) ->
                 Opts = #{format => Format, nullable => true, apply_override_envs => true},
                 ?assertEqual(#{<<"foo">> => #{<<"bar">> => [2, 1],
                                               <<"quu">> => ["quu"]}},
-                             hocon_schema:richmap_to_map(hocon_schema:check(Sc, Parsed, Opts)))
+                             richmap_to_map(hocon_tconf:check(Sc, Parsed, Opts)))
         end, [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"},
               {"EMQX_FOO__bar__1", "2"},
               {"EMQX_FOO__bar__2", "1"},
@@ -942,14 +903,14 @@ ref_nullable_test() ->
     Conf = "x = y",
     {ok, RichMap} = hocon:binary(Conf, #{format => richmap}),
     ?assertEqual(#{<<"x">> => "y"},
-                 hocon_schema:richmap_to_map(hocon_schema:check(Sc, RichMap))),
+                 richmap_to_map(hocon_tconf:check(Sc, RichMap))),
     {ok, Map} = hocon:binary("k = null, x = y", #{format => map}),
-    ?assertEqual(#{<<"x">> => "y"}, hocon_schema:check_plain(Sc, Map)),
+    ?assertEqual(#{<<"x">> => "y"}, hocon_tconf:check_plain(Sc, Map)),
     with_envs(
       fun() ->
             Opts = #{apply_override_envs => true},
             {ok, Map2} = hocon:binary("k = {a: a, b: b}, x = y", #{format => map}),
-            ?assertEqual(#{<<"x">> => "y"}, hocon_schema:check_plain(Sc, Map2, Opts))
+            ?assertEqual(#{<<"x">> => "y"}, hocon_tconf:check_plain(Sc, Map2, Opts))
       end, [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"},
             {"EMQX_K", "null"}
            ]).
@@ -961,7 +922,7 @@ lazy_test() ->
     Conf = "x = y, k=whatever",
     {ok, RichMap} = hocon:binary(Conf, #{format => richmap}),
     ?assertEqual(#{<<"x">> => "y", <<"k">> => <<"whatever">>},
-                 hocon_schema:richmap_to_map(hocon_schema:check(Sc, RichMap))).
+                 richmap_to_map(hocon_tconf:check(Sc, RichMap))).
 
 lazy_root_test() ->
     Sc = #{roots => [{foo, hoconsc:lazy(hoconsc:ref(foo))}],
@@ -973,7 +934,7 @@ lazy_root_test() ->
     Conf = "foo = {x = y, k=whatever}",
     {ok, RichMap} = hocon:binary(Conf, #{format => richmap}),
     ?assertEqual(#{<<"foo">> => #{<<"x">> => <<"y">>, <<"k">> => <<"whatever">>}},
-                 hocon_schema:richmap_to_map(hocon_schema:check(Sc, RichMap))).
+                 richmap_to_map(hocon_tconf:check(Sc, RichMap))).
 
 lazy_root_env_override_test() ->
     Sc = #{roots => [{foo, hoconsc:lazy(hoconsc:ref(bar))}],
@@ -989,10 +950,10 @@ lazy_root_env_override_test() ->
               {ok, PlainMap} = hocon:binary(Conf, #{}),
               Opts = #{format => map, nullable => true, apply_override_envs => true},
               ?assertEqual(#{<<"foo">> => #{<<"kling">> => 1}},
-                           hocon_schema:check(Sc, PlainMap, Opts)),
+                           hocon_tconf:check(Sc, PlainMap, Opts)),
               ?assertEqual(#{<<"foo">> => #{<<"kling">> => 111,
                                             <<"klang">> => 222}},
-                           hocon_schema:check(Sc, PlainMap, Opts#{check_lazy => true}))
+                           hocon_tconf:check(Sc, PlainMap, Opts#{check_lazy => true}))
       end, [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"},
             {"EMQX_FOO__KLING", "111"},
             {"EMQX_FOO__KLANG", "222"}
@@ -1016,7 +977,7 @@ union_converter_test() ->
                              }}]
              }
           },
-    Checked = hocon_schema:check_plain(Sc, #{<<"foo">> => #{<<"bar">> => <<"1,2">>}},
+    Checked = hocon_tconf:check_plain(Sc, #{<<"foo">> => #{<<"bar">> => <<"1,2">>}},
                                        #{atom_key => true}),
     ?assertEqual(#{foo => #{bar => ["1", "2"]}}, Checked).
 
@@ -1029,7 +990,7 @@ list_converter_test() ->
                              }}]
             }
          },
-  Checked = hocon_schema:check_plain(Sc, #{<<"foo">> => #{<<"bar">> => #{<<"a">> => <<"c">>}}},
+  Checked = hocon_tconf:check_plain(Sc, #{<<"foo">> => #{<<"bar">> => #{<<"a">> => <<"c">>}}},
     #{atom_key => true}),
   ?assertEqual(#{foo => #{bar =>  [{<<"a">>, <<"c">>}]}}, Checked).
 
@@ -1039,8 +1000,8 @@ singleton_type_test() ->
             #{foo => [{bar, bar}]}
           },
     ?assertEqual(#{foo => #{bar => bar}},
-                 hocon_schema:check_plain(Sc, #{<<"foo">> => #{<<"bar">> => <<"bar">>}},
-                                          #{atom_key => true})).
+                 hocon_tconf:check_plain(Sc, #{<<"foo">> => #{<<"bar">> => <<"bar">>}},
+                                         #{atom_key => true})).
 
 non_primitive_value_validation_test() ->
     Sc = fun(MinLen) ->
@@ -1051,9 +1012,9 @@ non_primitive_value_validation_test() ->
                   }
          end,
     ?assertEqual(#{foo => [1, 2]},
-                 hocon_schema:check_plain(Sc(2), #{<<"foo">> => [1, 2]}, #{atom_key => true})),
+                 hocon_tconf:check_plain(Sc(2), #{<<"foo">> => [1, 2]}, #{atom_key => true})),
     ?assertThrow({_, [{validation_error, #{reason := returned_false}}]},
-                 hocon_schema:check_plain(Sc(3), #{<<"foo">> => [1, 2]}, #{atom_key => true})),
+                 hocon_tconf:check_plain(Sc(3), #{<<"foo">> => [1, 2]}, #{atom_key => true})),
     ok.
 
 override_env_with_include_test() ->
@@ -1071,7 +1032,7 @@ override_env_with_include_test() ->
               Opts = #{format => map, nullable => true, apply_override_envs => true},
               ?assertEqual(#{<<"foo">> => #{<<"kling">> => 1,
                                             <<"klang">> => 233}},
-                           hocon_schema:check(Sc, PlainMap, Opts#{check_lazy => true}))
+                           hocon_tconf:check(Sc, PlainMap, Opts#{check_lazy => true}))
       end, [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"},
             {"EMQX_FOO", "{include \"etc/klingklang.conf\"}"}
            ]).
@@ -1094,8 +1055,8 @@ override_env_with_include_abs_path_test() ->
               Opts = #{format => map, nullable => true, apply_override_envs => true},
               ?assertEqual(#{<<"foo">> => #{<<"kling">> => 123,
                                             <<"klang">> => 456}},
-                           hocon_schema:check(Sc, PlainMap, Opts#{check_lazy => true,
-                                                                  apply_override_envs => true}))
+                           hocon_tconf:check(Sc, PlainMap, Opts#{check_lazy => true,
+                                                                 apply_override_envs => true}))
       end, [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"},
             {"EMQX_FOO", "{include \""++ Include ++ "\"}"}
            ]).
@@ -1127,13 +1088,15 @@ redundant_field_test() ->
                            type => "a",
                            backend => "b"
                           }},
-    ?assertEqual(Expected1, hocon_schema:check(Sc, Conf1Map, Opts)),
+    ?assertEqual(Expected1, hocon_tconf:check(Sc, Conf1Map, Opts)),
     Conf2 = "foo = {type = a, backend = b}",
     {ok, Conf2Map} = hocon:binary(Conf2, #{}),
-    ?assertEqual(Expected1, hocon_schema:check(Sc, Conf2Map, Opts)),
+    ?assertEqual(Expected1, hocon_tconf:check(Sc, Conf2Map, Opts)),
     Conf3 = "foo = {id = \"a:c\", type = a, backend = b}",
     {ok, Conf3Map} = hocon:binary(Conf3, #{}),
     ?assertThrow({_, [{validation_error, #{reason := {invalid_id, <<"a:c">>}}}]},
-                 hocon_schema:check(Sc, Conf3Map, Opts)),
+                 hocon_tconf:check(Sc, Conf3Map, Opts)),
     ok.
 
+richmap_to_map(Map) ->
+    hocon_util:richmap_to_map(Map).

@@ -143,8 +143,8 @@ translation("foo") ->
   [{"range", fun range/1}].
 
 range(Conf) ->
-    Min = hocon_schema:deep_get("foo.min", Conf, value),
-    Max = hocon_schema:deep_get("foo.max", Conf, value),
+    Min = hocon_maps:get("foo.min", Conf),
+    Max = hocon_maps:get("foo.max", Conf),
     case Min < Max of
         true ->
             {Min, Max};
@@ -154,7 +154,7 @@ range(Conf) ->
 ```
 
 As in the example, a translation callback is provided with the global config,
-specific field values can be retrieved with `hocon_schema:deep_get` API.
+specific field values can be retrieved with `hocon_maps:get` API.
 
 ### Config integrity validation
 
@@ -174,8 +174,8 @@ validations() ->
   [{"min =< max", fun min_max/1}].
 
 min_max(Conf) ->
-    Min = hocon_schema:deep_get("foo.min", Conf, value),
-    Max = hocon_schema:deep_get("foo.max", Conf, value),
+    Min = hocon_maps:get("foo.min", Conf),
+    Max = hocon_maps:get("foo.max", Conf),
     case Min =< Max of
         true -> ok %% return true | ok to pass this validation
         false -> "min > max is not allowed"
