@@ -20,11 +20,14 @@
 -export([pipeline_fun/1, pipeline/3]).
 -export([stack_multiple_push/2, stack_push/2, get_stack/2, top_stack/2]).
 -export([is_same_file/2, real_file_name/1]).
--export([richmap_to_map/1]).
+-export([is_richmap/1, richmap_to_map/1]).
 -export([env_prefix/1, is_array_index/1]).
 -export([update_array_element/3]).
+-export([split_path/1]).
 
 -include("hocon_private.hrl").
+
+-define(IS_NON_EMPTY_STRING(X), (is_list(X) andalso X =/= [] andalso is_integer(hd(X)))).
 
 deep_map_merge(M1, M2) when is_map(M1), is_map(M2) ->
     do_deep_merge(M1, M2, fun deep_map_merge/2);
@@ -94,6 +97,12 @@ real_file_name(F) ->
         {error, _} -> F
     end.
 
+%% @doc Check if it's a richmap.
+%% A richmap always has a `?HOCON_V' field.
+is_richmap(#{?HOCON_V := _}) -> true;
+is_richmap([H | _]) -> is_richmap(H);
+is_richmap(_) -> false.
+
 %% @doc Convert richmap to plain-map.
 richmap_to_map(RichMap) when is_map(RichMap) ->
     richmap_to_map(maps:iterator(RichMap), #{});
@@ -126,6 +135,8 @@ env_prefix(Default) ->
         Prefix -> Prefix
     end.
 
+is_array_index(L) when is_list(L) ->
+    is_array_index(list_to_binary(L));
 is_array_index(I) when is_binary(I) ->
     try
         {true, binary_to_integer(I)}
@@ -184,3 +195,18 @@ update_array_element(List, Index, GoDeep) when is_list(List) ->
                       [H | T] -> {H, T}
                   end,
     Head ++ [GoDeep(Nth) | Tail].
+
+split_path(Path) ->
+    lists:flatten(do_split(str(Path))).
+
+do_split([]) -> [];
+do_split(Path) when ?IS_NON_EMPTY_STRING(Path) ->
+    [bin(I) || I <- string:tokens(Path, ".")];
+do_split([H | T]) ->
+    [do_split(H) | do_split(T)].
+
+str(A) when is_atom(A) -> atom_to_list(A);
+str(B) when is_binary(B) -> binary_to_list(B);
+str(S) when is_list(S) -> S.
+
+bin(S) -> iolist_to_binary(S).

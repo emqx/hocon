@@ -178,11 +178,11 @@ management_test_() ->
 
 load_hocon(File) ->
     {ok, C} = hocon:load(File, #{format => richmap}),
-    hocon_schema:generate(emqx_schema, C).
+    hocon_tconf:generate(emqx_schema, C).
 
 load_hocon(File, Schema) ->
     {ok, C} = hocon:load(File, #{format => richmap}),
-    hocon_schema:generate(Schema, C).
+    hocon_tconf:generate(Schema, C).
 
 load_cuttlefish(File) ->
     cuttlefish_generator:map(cuttlefish_schema:files(["sample-schemas/emqx.schema"]),

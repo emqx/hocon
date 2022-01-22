@@ -499,7 +499,7 @@ files_test() ->
     ?assertEqual("b_2.conf", Filename(deep_get("b", Conf, ?METADATA))).
 
 deep_get(Key, Conf, Tag) ->
-    Map = hocon_schema:deep_get(Key, Conf),
+    Map = hocon_maps:deep_get(Key, Conf),
     maps:get(Tag, Map).
 
 utf8_test() ->

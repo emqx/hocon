@@ -82,8 +82,8 @@ setting(type) -> string();
 setting(_) -> undefined.
 
 range(Conf) ->
-    Min = hocon_schema:get_value("foo.min", Conf),
-    Max = hocon_schema:get_value("foo.max", Conf),
+    Min = hocon_maps:get("foo.min", Conf),
+    Max = hocon_maps:get("foo.max", Conf),
     case Min < Max of
         true ->
             {Min, Max};
