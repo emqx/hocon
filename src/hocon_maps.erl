@@ -17,7 +17,8 @@
 -module(hocon_maps).
 
 %% Deep ops of deep maps.
--export([deep_get/2, deep_put/4]).
+-export([deep_get/2, deep_put/4,
+         deep_merge/2]).
 
 %% Access maybe-rich map values,
 %% Always reutrn plain value.
@@ -61,7 +62,7 @@ maybe_array(V) -> V =:= ?EMPTY_MAP.
 update_array_element(?EMPTY_MAP, Index, GoDeep) ->
     update_array_element([], Index, GoDeep);
 update_array_element(List, Index, GoDeep) when is_list(List) ->
-    hocon_util:update_array_element(List, Index, GoDeep).
+    do_update_array_element(List, Index, GoDeep).
 
 update_map_field(Opts, Map, FieldName, GoDeep) ->
     FieldV0 = maps:get(FieldName, Map, ?EMPTY_MAP),
@@ -146,3 +147,92 @@ try_get(Key, Conf, map) when is_list(Conf) ->
         error : badarg ->
             undefined
     end.
+
+%% @doc Recursively merge two maps.
+%% @see hocon:deep_merge/2 for more.
+deep_merge(#{?HOCON_T := array, ?HOCON_V := V1} = Base,
+           #{?HOCON_T := object, ?HOCON_V := V2} = Top) ->
+    NewV = deep_merge2(V1, V2),
+    case is_list(NewV) of
+        true ->
+            %% after merge, it's still an array, only update the value
+            %% keep the metadata
+            Base#{?HOCON_V => NewV};
+        false ->
+            %% after merge, it's no longer an array, return all old
+            Top
+    end;
+deep_merge(V1, V2) ->
+    deep_merge2(V1, V2).
+
+deep_merge2(M1, M2) when is_map(M1) andalso is_map(M2) ->
+    do_deep_merge(M1, M2, fun deep_merge/2);
+deep_merge2(V1, V2) ->
+    case is_list(V1) andalso is_indexed_array(V2) of
+        true -> merge_array(V1, V2);
+        false -> V2
+    end.
+
+do_deep_merge(M1, M2, GoDeep) when is_map(M1), is_map(M2) ->
+    maps:fold(
+        fun(K, V2, Acc) ->
+                V1 = maps:get(K, Acc, undefined),
+                NewV = do_deep_merge(V1, V2, GoDeep),
+                Acc#{K => NewV}
+        end, M1, M2);
+do_deep_merge(V1, V2, GoDeep) ->
+    GoDeep(V1, V2).
+
+is_indexed_array(M) when is_map(M) ->
+    lists:all(fun(K) -> case is_array_index(K) of
+                            {true, _} -> true;
+                            _ -> false
+                        end
+              end, maps:keys(M));
+is_indexed_array(_) ->
+    false.
+
+%% convert indexed array to key-sorted tuple {index, value} list
+indexed_array_as_list(M) when is_map(M) ->
+    lists:keysort(
+      1, lists:map(fun({K, V}) ->
+                           {true, I} = is_array_index(K),
+                           {I, V}
+                   end, maps:to_list(M))).
+
+merge_array(Array, Top) when is_list(Array) ->
+    ToMerge = indexed_array_as_list(Top),
+    do_merge_array(Array, ToMerge).
+
+do_merge_array(Array, []) -> Array;
+do_merge_array(Array, [{I, Value} | Rest]) ->
+    GoDeep = fun(Elem) -> deep_merge(Elem, Value) end,
+    NewArray = do_update_array_element(Array, I, GoDeep),
+    do_merge_array(NewArray, Rest).
+
+do_update_array_element(List, Index, GoDeep) when is_list(List) ->
+    MinIndex = 1,
+    MaxIndex = length(List) + 1,
+    Index < MinIndex andalso throw({bad_array_index, "index starts from 1"}),
+    Index > MaxIndex andalso
+    begin
+        Msg0 = io_lib:format("should not be greater than ~p.", [MaxIndex]),
+        Msg1 = case Index > 9 of
+                   true ->
+                       "~nEnvironment variable overrides applied in alphabetical "
+                       "make sure to use zero paddings such as '02' to ensure "
+                       "10 is ordered after it";
+                   false ->
+                       []
+               end,
+        throw({bad_array_index, [Msg0, Msg1]})
+    end,
+    {Head, Tail0} = lists:split(Index - 1, List),
+    {Nth, Tail} = case Tail0 of
+                      [] -> {#{}, []};
+                      [H | T] -> {H, T}
+                  end,
+    Head ++ [GoDeep(Nth) | Tail].
+
+is_array_index(Maybe) ->
+    hocon_util:is_array_index(Maybe).
