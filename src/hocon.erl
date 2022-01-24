@@ -117,12 +117,7 @@ binary(Binary, Opts) ->
 %% NOTE: when merging indexed-map to list, the index boundary
 %% is checked to ensure the elements are consecutive
 -spec deep_merge(undefined | map(), map()) -> map().
-deep_merge(Base, Override) -> hocon_util:deep_merge(Base, Override).
-
-%% @doc Recursively merge two maps.
-%% Arrays are not merged as deep_merge/2.
--spec deep_map_merge(undefined | map(), map()) -> map().
-deep_map_merge(Base, Override) -> hocon_util:deep_map_merge(Base, Override).
+deep_merge(Base, Override) -> hocon_maps:deep_merge(Base, Override).
 
 do_binary(String, Ctx) when is_list(String) ->
     do_binary(iolist_to_binary(String), Ctx);
@@ -299,7 +294,7 @@ do_concat(Concat, Location) ->
 do_concat([], _, []) ->
     nothing;
 do_concat([], MetaKey, [{#{?METADATA := MetaFirstElem}, _V} = F | _Fs] = Acc) when ?IS_FIELD(F) ->
-    Metadata = deep_map_merge(MetaFirstElem, MetaKey),
+    Metadata = deep_merge(MetaFirstElem, MetaKey),
     case lists:all(fun (F0) -> ?IS_FIELD(F0) end, Acc) of
         true ->
             #{?HOCON_T => object, ?HOCON_V => lists:reverse(Acc), ?METADATA => Metadata};
@@ -307,7 +302,7 @@ do_concat([], MetaKey, [{#{?METADATA := MetaFirstElem}, _V} = F | _Fs] = Acc) wh
             concat_error(lists:reverse(Acc), #{?METADATA => Metadata})
     end;
 do_concat([], MetaKey, [#{?HOCON_T := string, ?METADATA := MetaFirstElem} | _] = Acc) ->
-    Metadata = deep_map_merge(MetaFirstElem, MetaKey),
+    Metadata = deep_merge(MetaFirstElem, MetaKey),
     case lists:all(fun (A) -> type_of(A) =:= string end, Acc) of
         true ->
             BinList = lists:map(fun(M) -> maps:get(?HOCON_V , M) end, lists:reverse(Acc)),
@@ -316,7 +311,7 @@ do_concat([], MetaKey, [#{?HOCON_T := string, ?METADATA := MetaFirstElem} | _] =
             concat_error(lists:reverse(Acc), #{?METADATA => Metadata})
     end;
 do_concat([], MetaKey, [#{?HOCON_T := array, ?METADATA := MetaFirstElem} | _] = Acc) ->
-    Metadata = deep_map_merge(MetaFirstElem, MetaKey),
+    Metadata = deep_merge(MetaFirstElem, MetaKey),
     case lists:all(fun (A) -> type_of(A) =:= array end, Acc) of
         true ->
             NewValue = lists:append(lists:reverse(lists:map(fun value_of/1, Acc))),
@@ -382,7 +377,7 @@ paths(Key) when is_list(Key) ->
 merge(Key, Val, Map) when is_map(Val) ->
     case maps:find(Key, Map) of
         {ok, MVal} ->
-            maps:put(Key, hocon_util:deep_merge(MVal, Val), Map);
+            maps:put(Key, hocon_maps:deep_merge(MVal, Val), Map);
         _Other ->
             maps:put(Key, Val, Map)
     end;

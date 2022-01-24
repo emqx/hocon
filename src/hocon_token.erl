@@ -145,7 +145,7 @@ parse(Tokens, Ctx) ->
 include(#{?HOCON_T := object} = O, Ctx) ->
     NewV = do_include(value_of(O), [], Ctx, hocon_util:get_stack(path, Ctx)),
     Filename = hd(hocon_util:get_stack(filename, Ctx)),
-    hocon_util:deep_merge(O, box_v(Filename, NewV)).
+    hocon_maps:deep_merge(O, box_v(Filename, NewV)).
 
 do_include([], Acc, _Ctx, _CurrentPath) ->
     lists:reverse(Acc);
@@ -159,23 +159,23 @@ do_include([#{?HOCON_T := include}=Include | More], Acc, Ctx, CurrentPath) ->
     end;
 do_include([#{?HOCON_T := variable}=V | More], Acc, Ctx, CurrentPath) ->
     VarWithAbsPath = abspath(value_of(V), hocon_util:get_stack(path, Ctx)),
-    NewV = hocon_util:deep_merge(V, box_v(filename(Ctx), VarWithAbsPath)),
+    NewV = hocon_maps:deep_merge(V, box_v(filename(Ctx), VarWithAbsPath)),
     do_include(More, [NewV | Acc], Ctx, CurrentPath);
 do_include([{Key, #{?HOCON_T := T}=X} | More], Acc, Ctx, CurrentPath) when ?IS_VALUE_LIST(T) ->
-    NewKey = hocon_util:deep_merge(Key, box(filename(Ctx))),
+    NewKey = hocon_maps:deep_merge(Key, box(filename(Ctx))),
     NewValue = do_include(value_of(X), [], Ctx, [Key | CurrentPath]),
-    NewX = hocon_util:deep_merge(X, box_v(filename(Ctx), line_of(Key), NewValue)),
+    NewX = hocon_maps:deep_merge(X, box_v(filename(Ctx), line_of(Key), NewValue)),
     do_include(More, [{NewKey, NewX} | Acc], Ctx, CurrentPath);
 do_include([#{?HOCON_T := T}=X | More], Acc, Ctx, CurrentPath) when ?IS_VALUE_LIST(T) ->
     NewValue = do_include(value_of(X), [], Ctx, CurrentPath),
-    do_include(More, [hocon_util:deep_merge(X, box_v(filename(Ctx), NewValue)) | Acc],
+    do_include(More, [hocon_maps:deep_merge(X, box_v(filename(Ctx), NewValue)) | Acc],
                Ctx, CurrentPath);
 do_include([{Key, #{?HOCON_T := _T}=X} | More], Acc, Ctx, CurrentPath) ->
-    NewKey = hocon_util:deep_merge(Key, box(filename(Ctx))),
-    NewX = hocon_util:deep_merge(X, box(filename(Ctx), line_of(Key))),
+    NewKey = hocon_maps:deep_merge(Key, box(filename(Ctx))),
+    NewX = hocon_maps:deep_merge(X, box(filename(Ctx), line_of(Key))),
     do_include(More, [{NewKey, NewX} | Acc], Ctx, CurrentPath);
 do_include([#{?HOCON_T := _T}=X | More], Acc, Ctx, CurrentPath) ->
-    NewX = hocon_util:deep_merge(X, box(filename(Ctx))),
+    NewX = hocon_maps:deep_merge(X, box(filename(Ctx))),
     do_include(More, [NewX | Acc], Ctx, CurrentPath).
 
 box_v(Filename, Value) ->
