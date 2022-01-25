@@ -16,7 +16,7 @@
 
 -module(hocon_pp).
 
--export([do/2]).
+-export([do/2, flat_dump/1]).
 
 -include("hocon_private.hrl").
 
@@ -43,6 +43,33 @@ do(Value, Opts) when is_map(Value) ->
     end;
 do(Value, Opts) ->
     pp(fmt(gen(Value, Opts)), Opts).
+
+%% @doc Print nested objects as flat 'path.to.key = value' pairs.
+%% Paths for array elements are as 1 based index numbers.
+%% When the input config is a richmap, original location is printed.
+-spec flat_dump(hocon:config()) -> iodata().
+flat_dump(Value) ->
+    Flatten = hocon_maps:flatten(Value, #{rich_value => true}),
+    pp_flat(Flatten).
+
+pp_flat([]) -> [];
+pp_flat([{Path, Value} | Rest]) ->
+    [ [Path, " = ", pp_flat_value(Value), "\n"]
+    | pp_flat(Rest)
+    ].
+
+pp_flat_value(#{?HOCON_V := Value} = V) ->
+    [pp_flat_value(Value), pp_source(maps:get(?METADATA, V, undefined))];
+pp_flat_value(V) ->
+    gen(V, #{}).
+
+pp_source(#{from_env := Env}) ->
+    [" # ", Env];
+pp_source(#{filename := F, line := Line}) ->
+    [" # ", F, ":", integer_to_list(Line)];
+pp_source(#{line := Line}) ->
+    [" # line=", integer_to_list(Line)];
+pp_source(undefined) -> "".
 
 pp(IoData, Opts) ->
     NewLine = maps:get(newline, Opts, "\n"),

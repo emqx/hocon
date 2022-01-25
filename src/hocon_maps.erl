@@ -257,7 +257,7 @@ flatten(Conf, Opts, Meta, Stack, Acc) when is_list(Conf) andalso Conf =/= [] ->
 flatten(#{?HOCON_V := Value} = Conf, Opts, _Meta, Stack, Acc) ->
     Meta = maps:get(?METADATA, Conf, undefined),
     flatten(Value, Opts, Meta, Stack, Acc);
-flatten(Conf, Opts, Meta, Stack, Acc) when is_map(Conf) ->
+flatten(Conf, Opts, Meta, Stack, Acc) when is_map(Conf) andalso Conf =/= ?EMPTY_MAP ->
     {Keys, Values} = lists:unzip(maps:to_list(Conf)),
     flatten_l(Values, Opts, Meta, Stack, Acc, Keys);
 flatten(Value, Opts, Meta, Stack, Acc) ->
