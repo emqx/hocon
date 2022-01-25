@@ -248,9 +248,9 @@ is_array_index(Maybe) ->
 %% metadata.
 -spec flatten(config(), flatten_opts()) -> [{binary(), term()}].
 flatten(Conf, Opts) ->
-    flatten(Conf, Opts, undefined, [], []).
+    lists:reverse(flatten(Conf, Opts, undefined, [], [])).
 
-flatten(Conf, Opts, Meta, Stack, Acc) when is_list(Conf) ->
+flatten(Conf, Opts, Meta, Stack, Acc) when is_list(Conf) andalso Conf =/= [] ->
     flatten_l(Conf, Opts, Meta, Stack, Acc, lists:seq(1, length(Conf)));
 flatten(#{?HOCON_V := Value} = Conf, Opts, _Meta, Stack, Acc) ->
     Meta = maps:get(?METADATA, Conf, undefined),
