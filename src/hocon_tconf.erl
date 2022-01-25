@@ -231,18 +231,33 @@ map(Schema, Conf0, Roots0, Opts0) ->
     Opts = merge_opts(#{schema => Schema,
                         format => richmap
                        }, Opts0),
+    Conf1 = ensure_format(Conf0, Opts),
     Roots = resolve_root_types(hocon_schema:roots(Schema), Roots0),
     %% assert
     lists:foreach(fun({RootName, _RootSc}) ->
                           ok = assert_no_dot(Schema, RootName)
                   end, Roots),
-    Conf1 = filter_by_roots(Opts, Conf0, Roots),
-    Conf = apply_envs(Schema, Conf1, Opts, Roots),
+    Conf2 = filter_by_roots(Opts, Conf1, Roots),
+    Conf = apply_envs(Schema, Conf2, Opts, Roots),
     {Mapped0, NewConf} = do_map(Roots, Conf, Opts, ?MAGIC_SCHEMA),
     ok = assert_no_error(Schema, Mapped0),
     ok = assert_integrity(Schema, NewConf, Opts),
     Mapped = log_and_drop_env_overrides(Opts, Mapped0),
     {Mapped, maybe_convert_to_plain_map(NewConf, Opts)}.
+
+%% ensure the input map is as desired in options.
+%% convert richmap to map if 'map' is wanted
+%% crash with not_richmap error if plain map is given for 'richmap' option
+ensure_format(Conf, #{format := richmap}) ->
+    case hocon_util:is_richmap(Conf) of
+        true -> Conf;
+        false -> error(not_richmap)
+    end;
+ensure_format(Conf, #{format := map}) ->
+    case hocon_util:is_richmap(Conf) of
+        true -> hocon_util:richmap_to_map(Conf);
+        false -> Conf
+    end.
 
 %% @doc Apply environment variable overrides on top of the given Conf0
 merge_env_overrides(Schema, Conf0, all, Opts) ->
