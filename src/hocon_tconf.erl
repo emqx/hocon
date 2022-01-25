@@ -249,15 +249,12 @@ map(Schema, Conf0, Roots0, Opts0) ->
 %% convert richmap to map if 'map' is wanted
 %% crash with not_richmap error if plain map is given for 'richmap' option
 ensure_format(Conf, #{format := richmap}) ->
-    case hocon_util:is_richmap(Conf) of
+    case hocon_maps:is_richmap(Conf) of
         true -> Conf;
         false -> error(not_richmap)
     end;
 ensure_format(Conf, #{format := map}) ->
-    case hocon_util:is_richmap(Conf) of
-        true -> hocon_util:richmap_to_map(Conf);
-        false -> Conf
-    end.
+    hocon_maps:ensure_plain(Conf).
 
 %% @doc Apply environment variable overrides on top of the given Conf0
 merge_env_overrides(Schema, Conf0, all, Opts) ->
@@ -911,7 +908,7 @@ type_hint(B) when is_binary(B) -> string; %% maybe secret, do not hint value
 type_hint(X) -> X.
 
 richmap_to_map(MaybeRichMap) ->
-    hocon_util:richmap_to_map(MaybeRichMap).
+    hocon_maps:ensure_plain(MaybeRichMap).
 
 %% treat 'null' as absence
 drop_nulls(_Opts, undefined) -> undefined;

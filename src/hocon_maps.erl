@@ -28,6 +28,8 @@
 
 -export([do_put/4]). %% internal
 
+-export([ensure_plain/1, is_richmap/1]).
+
 -include("hocon_private.hrl").
 
 -define(EMPTY_MAP, #{}).
@@ -115,7 +117,7 @@ deep_get(Path, Conf) ->
 %% always return plain-value.
 -spec get(string(), config()) -> term().
 get(Path, Map) ->
-    case hocon_util:is_richmap(Map) of
+    case is_richmap(Map) of
         true ->
             C = deep_get(Path, Map),
             hocon_util:richmap_to_map(C);
@@ -276,3 +278,13 @@ bin(I) when is_integer(I) -> integer_to_binary(I).
 infix([], _) -> [];
 infix([X], _) -> [X];
 infix([H | T], I) -> [H, I | infix(T, I)].
+
+ensure_plain(M) ->
+    case is_richmap(M) of
+        true -> hocon_util:richmap_to_map(M);
+        false -> M
+    end.
+
+%% @doc Check if it's a richmap.
+%% A richmap always has a `?HOCON_V' field.
+is_richmap(M) -> hocon_util:is_richmap(M).
