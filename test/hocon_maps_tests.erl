@@ -45,3 +45,39 @@ deep_get(Path, Conf, Param) ->
         undefined -> undefined;
         Map -> maps:get(Param, Map, undefined)
     end.
+
+%% try to load all sample files
+%% expect no crash
+flatten_test_() ->
+    Dir = code:lib_dir(hocon),
+    Files = filelib:wildcard(filename:join([Dir, "sample-configs", "**", "*.conf"])) ++
+            filelib:wildcard(filename:join([Dir, "etc", "*.conf"])),
+    [begin {F, fun() ->
+                       test_flatten(F, richmap),
+                       test_flatten(F, map)
+               end} end || F <- Files].
+
+test_flatten(File, Format) ->
+    case hocon:load(File, #{format => Format}) of
+        {error, {scan_error, _}} ->
+            ok;
+        {error, {parse_error, _}} ->
+            ok;
+        {error, {resolve_error, _}} ->
+            ok;
+        {error, {cycle, _}} ->
+            ok;
+        {ok, Conf} ->
+            %% assert no crash
+            _ = hocon_maps:flatten(Conf, #{rich_value => true}),
+            %% assert parsed to original
+            Pairs = hocon_maps:flatten(Conf, #{rich_value => false}),
+            ok = assert_flatten_value(Conf, Pairs)
+    end.
+
+assert_flatten_value(_, []) -> ok;
+assert_flatten_value(Conf, [{Path, Val} | Pairs]) ->
+    case hocon_maps:get(Path, Conf) of
+        Val -> assert_flatten_value(Conf, Pairs);
+        Orig -> error({Path, {exp, Orig}, {got, Val}})
+    end.
