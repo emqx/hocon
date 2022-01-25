@@ -81,3 +81,6 @@ assert_flatten_value(Conf, [{Path, Val} | Pairs]) ->
         Val -> assert_flatten_value(Conf, Pairs);
         Orig -> error({Path, {exp, Orig}, {got, Val}})
     end.
+
+flatten_primitive_value_test() ->
+    ?assertEqual([{<<>>, 1}], hocon_maps:flatten(1, #{})).
