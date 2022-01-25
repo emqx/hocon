@@ -271,7 +271,6 @@ unify_roots(Schema) ->
               end, Roots).
 
 str(A) when is_atom(A) -> atom_to_list(A);
-str(B) when is_binary(B) -> binary_to_list(B);
 str(S) when is_list(S) -> S.
 
 bin(A) when is_atom(A) -> atom_to_binary(A, utf8);
