@@ -24,20 +24,26 @@
 %% Always reutrn plain value.
 -export([get/2, get/3]).
 
+-export([flatten/2]).
+
 -export([do_put/4]). %% internal
 
 -include("hocon_private.hrl").
 
 -define(EMPTY_MAP, #{}).
 
+-type config() :: hocon:config().
+
 %% this can be the opts() from hocon_tconf, but only `atom_key' is relevant
 -type opts() :: #{atom_key => boolean(),
                   _ => _}.
 
+-type flatten_opts() :: #{rich_value => boolean()}.
+
 %% @doc put unboxed value to the richmap box
 %% this function is called places where there is no boxing context
 %% so it has to accept unboxed value.
--spec deep_put(string(), term(), hocon:config(), opts()) -> hocon:config().
+-spec deep_put(string(), term(), config(), opts()) -> config().
 deep_put(Path, Value, Conf, Opts) ->
     put_rich(Opts, hocon_util:split_path(Path), Value, Conf).
 
@@ -91,7 +97,7 @@ boxit(Value, Box) -> Box#{?HOCON_V => Value}.
 %% @doc Get value from a plain or rich map.
 %% `undefined' is returned if no such value path.
 %% NOTE: always return plain-value.
--spec get(string(), hocon:config(), term()) -> term().
+-spec get(string(), config(), term()) -> term().
 get(Path, Config, Default) ->
     case get(Path, Config) of
         undefined -> Default;
@@ -101,13 +107,13 @@ get(Path, Config, Default) ->
 %% @doc get a child node from richmap, return value also a richmap.
 %% `undefined' is returned if no value path.
 %% Key (first arg) can be "foo.bar.baz" or ["foo.bar", "baz"] or ["foo", "bar", "baz"].
--spec deep_get(string() | [string()], hocon:config()) -> hocon:config() | undefined.
+-spec deep_get(string() | [string()], config()) -> config() | undefined.
 deep_get(Path, Conf) ->
     do_get(hocon_util:split_path(Path), Conf, richmap).
 
 %% @doc Get value from a maybe-rich map.
 %% always return plain-value.
--spec get(string(), hocon:config()) -> term().
+-spec get(string(), config()) -> term().
 get(Path, Map) ->
     case hocon_util:is_richmap(Map) of
         true ->
@@ -236,3 +242,37 @@ do_update_array_element(List, Index, GoDeep) when is_list(List) ->
 
 is_array_index(Maybe) ->
     hocon_util:is_array_index(Maybe).
+
+%% @doc Flatten out a deep-nested map to {<<"path.to.value">>, Value} pairs
+%% If `rich_value' is provided `true' in `Opts', the value is a map with
+%% metadata.
+-spec flatten(config(), flatten_opts()) -> [{binary(), term()}].
+flatten(Conf, Opts) ->
+    flatten(Conf, Opts, undefined, [], []).
+
+flatten(Conf, Opts, Meta, Stack, Acc) when is_list(Conf) ->
+    flatten_l(Conf, Opts, Meta, Stack, Acc, lists:seq(1, length(Conf)));
+flatten(#{?HOCON_V := Value} = Conf, Opts, _Meta, Stack, Acc) ->
+    Meta = maps:get(?METADATA, Conf, undefined),
+    flatten(Value, Opts, Meta, Stack, Acc);
+flatten(Conf, Opts, Meta, Stack, Acc) when is_map(Conf) ->
+    {Keys, Values} = lists:unzip(maps:to_list(Conf)),
+    flatten_l(Values, Opts, Meta, Stack, Acc, Keys);
+flatten(Value, Opts, Meta, Stack, Acc) ->
+    V = case maps:get(rich_value, Opts, false) of
+            true -> #{?HOCON_V => Value, ?METADATA => Meta};
+            false -> Value
+        end,
+    [{iolist_to_binary(infix(lists:reverse(Stack), ".")), V} | Acc].
+
+flatten_l([], _Opts, _Meta, _Stack, Acc, []) -> Acc;
+flatten_l([H | T], Opts, Meta, Stack, Acc, [Tag | Tags]) ->
+    NewAcc = flatten(H, Opts, Meta, [bin(Tag) | Stack], Acc),
+    flatten_l(T, Opts, Meta, Stack, NewAcc, Tags).
+
+bin(B) when is_binary(B) -> B;
+bin(I) when is_integer(I) -> integer_to_binary(I).
+
+infix([], _) -> [];
+infix([X], _) -> [X];
+infix([H | T], I) -> [H, I | infix(T, I)].
