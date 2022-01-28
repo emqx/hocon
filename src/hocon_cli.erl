@@ -160,7 +160,7 @@ docgen(ParsedArgs) ->
             stop_deactivate();
         Module ->
             Title = proplists:get_value(doctitle, ParsedArgs),
-            io:format(user, "~s", [hocon_schema_doc:gen(Module, Title)])
+            io:format(user, "~s", [hocon_schema_md:gen(Module, Title)])
     end.
 
 load_schema(ParsedArgs) ->

@@ -14,7 +14,7 @@
 %% limitations under the License.
 %%--------------------------------------------------------------------
 
--module(hocon_schema_doc_tests).
+-module(hocon_schema_md_tests).
 
 -include_lib("eunit/include/eunit.hrl").
 

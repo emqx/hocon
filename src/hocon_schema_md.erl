@@ -14,7 +14,7 @@
 %% limitations under the License.
 %%--------------------------------------------------------------------
 
--module(hocon_schema_doc).
+-module(hocon_schema_md).
 
 -export([gen/2]).
 
