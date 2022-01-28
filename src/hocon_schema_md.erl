@@ -26,50 +26,41 @@ gen(Schema, undefined) ->
 gen(Schema, Title) when is_list(Title) orelse is_binary(Title) ->
     gen(Schema, #{title => Title, body => <<>>});
 gen(Schema, #{title := Title, body := Body}) ->
-    {RootNs, RootFields, Structs} = hocon_schema:find_structs(Schema),
+    Structs = hocon_schema_json:gen(Schema),
     [Title,
      "\n",
      Body,
      "\n",
-     fmt_structs(2, RootNs, [{RootNs, "Root Config Keys", #{fields => RootFields}}]),
-     fmt_structs(2, RootNs, Structs)].
+     fmt_structs(2, Structs)].
 
-fmt_structs(_Weight, _RootNs, []) -> [];
-fmt_structs(Weight, RootNs, [{Ns, Name, Fields} | Rest]) ->
-    [fmt_struct(Weight, RootNs, Ns, Name, Fields), "\n" |
-     fmt_structs(Weight, RootNs, Rest)].
+fmt_structs(_Weight, []) -> [];
+fmt_structs(Weight, [Struct | Rest]) ->
+    [fmt_struct(Weight, Struct), "\n" |
+     fmt_structs(Weight, Rest)].
 
-fmt_struct(Weight, RootNs, Ns0, Name, #{fields := Fields} = Meta) ->
-    Ns = case RootNs =:= Ns0 of
-             true -> undefined;
-             false -> Ns0
-         end,
-    Paths = case Meta of
-                #{paths := Ps} -> lists:sort(maps:keys(Ps));
-                _ -> []
-            end,
-    FullNameDisplay = ref(Ns, Name),
-    [ hocon_md:h(Weight, FullNameDisplay)
+fmt_struct(Weight, #{ full_name := FullName
+                    , paths := Paths
+                    , envs := Envs
+                    , fields := Fields
+                    } = Struct) ->
+    [ hocon_md:h(Weight, FullName)
     , fmt_paths(Paths)
-    , case Meta of
-          #{desc := StructDoc} -> StructDoc;
-          _ -> []
-      end
+    , fmt_envs(Envs)
+    , maps:get(desc, Struct, [])
     , "\n**Fields**\n\n"
-    , fmt_fields(Ns, Fields)
+    , lists:map(fun fmt_field/1, Fields)
     ].
 
 fmt_paths([]) -> [];
 fmt_paths(Paths) ->
-    Envs = lists:map(fun(Path0) ->
-                              Path = string:tokens(Path0, "."),
-                              Env = string:uppercase(string:join(Path, "__")),
-                              hocon_util:env_prefix("EMQX_") ++ Env
-                      end, Paths),
     ["\n**Config paths**\n\n",
      simple_list(Paths),
      "\n"
-     "\n**Env overrides**\n\n",
+    ].
+
+fmt_envs([]) -> [];
+fmt_envs(Envs) ->
+    ["\n**Env overrides**\n\n",
      simple_list(Envs),
      "\n"
     ].
@@ -77,18 +68,12 @@ fmt_paths(Paths) ->
 simple_list(L) ->
     [[" - ", hocon_md:code(I), "\n"] || I <- L].
 
-fmt_fields(_Ns, []) -> [];
-fmt_fields(Ns, [{Name, FieldSchema} | Fields]) ->
-    case hocon_schema:field_schema(FieldSchema, hidden) of
-        true -> fmt_fields(Ns, Fields);
-        _ -> [bin(fmt_field(Ns, Name, FieldSchema)) | fmt_fields(Ns, Fields)]
-    end.
-
-fmt_field(Ns, Name, FieldSchema) ->
-    Type = fmt_type(Ns, hocon_schema:field_schema(FieldSchema, type)),
-    Default = fmt_default(hocon_schema:field_schema(FieldSchema, default)),
-    Desc = hocon_schema:field_schema(FieldSchema, desc),
-    [ ["- ", bin(Name), ": ", Type, "\n"]
+fmt_field(#{ name := Name
+           , type := Type
+           } = Field) ->
+    Default = fmt_default(maps:get(default, Field, undefined)),
+    Desc = maps:get(desc, Field, undefined),
+    [ ["- ", Name, ": ", fmt_type(Type), "\n"]
     , case Default =/= undefined of
           true  -> ["\n", hocon_md:indent(2, [["Default = ", Default]]), "\n"];
           false -> []
@@ -101,35 +86,24 @@ fmt_field(Ns, Name, FieldSchema) ->
     ].
 
 fmt_default(undefined) -> undefined;
-fmt_default(Value) ->
-    case hocon_pp:do(Value, #{newline => "", embedded => true}) of
-        [OneLine] -> ["`", OneLine, "`"];
-        Lines -> ["\n```\n", [[L, "\n"] || L <- Lines], "```"]
-    end.
+fmt_default(#{oneliner := true, hocon := Content}) ->
+    ["`", Content, "`"];
+fmt_default(#{oneliner := false, hocon := Content}) ->
+    ["\n```\n", Content, "```"].
 
-fmt_type(Ns, T) -> hocon_md:code(do_type(Ns, T)).
+fmt_type(T) -> hocon_md:code(do_type(T)).
 
-do_type(_Ns, A) when is_atom(A) -> bin(A); % singleton
-do_type(Ns, Ref) when is_list(Ref) -> do_type(Ns, ?REF(Ref));
-do_type(Ns, ?REF(Ref)) -> hocon_md:local_link(ref(Ns, Ref), ref(Ns, Ref));
-do_type(_Ns, ?R_REF(Module, Ref)) -> do_type(hocon_schema:namespace(Module), ?REF(Ref));
-do_type(Ns, ?ARRAY(T)) -> io_lib:format("[~s]", [do_type(Ns, T)]);
-do_type(Ns, ?UNION(Ts)) -> lists:join(" | ", [do_type(Ns, T) || T <- Ts]);
-do_type(_Ns, ?ENUM(Symbols)) -> lists:join(" | ", [bin(S) || S <- Symbols]);
-do_type(Ns, ?LAZY(T)) -> do_type(Ns, T);
-do_type(Ns, ?MAP(Name, T)) -> ["{$", bin(Name), " -> ", do_type(Ns, T), "}"];
-do_type(_Ns, {'$type_refl', #{name := Type}}) -> lists:flatten(Type).
-
-ref(undefined, Name) -> Name;
-ref(Ns, Name) ->
-    %% when namespace is the same as reference name
-    %% we do not prepend the reference link with namespace
-    %% because the root name is already unique enough
-    case bin(Ns) =:= bin(Name) of
-        true -> bin(Ns);
-        false -> [bin(Ns), ":", bin(Name)]
-    end.
-
-bin(S) when is_list(S) -> unicode:characters_to_binary(S, utf8);
-bin(A) when is_atom(A) -> atom_to_binary(A, utf8);
-bin(B) when is_binary(B) -> B.
+do_type(#{kind := primitive, name := Name}) ->
+    Name;
+do_type(#{kind := singleton, name := Name}) ->
+    Name;
+do_type(#{kind := struct, name := Ref}) ->
+    hocon_md:local_link(Ref, Ref);
+do_type(#{kind := array, elements := ElemT}) ->
+    ["[", do_type(ElemT), "]"];
+do_type(#{kind := union, members := Ts}) ->
+    lists:join(" | ", [do_type(T) || T <- Ts]);
+do_type(#{kind := enum, symbols := Symbols}) ->
+    lists:join(" | ", Symbols);
+do_type(#{kind := map, name := N, values := T}) ->
+    ["{$", N, " -> ", do_type(T), "}"].

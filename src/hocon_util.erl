@@ -21,7 +21,7 @@
 -export([is_same_file/2, real_file_name/1]).
 -export([is_richmap/1, richmap_to_map/1]).
 -export([env_prefix/1, is_array_index/1]).
--export([split_path/1]).
+-export([split_path/1, path_to_env_name/1]).
 
 -include("hocon_private.hrl").
 
@@ -104,6 +104,9 @@ is_array_index(I) when is_binary(I) ->
         _ : _ ->
             false
     end.
+
+path_to_env_name(Path) ->
+    bin(lists:join("__", split_path(Path))).
 
 split_path(Path) ->
     lists:flatten(do_split(str(Path))).
