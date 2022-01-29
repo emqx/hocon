@@ -41,7 +41,6 @@ gen_struct(RootNs, Ns0, Name, #{fields := Fields} = Meta) ->
     FullNameDisplay = fmt_ref(Ns, Name),
     S0 = #{ full_name => bin(FullNameDisplay)
           , paths => [bin(P) || P <- Paths]
-          , envs => [hocon_util:path_to_env_name(P) || P <- Paths]
           , fields => fmt_fields(Ns, Fields)
           },
     case Meta of

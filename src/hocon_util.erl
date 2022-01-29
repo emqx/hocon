@@ -106,7 +106,7 @@ is_array_index(I) when is_binary(I) ->
     end.
 
 path_to_env_name(Path) ->
-    bin(lists:join("__", split_path(Path))).
+    string:uppercase(bin(lists:join("__", split_path(Path)))).
 
 split_path(Path) ->
     lists:flatten(do_split(str(Path))).

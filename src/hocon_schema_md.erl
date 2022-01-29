@@ -25,27 +25,30 @@ gen(Schema, undefined) ->
     gen(Schema, "# HOCON Document");
 gen(Schema, Title) when is_list(Title) orelse is_binary(Title) ->
     gen(Schema, #{title => Title, body => <<>>});
-gen(Schema, #{title := Title, body := Body}) ->
+gen(Schema, #{title := Title, body := Body} = Opts0) ->
+    Opts = ensure_env_prefix_opt(Opts0),
     Structs = hocon_schema_json:gen(Schema),
     [Title,
      "\n",
      Body,
      "\n",
-     fmt_structs(2, Structs)].
+     fmt_structs(2, Structs, Opts)].
 
-fmt_structs(_Weight, []) -> [];
-fmt_structs(Weight, [Struct | Rest]) ->
-    [fmt_struct(Weight, Struct), "\n" |
-     fmt_structs(Weight, Rest)].
+ensure_env_prefix_opt(Opts) ->
+    maps:merge(#{env_prefix => "EMQX_"}, Opts).
+
+fmt_structs(_Weight, [], _) -> [];
+fmt_structs(Weight, [Struct | Rest], Opts) ->
+    [fmt_struct(Weight, Struct, Opts), "\n" |
+     fmt_structs(Weight, Rest, Opts)].
 
 fmt_struct(Weight, #{ full_name := FullName
                     , paths := Paths
-                    , envs := Envs
                     , fields := Fields
-                    } = Struct) ->
+                    } = Struct, Opts) ->
     [ hocon_md:h(Weight, FullName)
     , fmt_paths(Paths)
-    , fmt_envs(Envs)
+    , fmt_envs(Paths, Opts)
     , maps:get(desc, Struct, [])
     , "\n**Fields**\n\n"
     , lists:map(fun fmt_field/1, Fields)
@@ -58,12 +61,15 @@ fmt_paths(Paths) ->
      "\n"
     ].
 
-fmt_envs([]) -> [];
-fmt_envs(Envs) ->
+fmt_envs([], _) -> [];
+fmt_envs(Paths, Opts) ->
     ["\n**Env overrides**\n\n",
-     simple_list(Envs),
+     simple_list([fmt_env(P, Opts) || P <- Paths]),
      "\n"
     ].
+
+fmt_env(Path, #{env_prefix := Prefix}) ->
+    [Prefix, hocon_util:path_to_env_name(Path)].
 
 simple_list(L) ->
     [[" - ", hocon_md:code(I), "\n"] || I <- L].
