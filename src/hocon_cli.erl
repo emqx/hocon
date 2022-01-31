@@ -1,5 +1,5 @@
 %%--------------------------------------------------------------------
-%% Copyright (c) 2021 EMQ Technologies Co., Ltd. All Rights Reserved.
+%% Copyright (c) 2021-2022 EMQ Technologies Co., Ltd. All Rights Reserved.
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -160,7 +160,7 @@ docgen(ParsedArgs) ->
             stop_deactivate();
         Module ->
             Title = proplists:get_value(doctitle, ParsedArgs),
-            io:format(user, "~s", [hocon_schema_doc:gen(Module, Title)])
+            io:format(user, "~s", [hocon_schema_md:gen(Module, Title)])
     end.
 
 load_schema(ParsedArgs) ->

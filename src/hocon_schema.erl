@@ -86,6 +86,7 @@
          , sensitive => boolean()
          , desc => iodata()
          , hidden => boolean() %% hide it from doc generation
+         , extra => map() %% transparent metadata
          }.
 
 -type field() :: {name(), typefunc() | field_schema()}.

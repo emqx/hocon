@@ -25,7 +25,7 @@
 % workaround: prevent being recognized as unused functions
 -export([to_duration/1, to_duration_s/1, to_bytesize/1,
          to_flag/1, to_percent/1, to_comma_separated_list/1,
-         to_bar_separated_list/1, to_ip_port/1]).
+         to_bar_separated_list/1, to_ip_port/1, namespace/0]).
 
 -behaviour(hocon_schema).
 
@@ -37,6 +37,8 @@
 -export([t/1, t/3, ref/1]).
 -export([conf_get/2, conf_get/3, keys/2, filter/1]).
 -export([ssl/2, tr_ssl/2, tr_password_hash/2]).
+
+namespace() -> "emqx".
 
 roots() -> ["cluster", "node", "rpc", "log", "lager",
              "acl", "mqtt",

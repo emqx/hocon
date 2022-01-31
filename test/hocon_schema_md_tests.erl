@@ -1,5 +1,5 @@
 %%--------------------------------------------------------------------
-%% Copyright (c) 2021 EMQ Technologies Co., Ltd. All Rights Reserved.
+%% Copyright (c) 2021-2022 EMQ Technologies Co., Ltd. All Rights Reserved.
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -14,9 +14,10 @@
 %% limitations under the License.
 %%--------------------------------------------------------------------
 
--module(hocon_schema_doc_tests).
+-module(hocon_schema_md_tests).
 
 -include_lib("eunit/include/eunit.hrl").
+-include_lib("typerefl/include/types.hrl").
 
 no_crash_test_() ->
     [{"demo_schema", gen(demo_schema)},
@@ -31,10 +32,20 @@ no_crash_test_() ->
       gen(#{namespace => dummy,
             roots => [foo],
             fields => #{foo => [{"f1", hoconsc:mk(hoconsc:ref(emqx_schema, "zone"))}]}
+           })},
+     {"multi-line-default",
+      gen(#{ namespace => "rootns"
+           , roots => [foo]
+           , fields => #{foo => [{"f1", hoconsc:mk(hoconsc:ref(emqx_schema, "etcd"),
+                                                   #{default => #{<<"server">> => <<"localhost">>,
+                                                                  <<"prefix">> => <<"prefix">>,
+                                                                  <<"node_ttl">> => "100s",
+                                                                  <<"ssl">> => <<>>
+                                                                 }})}]}
            })}
     ].
 
-gen(Schema) -> fun() -> hocon_schema_doc:gen(Schema, "test") end.
+gen(Schema) -> fun() -> hocon_schema_md:gen(Schema, "test") end.
 
 find_structs_test() ->
     {demo_schema3, _Roots, Subs} = hocon_schema:find_structs(demo_schema3),
