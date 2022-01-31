@@ -310,7 +310,7 @@ fields("wss_listener") ->
     % @fixme
     Ssl = ssl(undefined, #{depth => 10
                          , reuse_sessions => true}) ++ listener_fields(),
-    Settings = lists:ukeymerge(1, Ssl, fields("ws_listener")),
+    Settings = lists:ukeysort(1, Ssl ++ fields("ws_listener")),
     lists:keydelete("high_watermark", 1, Settings);
 
 fields("deflate_opts") ->

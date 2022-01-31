@@ -39,8 +39,7 @@ fields("mongo") ->
     ];
 
 fields("ssl") ->
-    [ {"enable", emqx_schema:t(emqx_schema:flag(), undefined, false)}
-    ] ++ emqx_schema:ssl(undefined, #{verify => verify_none});
+    emqx_schema:ssl(undefined, #{verify => verify_none});
 
 fields("auth_query") ->
     [ {"collection", emqx_schema:t(string(), undefined, "mqtt_user")}
