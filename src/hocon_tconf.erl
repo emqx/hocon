@@ -849,7 +849,7 @@ builtin_validators(Type) ->
     TypeChecker = fun (Value) -> typerefl:typecheck(Type, Value) end,
     [TypeChecker].
 
-check_enum_sybol(Value, Symbols) when is_atom(Value) ->
+check_enum_sybol(Value, Symbols) when is_atom(Value); is_integer(Value) ->
     case lists:member(Value, Symbols) of
         true -> ok;
         false -> {error, not_a_enum_symbol}

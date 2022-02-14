@@ -307,10 +307,14 @@ union_as_enum_test() ->
                     hocon_tconf:check_plain(Sc, #{<<"enum">> => x})).
 
 real_enum_test() ->
-    Sc = #{roots => [{val, hoconsc:enum([a, b, c])}]
+    Sc = #{roots => [{val, hoconsc:enum([a, b, c, 1])}]
           },
     ?assertEqual(#{<<"val">> => a},
                  hocon_tconf:check_plain(Sc, #{<<"val">> => <<"a">>})),
+    ?assertEqual(#{<<"val">> => 1},
+                 hocon_tconf:check_plain(Sc, #{<<"val">> => <<"1">>})),
+    ?VALIDATION_ERR(#{reason := not_a_enum_symbol, value := bin},
+                 hocon_tconf:check_plain(Sc, #{<<"val">> => <<"bin">>})),
     ?assertEqual(#{val => a},
                  hocon_tconf:check_plain(Sc, #{<<"val">> => <<"a">>}, #{atom_key => true})),
     ?VALIDATION_ERR(#{reason := not_a_enum_symbol, value := x},
@@ -318,6 +322,12 @@ real_enum_test() ->
     ?VALIDATION_ERR(#{reason := unable_to_convert_to_enum_symbol,
                       value := {"badvalue"}},
                     hocon_tconf:check_plain(Sc, #{<<"val">> => {"badvalue"}})).
+
+bad_enum_test() ->
+    ?assertError({bad_enum_type, "a"}, hoconsc:mk(hoconsc:enum(["a"]))),
+    ?assertError({bad_enum_type, <<"a">>}, hoconsc:mk(hoconsc:enum([<<"a">>]))),
+    ok.
+
 bad_array_index_test() ->
     Sc = #{roots => [{val, hoconsc:array(integer())}]},
     Conf = "val = {first = 1}",
@@ -359,7 +369,7 @@ atom_key_array_test() ->
 
 %% if convert to non-existing atom
 atom_key_failure_test() ->
-   Sc = #{roots => [{<<"non_existing_atom_as_key">>, hoconsc:mk(integer())}]},
+    Sc = #{roots => [{<<"non_existing_atom_as_key">>, hoconsc:mk(integer())}]},
     Conf = "non_existing_atom_as_key=1",
     {ok, PlainMap} = hocon:binary(Conf, #{}),
     ?assertError({non_existing_atom, <<"non_existing_atom_as_key">>},

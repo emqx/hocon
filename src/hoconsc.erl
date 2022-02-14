@@ -71,6 +71,11 @@ is_schema(_) -> false.
 assert_type(S) when is_function(S) -> error({expecting_type_but_got_schema, S});
 assert_type(#{type := _} = S) -> error({expecting_type_but_got_schema, S});
 assert_type(?UNION(Members)) -> lists:foreach(fun assert_type/1, Members);
+assert_type(?ENUM(Symbols)) -> lists:foreach(fun(S) ->
+    case is_atom(S) orelse is_integer(S) of
+        true -> ok;
+        false -> error({bad_enum_type, S})
+    end end, Symbols);
 assert_type(?ARRAY(ElemT)) -> assert_type(ElemT);
 assert_type(?LAZY(HintT)) -> assert_type(HintT);
 assert_type(_) -> ok.
