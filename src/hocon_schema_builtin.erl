@@ -26,14 +26,17 @@
 
 -export([convert/2]).
 
-convert(Symbol, ?ENUM(_Synbos)) ->
+convert(Symbol, ?ENUM(_OfSymbols)) ->
     case is_binary(Symbol) of
         true ->
-            try binary_to_existing_atom(Symbol, utf8)
-            catch _ : _ -> Symbol
+            case string:to_integer(Symbol) of
+                {Int, <<>>} -> Int;
+                _ ->
+                    try binary_to_existing_atom(Symbol, utf8)
+                    catch _ : _ -> Symbol
+                    end
             end;
-        false ->
-            Symbol
+        false -> Symbol
     end;
 convert(Int, Type) when is_integer(Int) ->
     case Type =:= string() of
