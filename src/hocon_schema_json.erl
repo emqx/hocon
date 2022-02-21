@@ -16,20 +16,29 @@
 
 -module(hocon_schema_json).
 
--export([gen/1]).
+-export([gen/1, gen/2]).
 
 -include("hoconsc.hrl").
 -include("hocon_private.hrl").
 
+-type fmtfieldfunc() :: fun((Namespace :: binary() | undefined,
+                             Name :: hocon_schema:name(),
+                             hocon_schema:field_schema()) -> map()).
+
 %% @doc Generate a JSON compatible list of `map()'s.
 -spec gen(hocon_schema:schema()) -> [map()].
-gen(Schema) ->
+gen(Schema) -> gen(Schema, #{formatter => fun fmt_field/3}).
+%% @doc Generate a JSON compatible list of `map()'s.
+-spec gen(hocon_schema:schema(), #{formatter => fmtfieldfunc()}) -> [map()].
+gen(Schema, Opts) ->
     {RootNs, RootFields, Structs} = hocon_schema:find_structs(Schema),
-    [ gen_struct(RootNs, RootNs, "Root Config Keys", #{fields => RootFields})
-    | lists:map(fun({Ns, Name, Fields}) -> gen_struct(RootNs, Ns, Name, Fields) end, Structs)
+    [ gen_struct(RootNs, RootNs, "Root Config Keys", #{fields => RootFields}, Opts)
+    | lists:map(fun({Ns, Name, Fields}) ->
+      gen_struct(RootNs, Ns, Name, Fields, Opts)
+                end, Structs)
     ].
 
-gen_struct(RootNs, Ns0, Name, #{fields := Fields} = Meta) ->
+gen_struct(RootNs, Ns0, Name, #{fields := Fields} = Meta, Opts) ->
     Ns = case RootNs =:= Ns0 of
              true -> undefined;
              false -> Ns0
@@ -41,18 +50,20 @@ gen_struct(RootNs, Ns0, Name, #{fields := Fields} = Meta) ->
     FullNameDisplay = fmt_ref(Ns, Name),
     S0 = #{ full_name => bin(FullNameDisplay)
           , paths => [bin(P) || P <- Paths]
-          , fields => fmt_fields(Ns, Fields)
+          , fields => fmt_fields(Ns, Fields, Opts)
           },
     case Meta of
         #{desc := StructDoc} -> S0#{desc => bin(StructDoc)};
         _ -> S0
     end.
 
-fmt_fields(_Ns, []) -> [];
-fmt_fields(Ns, [{Name, FieldSchema} | Fields]) ->
+fmt_fields(_Ns, [], _Opts) -> [];
+fmt_fields(Ns, [{Name, FieldSchema} | Fields], Opts) ->
     case hocon_schema:field_schema(FieldSchema, hidden) of
-        true -> fmt_fields(Ns, Fields);
-        _ -> [fmt_field(Ns, Name, FieldSchema) | fmt_fields(Ns, Fields)]
+        true -> fmt_fields(Ns, Fields, Opts);
+        _ ->
+          FmtFieldFun = formatter_func(Opts),
+          [FmtFieldFun(Ns, Name, FieldSchema) | fmt_fields(Ns, Fields, Opts)]
     end.
 
 fmt_field(Ns, Name, FieldSchema) ->
@@ -121,3 +132,6 @@ bin(undefined) -> undefined;
 bin(S) when is_list(S) -> unicode:characters_to_binary(S, utf8);
 bin(A) when is_atom(A) -> atom_to_binary(A, utf8);
 bin(B) when is_binary(B) -> B.
+
+formatter_func(Opts) ->
+  maps:get(formatter, Opts, fun fmt_field/3).
