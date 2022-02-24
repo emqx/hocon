@@ -46,12 +46,12 @@
                    %% HOCON_ENV_OVERRIDE_PREFIX is set.
                    %% default is true.
                  , apply_override_envs => boolean()
-                   %% By default allow all fields to be undefined.
-                   %% if `nullable` is set to `false`
-                   %% map or check APIs fail with validation_error.
-                   %% NOTE: this option serves as default value for field's `nullable` spec
-                 , nullable => boolean() %% default: true for map, false for check
-                 , required => boolean() %% required is the opposite of nullable.
+                   %% `required` is false by default, which allow all fields to be `undefined`.
+                   %% if `required` is set to `true`
+                   %% map or check APIs fail with validation_error
+                   %% when required field is not found or required field's value is `undefined`.
+                   %% NOTE: this option serves as default value for field's `required` spec
+                 , required => boolean() %% default: false for map, true for check
 
                  %% below options are generated internally and should not be passed in by callers
                  , format => map | richmap
@@ -67,7 +67,7 @@
 -define(VALIDATION_ERRS(Context), ?ERRS(validation_error, Context)).
 -define(TRANSLATION_ERRS(Context), ?ERRS(translation_error, Context)).
 
--define(DEFAULT_NULLABLE, true).
+-define(DEFAULT_REQUIRED, false).
 
 -define(META_BOX(Tag, Metadata), #{?METADATA => #{Tag => Metadata}}).
 -define(NULL_BOX, #{?METADATA => #{made_for => null_value}}).
@@ -204,7 +204,7 @@ check_plain(Schema, Conf, Opts0, RootNames) ->
     do_check(Schema, Conf, Opts, RootNames).
 
 do_check(Schema, Conf, Opts0, RootNames) ->
-    Opts = merge_opts(#{nullable => false}, Opts0),
+    Opts = merge_opts(#{required => true}, Opts0),
     %% discard mappings for check APIs
     {_DiscardMappings, NewConf} = map(Schema, Conf, RootNames, Opts),
     NewConf.
@@ -336,14 +336,14 @@ bin(S) -> iolist_to_binary(S).
 do_map(Fields, Value, Opts, ParentSchema) ->
     case unbox(Opts, Value) of
         undefined ->
-            case is_nullable(Opts, ParentSchema) of
-                {true, recursively} ->
+            case is_required(Opts, ParentSchema) of
+                {false, recursively} ->
                     {[], boxit(Opts, undefined, undefined)};
-                true ->
+                false ->
                     do_map2(Fields, boxit(Opts, undefined, undefined), Opts,
                             ParentSchema);
-                false ->
-                    {validation_errs(Opts, not_nullable, undefined), undefined}
+                true ->
+                    {validation_errs(Opts, mandatory_required_field, undefined), undefined}
             end;
         V when is_map(V) ->
             do_map2(Fields, Value, Opts, ParentSchema);
@@ -572,18 +572,9 @@ find_unknown_fields(SchemaFieldNames0, DataFields) ->
 is_known_name(Name, ExpectedNames) ->
     lists:any(fun(N) -> N =:= bin(Name) end, ExpectedNames).
 
-is_nullable(Opts, Schema) ->
-    case field_schema(Schema, nullable) of
-        undefined ->
-            case field_schema(Schema, required) of
-                undefined ->
-                    case Opts of
-                        #{required := Required} -> not Required;
-                        #{nullable := Nullable} -> Nullable;
-                        _ -> ?DEFAULT_NULLABLE
-                    end;
-                Required -> not Required
-            end;
+is_required(Opts, Schema) ->
+    case field_schema(Schema, required) of
+        undefined -> maps:get(required, Opts, ?DEFAULT_REQUIRED);
         Maybe -> Maybe
     end.
 
@@ -869,13 +860,13 @@ check_enum_sybol(_Value, _Symbols) ->
 
 
 validate(Opts, Schema, Value, Validators) ->
-    validate(Opts, Schema, Value, is_nullable(Opts, Schema), Validators).
+    validate(Opts, Schema, Value, is_required(Opts, Schema), Validators).
 
-validate(_Opts, _Schema, undefined, true, _Validators) ->
+validate(_Opts, _Schema, undefined, false, _Validators) ->
     []; % do not validate if no value is set
-validate(Opts, _Schema, undefined, false, _Validators) ->
-    validation_errs(Opts, not_nullable, undefined);
-validate(Opts, Schema, Value, _IsNullable, Validators) ->
+validate(Opts, _Schema, undefined, true, _Validators) ->
+    validation_errs(Opts, mandatory_required_field, undefined);
+validate(Opts, Schema, Value, _IsRequired, Validators) ->
     do_validate(Opts, Schema, Value, Validators).
 
 %% returns on the first failure

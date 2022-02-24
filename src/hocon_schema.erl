@@ -79,10 +79,9 @@
          , mapping => undefined | string()
          , converter => undefined | translationfunc()
          , validator => undefined | validationfun()
-           %% set true if a field is allowed to be `undefined`
+           %% set false if a field is allowed to be `undefined`
            %% NOTE: has no point setting it to `true` if field has a default value
-         , nullable => boolean() | {true, recursively} % default = true
-         , required => boolean() %% required is the opposite of nullable without recursively.
+         , required => boolean() | {false, recursively} % default = false
            %% for sensitive data obfuscation (password, token)
          , sensitive => boolean()
          , desc => iodata()
