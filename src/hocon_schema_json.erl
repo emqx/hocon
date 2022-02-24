@@ -47,8 +47,7 @@ gen_struct(RootNs, Ns0, Name, #{fields := Fields} = Meta, Opts) ->
                 #{paths := Ps} -> lists:sort(maps:keys(Ps));
                 _ -> []
             end,
-    FullNameDisplay = fmt_ref(Ns, Name),
-    S0 = #{ full_name => bin(FullNameDisplay)
+    S0 = #{ full_name => bin(fmt_ref(Ns, Name))
           , paths => [bin(P) || P <- Paths]
           , fields => fmt_fields(Ns, Fields, Opts)
           },
@@ -124,8 +123,8 @@ fmt_ref(Ns, Name) ->
     %% we do not prepend the reference link with namespace
     %% because the root name is already unique enough
     case bin(Ns) =:= bin(Name) of
-        true -> bin(Ns);
-        false -> [bin(Ns), ":", bin(Name)]
+        true -> Ns;
+        false -> << (bin(Ns))/binary, ":", (bin(Name))/binary >>
     end.
 
 bin(undefined) -> undefined;

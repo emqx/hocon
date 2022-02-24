@@ -423,7 +423,52 @@ nullable_test() ->
     ?VALIDATION_ERR(#{reason := not_nullable, path := "f1"},
                     hocon_tconf:check_plain(Sc, #{<<"f2">> => <<"string">>},
                                              #{nullable => false})),
+
+  ScRequired = #{ roots => [{f1, hoconsc:mk(integer(), #{nullable => true})},
+                            {f2, hoconsc:mk(string(), #{nullable => false})},
+                            {f3, hoconsc:mk(integer(), #{default => 0})}
+                           ]
+  },
+  ?VALIDATION_ERR(#{reason := not_nullable, path := "f2"},
+    hocon_tconf:check_plain(ScRequired, #{}, #{nullable => true})),
+
+  ?VALIDATION_ERR(#{reason := not_nullable, path := "f2"},
+    hocon_tconf:check_plain(ScRequired, #{}, #{})),
+
+  ?assertEqual(#{<<"f2">> => "string1", <<"f3">> => 0},
+    hocon_tconf:check_plain(ScRequired, #{<<"f2">> => <<"string1">>}, #{nullable => false})),
     ok.
+
+required_test() ->
+  Sc = #{ roots => [{f1, hoconsc:mk(integer())},
+                    {f2, hoconsc:mk(string())},
+                    {f3, hoconsc:mk(integer(), #{default => 0})}
+                   ]
+        },
+  ?assertEqual(#{<<"f2">> => "string", <<"f3">> => 0},
+    hocon_tconf:check_plain(Sc, #{<<"f2">> => <<"string">>},
+      #{required => false})),
+  ?VALIDATION_ERR(#{reason := not_nullable, path := "f1"},
+    hocon_tconf:check_plain(Sc, #{<<"f2">> => <<"string">>},
+      #{required => true})),
+
+  ScRequired = #{ roots => [{f1, hoconsc:mk(integer(), #{required => false})},
+                            {f2, hoconsc:mk(string(), #{required => true})},
+                            {f3, hoconsc:mk(integer(), #{default => 0})}
+                           ]
+                },
+  ?VALIDATION_ERR(#{reason := not_nullable, path := "f2"},
+    hocon_tconf:check_plain(ScRequired, #{}, #{required => false})),
+
+  ?VALIDATION_ERR(#{reason := not_nullable, path := "f2"},
+    hocon_tconf:check_plain(ScRequired, #{}, #{})),
+
+  ?assertEqual(#{<<"f2">> => "string", <<"f3">> => 0},
+    hocon_tconf:check_plain(ScRequired, #{<<"f2">> => <<"string">>}, #{required => true})),
+
+  ?assertEqual(#{<<"f2">> => "string2", <<"f3">> => 0},
+    hocon_tconf:check_plain(ScRequired, #{<<"f2">> => <<"string2">>}, #{nullable => false})),
+  ok.
 
 bad_root_test() ->
     Sc = #{roots => ["ab"],
