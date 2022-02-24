@@ -411,34 +411,6 @@ validator_crash_test() ->
                     hocon_tconf:check_plain(Sc, #{<<"f1">> => 11})),
     ok.
 
-nullable_test() ->
-    Sc = #{ roots => [{f1, hoconsc:mk(integer())},
-                       {f2, hoconsc:mk(string())},
-                       {f3, hoconsc:mk(integer(), #{default => 0})}
-                      ]
-          },
-    ?assertEqual(#{<<"f2">> => "string", <<"f3">> => 0},
-                 hocon_tconf:check_plain(Sc, #{<<"f2">> => <<"string">>},
-                                          #{nullable => true})),
-    ?VALIDATION_ERR(#{reason := not_nullable, path := "f1"},
-                    hocon_tconf:check_plain(Sc, #{<<"f2">> => <<"string">>},
-                                             #{nullable => false})),
-
-  ScRequired = #{ roots => [{f1, hoconsc:mk(integer(), #{nullable => true})},
-                            {f2, hoconsc:mk(string(), #{nullable => false})},
-                            {f3, hoconsc:mk(integer(), #{default => 0})}
-                           ]
-  },
-  ?VALIDATION_ERR(#{reason := not_nullable, path := "f2"},
-    hocon_tconf:check_plain(ScRequired, #{}, #{nullable => true})),
-
-  ?VALIDATION_ERR(#{reason := not_nullable, path := "f2"},
-    hocon_tconf:check_plain(ScRequired, #{}, #{})),
-
-  ?assertEqual(#{<<"f2">> => "string1", <<"f3">> => 0},
-    hocon_tconf:check_plain(ScRequired, #{<<"f2">> => <<"string1">>}, #{nullable => false})),
-    ok.
-
 required_test() ->
   Sc = #{ roots => [{f1, hoconsc:mk(integer())},
                     {f2, hoconsc:mk(string())},
@@ -448,7 +420,7 @@ required_test() ->
   ?assertEqual(#{<<"f2">> => "string", <<"f3">> => 0},
     hocon_tconf:check_plain(Sc, #{<<"f2">> => <<"string">>},
       #{required => false})),
-  ?VALIDATION_ERR(#{reason := not_nullable, path := "f1"},
+  ?VALIDATION_ERR(#{reason := mandatory_required_field, path := "f1"},
     hocon_tconf:check_plain(Sc, #{<<"f2">> => <<"string">>},
       #{required => true})),
 
@@ -457,17 +429,15 @@ required_test() ->
                             {f3, hoconsc:mk(integer(), #{default => 0})}
                            ]
                 },
-  ?VALIDATION_ERR(#{reason := not_nullable, path := "f2"},
+  ?VALIDATION_ERR(#{reason := mandatory_required_field, path := "f2"},
     hocon_tconf:check_plain(ScRequired, #{}, #{required => false})),
 
-  ?VALIDATION_ERR(#{reason := not_nullable, path := "f2"},
+  ?VALIDATION_ERR(#{reason := mandatory_required_field, path := "f2"},
     hocon_tconf:check_plain(ScRequired, #{}, #{})),
 
   ?assertEqual(#{<<"f2">> => "string", <<"f3">> => 0},
     hocon_tconf:check_plain(ScRequired, #{<<"f2">> => <<"string">>}, #{required => true})),
 
-  ?assertEqual(#{<<"f2">> => "string2", <<"f3">> => 0},
-    hocon_tconf:check_plain(ScRequired, #{<<"f2">> => <<"string2">>}, #{nullable => false})),
   ok.
 
 bad_root_test() ->
@@ -526,15 +496,15 @@ map_just_one_root_test() ->
     ?assertEqual(#{<<"root">> => #{<<"f2">> => "bar", <<"f1">> => 1}},
                  richmap_to_map(NewData)).
 
-validation_error_if_not_nullable_test() ->
+validation_error_if_not_required_test() ->
   Sc = #{roots => [root],
          fields => #{root => [{f1, hoconsc:mk(integer())},
                               {f2, hoconsc:mk(string())}
                              ]}
         },
     Data = #{},
-    ?VALIDATION_ERR(#{reason := not_nullable},
-                    hocon_tconf:check_plain(Sc, Data, #{nullable => false})).
+    ?VALIDATION_ERR(#{reason := mandatory_required_field},
+                    hocon_tconf:check_plain(Sc, Data, #{required => true})).
 
 unknown_fields_test_() ->
     Conf = "person.id.num=123,person.name=mike",
@@ -543,10 +513,10 @@ unknown_fields_test_() ->
                           unknown := [{<<"name">>, #{line := 1}}]
                          }, hocon_tconf:map(demo_schema, M, all)).
 
-nullable_field_test() ->
-    Sc = #{roots => [{f1, hoconsc:mk(integer(), #{nullable => false})}]
+required_field_test() ->
+    Sc = #{roots => [{f1, hoconsc:mk(integer(), #{required => true})}]
           },
-    ?VALIDATION_ERR(#{reason := not_nullable, path := "f1"},
+    ?VALIDATION_ERR(#{reason := mandatory_required_field, path := "f1"},
                     hocon_tconf:check_plain(Sc, #{})),
     ok.
 
@@ -723,9 +693,9 @@ default_value_for_null_enclosing_struct_test() ->
     {ok, PlainMap} = hocon:binary(Conf, #{}),
     {ok, RichMap} = hocon:binary(Conf, #{format => richmap}),
     ?assertEqual(#{<<"l1">> => #{<<"l2">> => 22}},
-                 hocon_tconf:check_plain(Sc, PlainMap, #{nullable => true})),
+                 hocon_tconf:check_plain(Sc, PlainMap, #{required => false})),
     ?assertEqual(#{<<"l1">> => #{<<"l2">> => 22}},
-                 hocon_tconf:check(Sc, RichMap, #{nullable => true, return_plain => true})).
+                 hocon_tconf:check(Sc, RichMap, #{required => false, return_plain => true})).
 
 fill_primitive_defaults_test() ->
     Sc = #{roots => ["a"],
@@ -738,9 +708,9 @@ fill_primitive_defaults_test() ->
                ]}
           },
     ?assertMatch(#{<<"a">> := #{<<"b">> := 888, <<"c">> := 15000, <<"d">> := 16}},
-        hocon_tconf:check_plain(Sc, #{}, #{nullable => true})),
+        hocon_tconf:check_plain(Sc, #{}, #{required => false})),
     ?assertMatch(#{<<"a">> := #{<<"b">> := 888, <<"c">> := <<"15s">>, <<"d">> := <<"16">>}},
-        hocon_tconf:check_plain(Sc, #{}, #{nullable => true, only_fill_defaults => true})),
+        hocon_tconf:check_plain(Sc, #{}, #{required => false, only_fill_defaults => true})),
     ok.
 
 fill_complex_defaults_test() ->
@@ -807,7 +777,7 @@ test_array_env_override(Format) ->
         fun() ->
                 Conf = "",
                 {ok, Parsed} = hocon:binary(Conf, #{format => Format}),
-                Opts = #{format => Format, nullable => true, apply_override_envs => true},
+                Opts = #{format => Format, required => false, apply_override_envs => true},
                 ?assertEqual(#{<<"foo">> => [#{<<"kling">> => 111},
                                              #{<<"klang">> => 222}
                                             ]},
@@ -825,7 +795,7 @@ array_env_override_ignore_test() ->
         fun() ->
                 Conf = "",
                 {ok, Parsed} = hocon:binary(Conf, #{format => map}),
-                Opts = #{format => map, nullable => true, apply_override_envs => true},
+                Opts = #{format => map, required => false, apply_override_envs => true},
                 ?assertEqual(#{}, hocon_tconf:check(Sc, Parsed, Opts))
         end, envs([{"EMQX_FOO__first__intf", "111"}])).
 
@@ -927,7 +897,7 @@ test_array_override(Sc, Format, Envs) ->
 test_array_override(Sc, Format, Envs, Conf) ->
     with_envs(fun() ->
                       {ok, Parsed} = hocon:binary(Conf, #{format => Format}),
-                      Opts = #{format => Format, nullable => true,
+                      Opts = #{format => Format, required => false,
                                apply_override_envs => true},
                       try hocon_tconf:check(Sc, Parsed, Opts)
                       catch throw : {_Sc, R} -> R
@@ -938,7 +908,7 @@ test_array_env_override_t2(Sc, Format) ->
     with_envs(
         fun() ->
                 {ok, Parsed} = hocon:binary(<<>>, #{format => Format}),
-                Opts = #{format => Format, nullable => true, apply_override_envs => true},
+                Opts = #{format => Format, required => false, apply_override_envs => true},
                 ?assertEqual(#{<<"foo">> => #{<<"bar">> => [2, 1],
                                               <<"quu">> => ["quu"]}},
                              richmap_to_map(hocon_tconf:check(Sc, Parsed, Opts)))
@@ -948,9 +918,9 @@ test_array_env_override_t2(Sc, Format) ->
               {"EMQX_FOO__quu__1", "quu"}
              ]).
 
-ref_nullable_test() ->
+ref_required_test() ->
     Sc = #{roots => [ {k, #{type => hoconsc:ref(sub),
-                            nullable => {true, recursively}}}
+                            required => {false, recursively}}}
                     , {x, string()}
                     ],
            fields =>  #{sub => [{a, string()}, {b, string()}]}
@@ -1003,7 +973,7 @@ lazy_root_env_override_test() ->
       fun() ->
               Conf = "foo = {kling = 1}",
               {ok, PlainMap} = hocon:binary(Conf, #{}),
-              Opts = #{format => map, nullable => true, apply_override_envs => true},
+              Opts = #{format => map, required => false, apply_override_envs => true},
               ?assertEqual(#{<<"foo">> => #{<<"kling">> => 1}},
                            hocon_tconf:check(Sc, PlainMap, Opts)),
               ?assertEqual(#{<<"foo">> => #{<<"kling">> => 111,
@@ -1084,7 +1054,7 @@ override_env_with_include_test() ->
       fun() ->
               Conf = "foo = {kling = 1}",
               {ok, PlainMap} = hocon:binary(Conf, #{}),
-              Opts = #{format => map, nullable => true, apply_override_envs => true},
+              Opts = #{format => map, required => false, apply_override_envs => true},
               ?assertEqual(#{<<"foo">> => #{<<"kling">> => 1,
                                             <<"klang">> => 233}},
                            hocon_tconf:check(Sc, PlainMap, Opts#{check_lazy => true}))
@@ -1107,7 +1077,7 @@ override_env_with_include_abs_path_test() ->
       fun() ->
               Conf = "foo = {kling = 1}",
               {ok, PlainMap} = hocon:binary(Conf, #{apply_override_envs => true}),
-              Opts = #{format => map, nullable => true, apply_override_envs => true},
+              Opts = #{format => map, required => false, apply_override_envs => true},
               ?assertEqual(#{<<"foo">> => #{<<"kling">> => 123,
                                             <<"klang">> => 456}},
                            hocon_tconf:check(Sc, PlainMap, Opts#{check_lazy => true,
@@ -1130,7 +1100,7 @@ redundant_field_test() ->
                                      )}
                    ],
            fields => fun(foo) ->
-                             [{id, hoconsc:mk(string(), #{nullable => true})},
+                             [{id, hoconsc:mk(string(), #{required => false})},
                               {type, string()},
                               {backend, string()}
                              ]
