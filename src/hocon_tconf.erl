@@ -51,6 +51,7 @@
                    %% map or check APIs fail with validation_error.
                    %% NOTE: this option serves as default value for field's `nullable` spec
                  , nullable => boolean() %% default: true for map, false for check
+                 , required => boolean() %% required is the opposite of nullable.
 
                  %% below options are generated internally and should not be passed in by callers
                  , format => map | richmap
@@ -573,7 +574,16 @@ is_known_name(Name, ExpectedNames) ->
 
 is_nullable(Opts, Schema) ->
     case field_schema(Schema, nullable) of
-        undefined -> maps:get(nullable, Opts, ?DEFAULT_NULLABLE);
+        undefined ->
+            case field_schema(Schema, required) of
+                undefined ->
+                    case Opts of
+                        #{required := Required} -> not Required;
+                        #{nullable := Nullable} -> Nullable;
+                        _ -> ?DEFAULT_NULLABLE
+                    end;
+                Required -> not Required
+            end;
         Maybe -> Maybe
     end.
 

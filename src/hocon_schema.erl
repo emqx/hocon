@@ -81,7 +81,8 @@
          , validator => undefined | validationfun()
            %% set true if a field is allowed to be `undefined`
            %% NOTE: has no point setting it to `true` if field has a default value
-         , nullable => true | false | {true, recursively} % default = true
+         , nullable => boolean() | {true, recursively} % default = true
+         , required => boolean() %% required is the opposite of nullable without recursively.
            %% for sensitive data obfuscation (password, token)
          , sensitive => boolean()
          , desc => iodata()
