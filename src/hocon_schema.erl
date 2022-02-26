@@ -31,6 +31,7 @@
         , resolve_struct_name/2
         , root_names/1
         , field_schema/2
+        , assert_fields/2
         ]).
 
 -export_type([ field_schema/0
@@ -305,3 +306,26 @@ field_schema(FieldSchema, SchemaKey) when is_function(FieldSchema, 1) ->
     FieldSchema(SchemaKey);
 field_schema(FieldSchema, SchemaKey) when is_map(FieldSchema) ->
     maps:get(SchemaKey, FieldSchema, undefined).
+
+%% @doc Assert fileds schema sanity.
+assert_fields(EnclosingSchema, []) ->
+    error(#{reason => no_fields_defined, enclosing_schema => EnclosingSchema});
+assert_fields(EnclosingSchema, Fields) ->
+    case assert_unique_field_names(Fields) of
+        ok -> ok;
+        {error, Reason} -> error(Reason#{enclosing_schema => EnclosingSchema})
+    end.
+
+assert_unique_field_names(Fields) ->
+    assert_unique_field_names(Fields, []).
+
+assert_unique_field_names([], _) -> ok;
+assert_unique_field_names([{Name, _} | Rest], Acc) ->
+    BinName = bin(Name),
+    case lists:member(BinName, Acc) of
+        true ->
+            {error, #{reason => duplicated_filed_name,
+                      name => Name}};
+        false ->
+            assert_unique_field_names(Rest, [BinName | Acc])
+    end.

@@ -334,24 +334,24 @@ bin(A) when is_atom(A) -> atom_to_binary(A, utf8);
 bin(S) -> iolist_to_binary(S).
 
 do_map(Fields, Value, Opts, ParentSchema) ->
+    ok = assert_fields(ParentSchema, Fields),
     case unbox(Opts, Value) of
         undefined ->
             case is_required(Opts, ParentSchema) of
-                {false, recursively} ->
-                    {[], boxit(Opts, undefined, undefined)};
-                false ->
-                    do_map2(Fields, boxit(Opts, undefined, undefined), Opts,
-                            ParentSchema);
                 true ->
-                    {validation_errs(Opts, mandatory_required_field, undefined), undefined}
+                    {validation_errs(Opts, mandatory_required_field, undefined), undefined};
+                false ->
+                    do_map2(Fields, boxit(Opts, undefined, undefined), Opts);
+                {false, recursively} ->
+                    {[], boxit(Opts, undefined, undefined)}
             end;
         V when is_map(V) ->
-            do_map2(Fields, Value, Opts, ParentSchema);
+            do_map2(Fields, Value, Opts);
         _ ->
             {validation_errs(Opts, bad_value_for_struct, Value), Value}
     end.
 
-do_map2(Fields, Value0, Opts, _ParentSchema) ->
+do_map2(Fields, Value0, Opts) ->
     SchemaFieldNames = lists:map(fun({N, _Schema}) -> N end, Fields),
     DataFields0 = unbox(Opts, Value0),
     DataFields = drop_nulls(Opts, DataFields0),
@@ -447,11 +447,16 @@ map_field_maybe_convert(Type, Schema, Value0, Opts, Converter) ->
 map_field(?MAP(_Name, Type), FieldSchema, Value, Opts) ->
     %% map type always has string keys
     Keys = maps_keys(unbox(Opts, Value)),
-    FieldNames = [str(K) || K <- Keys],
-    %% All objects in this map should share the same schema.
-    NewSc = hocon_schema:override(FieldSchema, #{type => Type, mapping => undefined}),
-    NewFields = [{FieldName, NewSc} || FieldName <- FieldNames],
-    do_map(NewFields, Value, Opts, NewSc); %% start over
+    case Keys =/= [] of
+        true ->
+            FieldNames = [str(K) || K <- Keys],
+            %% All objects in this map should share the same schema.
+            NewSc = hocon_schema:override(FieldSchema, #{type => Type, mapping => undefined}),
+            NewFields = [{FieldName, NewSc} || FieldName <- FieldNames],
+            do_map(NewFields, Value, Opts, NewSc); %% start over
+        false ->
+            {[], Value}
+    end;
 map_field(?R_REF(Module, Ref), FieldSchema, Value, Opts) ->
     %% Switching to another module, good luck.
     do_map(hocon_schema:fields(Module, Ref), Value, Opts#{schema := Module}, FieldSchema);
@@ -540,37 +545,40 @@ sub_type(EnclosingSchema, MaybeType) ->
 maps_keys(undefined) -> [];
 maps_keys(Map) -> maps:keys(Map).
 
+check_unknown_fields(_Opts, _SchemaFieldNames, undefined) -> ok;
 check_unknown_fields(Opts, SchemaFieldNames, DataFields) ->
-    case find_unknown_fields(SchemaFieldNames, DataFields) of
-        [] ->
+    case match_field_names(SchemaFieldNames, DataFields) of
+        ok ->
             ok;
-        Unknowns ->
+        {error, {Expected, Unknowns}} ->
             Err = #{reason => unknown_fields,
                     path => path(Opts),
-                    expected => SchemaFieldNames,
-                    unknown => Unknowns
+                    expected_fields => Expected,
+                    unknown_fields => Unknowns
                    },
             validation_errs(Opts, Err)
     end.
 
-find_unknown_fields(_SchemaFieldNames, undefined) -> [];
-find_unknown_fields(SchemaFieldNames0, DataFields) ->
+match_field_names(SchemaFieldNames0, DataFields) ->
     SchemaFieldNames = lists:map(fun bin/1, SchemaFieldNames0),
-    maps:fold(fun(DfName, DfValue, Acc) ->
-                      case is_known_name(DfName, SchemaFieldNames) of
-                          true ->
-                              Acc;
-                          false ->
-                              Unknown = case meta(DfValue) of
-                                            undefined -> DfName;
-                                            Meta -> {DfName, Meta}
-                                        end,
-                              [Unknown | Acc]
-                      end
-              end, [], DataFields).
+    match_field_names(SchemaFieldNames, maps:to_list(DataFields), []).
 
-is_known_name(Name, ExpectedNames) ->
-    lists:any(fun(N) -> N =:= bin(Name) end, ExpectedNames).
+match_field_names(_Expected, [], []) -> ok;
+match_field_names(Expected, [], Unknowns) -> {error, {Expected, Unknowns}};
+match_field_names(Expected, [{DfName, DfValue} | Rest], Unknowns) ->
+    case match_field_name(DfName, Expected) of
+        {[], _} ->
+            Unknown = case meta(DfValue) of
+                          undefined -> DfName;
+                          Meta -> {DfName, Meta}
+                      end,
+            match_field_names(Expected, Rest, [Unknown | Unknowns]);
+        {[_], RestExpected} ->
+            match_field_names(RestExpected, Rest, Unknowns)
+    end.
+
+match_field_name(Name, ExpectedNames) ->
+    lists:partition(fun(N) -> bin(N) =:= bin(Name) end, ExpectedNames).
 
 is_required(Opts, Schema) ->
     case field_schema(Schema, required) of
@@ -975,3 +983,10 @@ check_index_seq(I, [{Index, V} | Rest], Acc) ->
             {error, #{expected_index => I,
                       got_index => Index}}
     end.
+
+-ifndef(TEST).
+assert_fields(_, _) -> ok.
+-else.
+assert_fields(ParentSchema, Fields) ->
+    hocon_schema:assert_fields(ParentSchema, Fields).
+-endif.

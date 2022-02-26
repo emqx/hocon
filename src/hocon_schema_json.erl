@@ -71,6 +71,7 @@ fmt_field(Ns, Name, FieldSchema) ->
         , {default, fmt_default(hocon_schema:field_schema(FieldSchema, default))}
         , {desc, bin(hocon_schema:field_schema(FieldSchema, desc))}
         , {extra, hocon_schema:field_schema(FieldSchema, extra)}
+        , {mapping, hocon_schema:field_schema(FieldSchema, mapping)}
         ],
     maps:from_list([{K, V} || {K, V} <- L, V =/= undefined]).
 
