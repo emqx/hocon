@@ -380,8 +380,8 @@ map_fields([{FieldName, FieldSchema} | Fields], Conf0, Acc, Opts) ->
                         field => FieldName,
                         path => try path(Opts) catch _ : _ -> [] end,
                         exception => E},
-                catch log(Opts, error, io_lib:format("input-config:~n~p~n~p~n",
-                                                     [FieldValue, Err])),
+                catch log(Opts, error, bin(io_lib:format("input-config:~n~p~n~p~n",
+                                                         [FieldValue, Err]))),
                 erlang:raise(C, Err, St)
         end,
     Conf = put_value(Opts, FieldName, unbox(Opts, FValue), Conf0),
