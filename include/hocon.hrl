@@ -14,7 +14,7 @@
 %% limitations under the License.
 %%--------------------------------------------------------------------
 
-%% This header file is inteded for internal use in parser modules.
+%% This header file is intended for internal use in parser modules.
 
 -ifndef(HOCON_HRL).
 -define(HOCON_HRL, true).

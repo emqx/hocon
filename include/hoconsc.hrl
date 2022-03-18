@@ -14,16 +14,17 @@
 %% limitations under the License.
 %%--------------------------------------------------------------------
 
-%% This header file is inteded for internal use in schema modules.
-
 -ifndef(HOCONSC_HRL).
 -define(HOCONSC_HRL, true).
+
+-include_lib("typerefl/include/types.hrl").
 
 -define(ARRAY(OfTYpe), {array, OfTYpe}).
 -define(UNION(OfTypes), {union, OfTypes}).
 -define(ENUM(OfSymbols), {enum, OfSymbols}).
 -define(REF(Name), {ref, Name}).
 -define(R_REF(Module, Name), {ref, Module, Name}). % remote ref
+-define(R_REF(NAME), ?R_REF(?MODULE, NAME)).
 -define(IS_TYPEREFL(X), (is_tuple(X) andalso element(1, Type) =:= '$type_refl')).
 
 %% A field having lazy type is not type-checked as a part of its enclosing struct
@@ -33,5 +34,9 @@
 
 %% Map keys are always strings, `Name' is only for documentation
 -define(MAP(Name, Type), {map, Name, Type}).
+
+%% To avoid not import those function. we provide a macro to call them.
+-define(MK(Type), hoconsc:mk(Type)).
+-define(MK(Type, Meta), hoconsc:mk(Type, Meta)).
 
 -endif.
