@@ -98,7 +98,7 @@
 -type root_type() :: name() | field().
 -type schema() :: module()
                 | #{ roots := [root_type()]
-                   , fields := #{name() => fields()} | fun((name()) -> fields())
+                   , fields => #{name() => fields()} | fun((name()) -> fields())
                    , translations => #{name() => [translation()]} %% for config mappings
                    , validations => [validation()] %% for config integrity checks
                    , namespace => atom()
