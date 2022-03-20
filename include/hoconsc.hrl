@@ -36,7 +36,7 @@
 -define(MAP(Name, Type), {map, Name, Type}).
 
 %% To avoid not import those function. we provide a macro to call them.
--define(MK(Type), hoconsc:mk(Type)).
--define(MK(Type, Meta), hoconsc:mk(Type, Meta)).
+-define(HOCON(Type), hoconsc:mk(Type)).
+-define(HOCON(Type, Meta), hoconsc:mk(Type, Meta)).
 
 -endif.
