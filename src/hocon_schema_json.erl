@@ -34,7 +34,7 @@ gen(Schema, Opts) ->
     {RootNs, RootFields, Structs} = hocon_schema:find_structs(Schema),
     [ gen_struct(RootNs, RootNs, "Root Config Keys", #{fields => RootFields}, Opts)
     | lists:map(fun({Ns, Name, Fields}) ->
-      gen_struct(RootNs, Ns, Name, Fields, Opts)
+                        gen_struct(RootNs, Ns, Name, Fields, Opts)
                 end, Structs)
     ].
 
