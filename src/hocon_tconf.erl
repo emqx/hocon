@@ -143,7 +143,7 @@ do_translate([{MappedField, Translator} | More], TrNamespace, Conf, Acc) ->
 
 assert_integrity(Schema, Conf0, #{format := Format}) ->
     Conf = case Format of
-               richmap -> richmap_to_map(Conf0);
+               richmap -> ensure_plain(Conf0);
                map -> Conf0
            end,
     Names = hocon_schema:validations(Schema),
@@ -210,7 +210,7 @@ do_check(Schema, Conf, Opts0, RootNames) ->
     NewConf.
 
 maybe_convert_to_plain_map(Conf, #{format := richmap, return_plain := true}) ->
-    richmap_to_map(Conf);
+    ensure_plain(Conf);
 maybe_convert_to_plain_map(Conf, _Opts) ->
     Conf.
 
@@ -409,7 +409,7 @@ map_one_field(FieldType, FieldSchema, FieldValue0, Opts) ->
             %% i.e. no config mapping, value validation (because it's unconverted)
             {Acc, NewValue};
         ok ->
-            Pv = plain_value(NewValue, Opts),
+            Pv = ensure_plain(NewValue),
             ValidationResult = validate(Opts, FieldSchema, Pv, Validators),
             case ValidationResult of
                 [] ->
@@ -425,7 +425,7 @@ map_one_field(FieldType, FieldSchema, FieldValue0, Opts) ->
 map_field_maybe_convert(Type, Schema, Value0, Opts, undefined) ->
     map_field(Type, Schema, Value0, Opts);
 map_field_maybe_convert(Type, Schema, Value0, Opts, Converter) ->
-    Value1 = plain_value(unbox(Opts, Value0), Opts),
+    Value1 = ensure_plain(Value0),
     try Converter(Value1) of
         Value2 ->
             Value3 = maybe_mkrich(Opts, Value2, Value0),
@@ -529,7 +529,7 @@ map_field(?ARRAY(Type), _Schema, Value0, Opts) ->
 map_field(Type, Schema, Value0, Opts) ->
     %% primitive type
     Value = unbox(Opts, Value0),
-    PlainValue = plain_value(Value, Opts),
+    PlainValue = ensure_plain(Value),
     ConvertedValue = hocon_schema_builtin:convert(PlainValue, Type),
     Validators = validators(field_schema(Schema, validator)) ++ builtin_validators(Type),
     ValidationResult = validate(Opts, Schema, ConvertedValue, Validators),
@@ -842,7 +842,7 @@ mkrich(Val, Box) ->
     boxit(Val, Box).
 
 get_field(#{format := richmap}, Path, Conf) -> hocon_maps:deep_get(Path, Conf);
-get_field(#{format := map}, Path, Conf) -> hocon_maps:get(Path, richmap_to_map(Conf)).
+get_field(#{format := map}, Path, Conf) -> hocon_maps:get(Path, ensure_plain(Conf)).
 
 %% put (maybe deep) value to map/richmap
 %% e.g. "path.to.my.value"
@@ -907,15 +907,12 @@ do_validate(Opts, Schema, Value, [H | T]) ->
 validation_errs(Opts, Reason, Value) ->
     Err = case meta(Value) of
               undefined -> #{reason => Reason, value => Value};
-              Meta -> #{reason => Reason, value => richmap_to_map(Value), location => Meta}
+              Meta -> #{reason => Reason, value => ensure_plain(Value), location => Meta}
           end,
     validation_errs(Opts, Err).
 
 validation_errs(Opts, Context) ->
     [{error, ?VALIDATION_ERRS(Context#{path => path(Opts)})}].
-
-plain_value(Value, #{format := map}) -> Value;
-plain_value(Value, #{format := richmap}) -> richmap_to_map(Value).
 
 -spec plain_put(opts(), [binary()], term(), hocon:confing()) -> hocon:config().
 plain_put(_Opts, [], Value, _Old) -> Value;
@@ -926,7 +923,7 @@ plain_put(Opts, [Name | Path], Value, Conf0) ->
 type_hint(B) when is_binary(B) -> string; %% maybe secret, do not hint value
 type_hint(X) -> X.
 
-richmap_to_map(MaybeRichMap) ->
+ensure_plain(MaybeRichMap) ->
     hocon_maps:ensure_plain(MaybeRichMap).
 
 %% treat 'null' as absence
