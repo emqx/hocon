@@ -59,9 +59,18 @@ real_file_name(F) ->
 
 %% @doc Check if it's a richmap.
 %% A richmap always has a `?HOCON_V' field.
-is_richmap(#{?HOCON_V := _}) -> true;
-is_richmap([H | _]) -> is_richmap(H);
-is_richmap(_) -> false.
+is_richmap(#{?HOCON_V := _}) ->
+    true;
+is_richmap([H | _]) ->
+    is_richmap(H);
+is_richmap(M) when is_map(M) ->
+    %% maybe unboxed value
+    case maps:next(maps:iterator(M)) of
+        {_, V, _} -> is_richmap(V);
+        _ -> false
+    end;
+is_richmap(_) ->
+    false.
 
 %% @doc Convert richmap to plain-map.
 richmap_to_map(RichMap) when is_map(RichMap) ->
