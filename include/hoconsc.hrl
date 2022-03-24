@@ -32,7 +32,7 @@
 %% the hint type is useful when generating documents
 -define(LAZY(HintType), {lazy, HintType}).
 
-%% Map keys are always strings, `Name' is only for documentation
+%% Map keys are always strings
 -define(MAP(Name, Type), {map, Name, Type}).
 
 %% To avoid not import those function. we provide a macro to call them.
