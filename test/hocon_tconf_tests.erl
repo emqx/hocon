@@ -179,6 +179,21 @@ mapping_test_() ->
                     F("b.ua=[{val=1},{val=true}]"))
     ].
 
+map_key_test() ->
+  Sc = #{roots => [{"val", hoconsc:map(key, string())}]},
+  GoodConf = "val = {good_GOOD = value}",
+  {ok, GoodMap} = hocon:binary(GoodConf, #{format => map}),
+  ?assertEqual(#{<<"val">> => #{<<"good_GOOD">> => "value"}},
+    hocon_tconf:check_plain(Sc, GoodMap, #{apply_override_envs => false})),
+
+  BadConfs = ["val = {\"_bad\" = value}", "val = {\"bad_-n\" = value}"],
+  lists:foreach(fun(BadConf) ->
+    {ok, BadMap} = hocon:binary(BadConf, #{format => map}),
+    ?GEN_VALIDATION_ERR(#{path := "val", reason := invalid_map_key},
+      hocon_tconf:check_plain(Sc, BadMap, #{apply_override_envs => false}))
+    end, BadConfs),
+  ok.
+
 generate_compatibility_test() ->
     Conf = [
         {["foo", "setting"], "val"},

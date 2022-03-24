@@ -399,7 +399,7 @@ map_one_field(FieldType, FieldSchema, FieldValue0, Opts) ->
                 %% primitive values are already validated
                 [];
             false ->
-                %% otherwise valdiate using the schema defined callbacks
+                %% otherwise validate using the schema defined callbacks
                 validators(field_schema(FieldSchema, validator))
         end,
     case find_errors(Acc) of
@@ -447,15 +447,25 @@ map_field_maybe_convert(Type, Schema, Value0, Opts, Converter) ->
 map_field(?MAP(_Name, Type), FieldSchema, Value, Opts) ->
     %% map type always has string keys
     Keys = maps_keys(unbox(Opts, Value)),
-    case Keys =/= [] of
-        true ->
-            FieldNames = [str(K) || K <- Keys],
-            %% All objects in this map should share the same schema.
-            NewSc = hocon_schema:override(FieldSchema, #{type => Type, mapping => undefined}),
-            NewFields = [{FieldName, NewSc} || FieldName <- FieldNames],
-            do_map(NewFields, Value, Opts, NewSc); %% start over
-        false ->
-            {[], Value}
+    case [str(K) || K <- Keys] of
+        [] -> {[], Value};
+        FieldNames ->
+            case get_invalid_name(FieldNames) of
+                [] ->
+                    %% All objects in this map should share the same schema.
+                    NewSc = hocon_schema:override(FieldSchema,
+                        #{type => Type, mapping => undefined}),
+                    NewFields = [{FieldName, NewSc} || FieldName <- FieldNames],
+                    do_map(NewFields, Value, Opts, NewSc); %% start over
+                InvalidNames ->
+                    Reason =
+                        #{
+                            reason => invalid_map_key,
+                            path => path(Opts),
+                            got => InvalidNames
+                        },
+                    {validation_errs(Opts, Reason), Value}
+            end
     end;
 map_field(?R_REF(Module, Ref), FieldSchema, Value, Opts) ->
     %% Switching to another module, good luck.
@@ -983,6 +993,11 @@ check_index_seq(I, [{Index, V} | Rest], Acc) ->
             {error, #{expected_index => I,
                       got_index => Index}}
     end.
+
+get_invalid_name(Names) ->
+    lists:filter(fun(F) ->
+        nomatch =:= re:run(F, "^[A-Za-z0-9]+[A-Za-z0-9-_]*$")
+                 end, Names).
 
 -ifndef(TEST).
 assert_fields(_, _) -> ok.
