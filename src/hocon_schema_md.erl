@@ -47,10 +47,11 @@ fmt_struct(Weight, #{ full_name := FullName
                     , fields := Fields
                     } = Struct, Opts) ->
     [ hocon_md:h(Weight, FullName)
+    , maps:get(desc, Struct, [])
+    , "\n\n"
     , fmt_paths(Paths)
     , fmt_envs(Paths, Opts)
-    , maps:get(desc, Struct, [])
-    , "\n**Fields**\n\n"
+    , "\n\n**Fields**\n\n"
     , lists:map(fun fmt_field/1, Fields)
     ].
 

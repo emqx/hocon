@@ -47,6 +47,7 @@
 -callback translations() -> [name()].
 -callback translation(name()) -> [translation()].
 -callback validations() -> [validation()].
+-callback desc(name()) -> iodata().
 
 -optional_callbacks([ namespace/0
                     , roots/0
@@ -54,6 +55,7 @@
                     , translations/0
                     , translation/1
                     , validations/0
+                    , desc/1
                     ]).
 
 -include("hoconsc.hrl").
@@ -73,6 +75,7 @@
                       | ?ENUM(type())
                       | field_schema_map()
                       | field_schema_fun().
+
 -type field_schema_fun() :: fun((_) -> _).
 -type field_schema_map() ::
         #{ type := type()
@@ -197,11 +200,29 @@ fields(Sc, Name) ->
 %% @doc Get fields and meta data of the struct for the given struct name.
 -spec fields_and_meta(schema(), name()) -> fields().
 fields_and_meta(Mod, Name) when is_atom(Mod) ->
-    ensure_struct_meta(Mod:fields(Name));
+    case Mod:fields(Name) of
+        Fields when is_list(Fields) ->
+            maybe_add_desc(Mod, Name, #{fields => Fields});
+        Fields ->
+            ensure_struct_meta(Fields)
+    end;
 fields_and_meta(#{fields := Fields}, Name) when is_function(Fields) ->
     ensure_struct_meta(Fields(Name));
 fields_and_meta(#{fields := Fields}, Name) when is_map(Fields) ->
     ensure_struct_meta(maps:get(Name, Fields)).
+
+maybe_add_desc(Mod, Name, Meta) ->
+    case erlang:function_exported(Mod, desc, 1) of
+        true ->
+            case Mod:desc(Name) of
+                undefined ->
+                    Meta;
+                Desc ->
+                    Meta #{desc => Desc}
+            end;
+        false ->
+            Meta
+    end.
 
 ensure_struct_meta(Fields) when is_list(Fields) -> #{fields => Fields};
 ensure_struct_meta(#{fields := _} = Fields) -> Fields.
@@ -307,7 +328,7 @@ field_schema(FieldSchema, SchemaKey) when is_function(FieldSchema, 1) ->
 field_schema(FieldSchema, SchemaKey) when is_map(FieldSchema) ->
     maps:get(SchemaKey, FieldSchema, undefined).
 
-%% @doc Assert fileds schema sanity.
+%% @doc Assert fields schema sanity.
 assert_fields(EnclosingSchema, []) ->
     error(#{reason => no_fields_defined, enclosing_schema => EnclosingSchema});
 assert_fields(EnclosingSchema, Fields) ->
@@ -324,7 +345,7 @@ assert_unique_field_names([{Name, _} | Rest], Acc) ->
     BinName = bin(Name),
     case lists:member(BinName, Acc) of
         true ->
-            {error, #{reason => duplicated_filed_name,
+            {error, #{reason => duplicated_field_name,
                       name => Name}};
         false ->
             assert_unique_field_names(Rest, [BinName | Acc])

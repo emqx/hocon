@@ -19,7 +19,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -include("hocon_private.hrl").
 
--export([roots/0, fields/1, validations/0]).
+-export([roots/0, fields/1, validations/0, desc/1]).
 
 -define(GEN_VALIDATION_ERR(Reason, Expr),
         ?_assertThrow({_, [{validation_error, Reason}]}, Expr)).
@@ -40,6 +40,15 @@ fields(child) ->
     ];
 fields(Other) ->
     demo_schema:fields(Other).
+
+desc(bar) ->
+    "This is bar";
+desc(parent) ->
+    "This is parent";
+desc(child) ->
+    "This is child";
+desc(_) ->
+    "This is something else".
 
 validations() -> [{check_child_name, fun check_child_name/1}].
 
