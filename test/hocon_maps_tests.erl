@@ -84,3 +84,7 @@ assert_flatten_value(Conf, [{Path, Val} | Pairs]) ->
 
 flatten_primitive_value_test() ->
     ?assertEqual([{<<>>, 1}], hocon_maps:flatten(1, #{})).
+
+key_not_found_test() ->
+    ?assertError({key_not_found, <<"d">>, 1},
+        hocon_maps:get(["a", "b", "d"], #{<<"a">> => #{<<"b">> => 1}})).

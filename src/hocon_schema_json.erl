@@ -23,20 +23,31 @@
 
 -type fmtfieldfunc() :: fun((Namespace :: binary() | undefined,
                              Name :: hocon_schema:name(),
-                             hocon_schema:field_schema()) -> map()).
+                             hocon_schema:field_schema(),
+                             Options :: map()) -> map()).
 
 %% @doc Generate a JSON compatible list of `map()'s.
 -spec gen(hocon_schema:schema()) -> [map()].
-gen(Schema) -> gen(Schema, #{formatter => fun fmt_field/3}).
+gen(Schema) ->
+  Opts = #{formatter => fun fmt_field/4, desc_file => undefined, lang => "en"},
+  gen(Schema, Opts).
 %% @doc Generate a JSON compatible list of `map()'s.
--spec gen(hocon_schema:schema(), #{formatter => fmtfieldfunc()}) -> [map()].
+-spec gen(hocon_schema:schema(),
+    #{formatter => fmtfieldfunc(), lang => string(), desc_file => filename:file() | undefined})
+      -> [map()].
 gen(Schema, Opts) ->
     {RootNs, RootFields, Structs} = hocon_schema:find_structs(Schema),
-    [ gen_struct(RootNs, RootNs, "Root Config Keys", #{fields => RootFields}, Opts)
-    | lists:map(fun({Ns, Name, Fields}) ->
-                        gen_struct(RootNs, Ns, Name, Fields, Opts)
-                end, Structs)
-    ].
+    {File, Opts1} = maps:take(desc_file, Opts),
+    Cache = hocon_schema:new_cache(File),
+    Opts2 = Opts1#{cache => Cache},
+    Json =
+      [ gen_struct(RootNs, RootNs, "Root Config Keys", #{fields => RootFields}, Opts2)
+        | lists:map(fun({Ns, Name, Fields}) ->
+        gen_struct(RootNs, Ns, Name, Fields, Opts2)
+                    end, Structs)
+      ],
+    hocon_schema:delete_cache(Cache),
+    Json.
 
 gen_struct(RootNs, Ns0, Name, #{fields := Fields} = Meta, Opts) ->
     Ns = case RootNs =:= Ns0 of
@@ -52,7 +63,7 @@ gen_struct(RootNs, Ns0, Name, #{fields := Fields} = Meta, Opts) ->
           , fields => fmt_fields(Ns, Fields, Opts)
           },
     case Meta of
-        #{desc := StructDoc} -> S0#{desc => bin(StructDoc)};
+        #{desc := StructDoc} -> S0#{desc => fmt_desc(StructDoc, Opts)};
         _ -> S0
     end.
 
@@ -62,14 +73,15 @@ fmt_fields(Ns, [{Name, FieldSchema} | Fields], Opts) ->
         true -> fmt_fields(Ns, Fields, Opts);
         _ ->
           FmtFieldFun = formatter_func(Opts),
-          [FmtFieldFun(Ns, Name, FieldSchema) | fmt_fields(Ns, Fields, Opts)]
+          Opts1 = Opts#{lang => maps:get(lang, Opts, "en")},
+          [FmtFieldFun(Ns, Name, FieldSchema, Opts1) | fmt_fields(Ns, Fields, Opts)]
     end.
 
-fmt_field(Ns, Name, FieldSchema) ->
+fmt_field(Ns, Name, FieldSchema, Opts) ->
     L = [ {name, bin(Name)}
         , {type, fmt_type(Ns, hocon_schema:field_schema(FieldSchema, type))}
         , {default, fmt_default(hocon_schema:field_schema(FieldSchema, default))}
-        , {desc, bin(hocon_schema:field_schema(FieldSchema, desc))}
+        , {desc, fmt_desc(hocon_schema:field_schema(FieldSchema, desc), Opts)}
         , {extra, hocon_schema:field_schema(FieldSchema, extra)}
         , {mapping, bin(hocon_schema:field_schema(FieldSchema, mapping))}
         ],
@@ -128,10 +140,19 @@ fmt_ref(Ns, Name) ->
         false -> << (bin(Ns))/binary, ":", (bin(Name))/binary >>
     end.
 
+fmt_desc(Struct, Opts = #{cache := Cache}) ->
+    Desc = hocon_schema:resolve_schema(Struct, Cache),
+    case is_map(Desc) of
+        true ->
+            Lang = maps:get(lang, Opts, "en"),
+            bin(hocon_maps:get(["desc", Lang], Desc));
+        false -> bin(Desc)
+    end.
+
 bin(undefined) -> undefined;
 bin(S) when is_list(S) -> unicode:characters_to_binary(S, utf8);
 bin(A) when is_atom(A) -> atom_to_binary(A, utf8);
 bin(B) when is_binary(B) -> B.
 
 formatter_func(Opts) ->
-  maps:get(formatter, Opts, fun fmt_field/3).
+  maps:get(formatter, Opts, fun fmt_field/4).
