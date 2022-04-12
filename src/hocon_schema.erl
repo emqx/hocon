@@ -34,6 +34,11 @@
         , assert_fields/2
         ]).
 
+-export([ new_cache/1
+        , resolve_schema/2
+        , delete_cache/1
+        ]).
+
 -export_type([ field_schema/0
              , name/0
              , schema/0
@@ -62,6 +67,8 @@
 -include("hocon_private.hrl").
 
 -type name() :: atom() | string() | binary().
+-type desc_id() :: atom() | string() | binary().
+-type desc() :: iodata() | {desc, module(), desc_id()}.
 -type type() :: typerefl:type() %% primitive (or complex, but terminal) type
               | name() %% reference to another struct
               | ?ARRAY(type()) %% array of
@@ -88,14 +95,14 @@
          , required => boolean() | {false, recursively} % default = false
            %% for sensitive data obfuscation (password, token)
          , sensitive => boolean()
-         , desc => iodata()
+         , desc => desc()
          , hidden => boolean() %% hide it from doc generation
          , extra => map() %% transparent metadata
          }.
 
 -type field() :: {name(), typefunc() | field_schema()}.
 -type fields() :: [field()] | #{fields := [field()],
-                                desc => iodata()
+                                desc => desc()
                                }.
 -type validation() :: {name(), validationfun()}.
 -type root_type() :: name() | field().
@@ -350,3 +357,36 @@ assert_unique_field_names([{Name, _} | Rest], Acc) ->
         false ->
             assert_unique_field_names(Rest, [BinName | Acc])
     end.
+
+new_cache(undefined) -> #{file => undefined, tab => undefined};
+new_cache(File) ->
+  case hocon:load(File) of
+    {ok, Schema} ->
+      Tab = ets:new(?MODULE, [set]),
+      ets:insert(Tab, {File, Schema}),
+      #{tab => Tab, file => File};
+    {error, Reason} ->
+      error(#{reason => Reason, file => File})
+  end.
+
+delete_cache(#{tab := undefined}) -> ok;
+delete_cache(#{tab := Tab}) -> ets:delete(Tab).
+
+resolve_schema(?DESC(Mod, Id), State) ->
+  Desc =
+    case get_cache_schema(State) of
+      undefined -> undefined;
+      Cache -> hocon_maps:get([str(Mod), str(Id)], Cache)
+    end,
+  case Desc of
+    undefined -> error(#{reason => no_desc_for_id, key => {Mod, Id}, state => State});
+    _ -> Desc
+  end;
+resolve_schema(Any, _State) -> Any.
+
+-spec get_cache_schema(#{tab := undefined | ets:tab(), file := undefined | file:name_all()}) ->
+        undefined | hocon:config().
+get_cache_schema(#{tab := undefined }) -> undefined;
+get_cache_schema(#{tab := Tab, file := File}) ->
+  [{_, Schema}] = ets:lookup(Tab, File),
+  Schema.

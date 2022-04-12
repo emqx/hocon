@@ -35,6 +35,9 @@
 %% Map keys are always strings
 -define(MAP(Name, Type), {map, Name, Type}).
 
+-define(DESC(Module, Id), {desc, Module, Id}).
+-define(DESC(Id), ?DESC(?MODULE, Id)).
+
 %% To avoid not import those function. we provide a macro to call them.
 -define(HOCON(Type), hoconsc:mk(Type)).
 -define(HOCON(Type, Meta), hoconsc:mk(Type, Meta)).

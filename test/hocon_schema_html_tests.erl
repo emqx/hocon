@@ -19,7 +19,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 no_crash_test_() ->
-    [{"demo_schema", gen(demo_schema)},
+    [{"demo_schema", gen(demo_schema, "./test/data/demo_schema_doc.conf")},
      {"demo_schema2", gen(demo_schema2)},
      {"emqx_schema", gen(emqx_schema)},
      {"arbitrary1", gen(#{namespace => dummy,
@@ -33,4 +33,5 @@ no_crash_test_() ->
            })}
     ].
 
-gen(Schema) -> fun() -> hocon_schema_html:gen(Schema, "test") end.
+gen(Schema) -> fun() -> hocon_schema_html:gen(Schema, "test", undefined) end.
+gen(Schema, DescFile) -> fun() -> hocon_schema_html:gen(Schema, "test", DescFile) end.

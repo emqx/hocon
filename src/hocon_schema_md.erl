@@ -27,12 +27,15 @@ gen(Schema, Title) when is_list(Title) orelse is_binary(Title) ->
     gen(Schema, #{title => Title, body => <<>>});
 gen(Schema, #{title := Title, body := Body} = Opts0) ->
     Opts = ensure_env_prefix_opt(Opts0),
-    Structs = hocon_schema_json:gen(Schema),
+    File = maps:get(desc_file, Opts, undefined),
+    Lang = maps:get(lang, Opts, "en"),
+    Structs = hocon_schema_json:gen(Schema, #{desc_file => File, lang => Lang}),
     [Title,
-     "\n",
-     Body,
-     "\n",
-     fmt_structs(2, Structs, Opts)].
+    "\n",
+    Body,
+    "\n",
+    fmt_structs(2, Structs, Opts)].
+
 
 ensure_env_prefix_opt(Opts) ->
     maps:merge(#{env_prefix => "EMQX_"}, Opts).
@@ -47,12 +50,12 @@ fmt_struct(Weight, #{ full_name := FullName
                     , fields := Fields
                     } = Struct, Opts) ->
     [ hocon_md:h(Weight, FullName)
-    , maps:get(desc, Struct, [])
+    , maps:get(desc, Struct, "")
     , "\n\n"
     , fmt_paths(Paths)
     , fmt_envs(Paths, Opts)
     , "\n\n**Fields**\n\n"
-    , lists:map(fun fmt_field/1, Fields)
+    , lists:map(fun(F) -> fmt_field(F, Opts) end, Fields)
     ].
 
 fmt_paths([]) -> [];
@@ -77,10 +80,11 @@ simple_list(L) ->
 
 fmt_field(#{ name := Name
            , type := Type
-           } = Field) ->
+           } = Field,
+    _Opts) ->
     Default = fmt_default(maps:get(default, Field, undefined)),
     Mapping = fmt_mapping(maps:get(mapping, Field, undefined)),
-    Desc = maps:get(desc, Field, undefined),
+    Desc = maps:get(desc, Field, ""),
     [ ["- ", Name, ": ", fmt_type(Type), "\n"]
     , case Default =/= undefined of
           true  -> [hocon_md:indent(2, ["* default: ", Default]), "\n"];

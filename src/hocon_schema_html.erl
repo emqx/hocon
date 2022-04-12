@@ -16,7 +16,7 @@
 
 -module(hocon_schema_html).
 
--export([gen/2]).
+-export([gen/3]).
 
 -include("hoconsc.hrl").
 -include("hocon_private.hrl").
@@ -26,57 +26,60 @@
 -define(REF_PREFIX_ROOT, "root-").
 -define(REF_PREFIX_STRUCT, "struct-").
 
-gen(Schema, Title) ->
+gen(Schema, Title, File) ->
     {RootNs, RootFields, Structs} = hocon_schema:find_structs(Schema),
     IndexHtml = fmt_index(RootFields, Structs),
+    Cache = hocon_schema:new_cache(File),
+    Opts = #{cache => Cache},
     StructsHtml =
-        [fmt_structs(1, RootNs, [{RootNs, ?ROOT_KEYS, #{fields => RootFields}}]),
-         fmt_structs(2, RootNs, Structs)],
+        [fmt_structs(1, RootNs, Opts, [{RootNs, ?ROOT_KEYS, #{fields => RootFields}}]),
+         fmt_structs(2, RootNs, Opts, Structs)],
+    hocon_schema:delete_cache(Cache),
     render([{<<"%%MAGIC_CHICKEN_TITLE%%">>, Title},
             {<<"%%MAGIC_CHICKEN_INDEX%%">>, IndexHtml},
             {<<"%%MAGIC_CHICKEN_STRUCTS%%">>, StructsHtml}
            ]).
 
-fmt_structs(_Weight, _RootNs, []) -> [];
-fmt_structs(Weight, RootNs, [{Ns, Name, Fields} | Rest]) ->
-    [fmt_struct(Weight, RootNs, Ns, Name, Fields), "\n" |
-     fmt_structs(Weight, RootNs, Rest)].
+fmt_structs(_Weight, _RootNs, _Opts, []) -> [];
+fmt_structs(Weight, RootNs, Opts, [{Ns, Name, Fields} | Rest]) ->
+    [fmt_struct(Weight, RootNs, Opts, Ns, Name, Fields), "\n" |
+     fmt_structs(Weight, RootNs, Opts, Rest)].
 
-fmt_struct(Weight, RootNs, Ns0, Name, #{fields := Fields} = Meta) ->
+fmt_struct(Weight, RootNs, Opts, Ns0, Name, #{fields := Fields} = Meta) ->
     Ns = case RootNs =:= Ns0 of
              true -> undefined;
              false -> Ns0
          end,
-    FieldsHtml= ul(fmt_fields(Ns, Name, Fields)),
+    FieldsHtml= ul(fmt_fields(Ns, Name, Opts, Fields)),
     FullNameDisplay = ref(Ns, Name),
-    [html_hd(Weight, FullNameDisplay, Meta), FieldsHtml].
+    [html_hd(Weight, FullNameDisplay, Opts, Meta), FieldsHtml].
 
-html_hd(Weight, StructName, Meta) ->
+html_hd(Weight, StructName, Opts, Meta) ->
     H = ["<h", integer_to_list(Weight), ">"],
     E = ["</h", integer_to_list(Weight), ">"],
     [ [H, local_anchor([?REF_PREFIX_STRUCT, bin(StructName)], StructName), E, "\n"],
       case Meta of
-          #{desc := StructDoc} -> ["<br>", StructDoc];
+          #{desc := StructDoc} -> ["<br>", hocon_schema:resolve_schema(StructDoc, Opts)];
           _ -> []
       end
     ].
 
-fmt_fields(_Ns, _StructName, []) -> [];
-fmt_fields(Ns, StructName, [{Name, FieldSchema} | Fields]) ->
-    HTML = fmt_field(Ns, StructName, Name, FieldSchema),
+fmt_fields(_Ns, _StructName, _Opts, []) -> [];
+fmt_fields(Ns, StructName, Opts, [{Name, FieldSchema} | Fields]) ->
+    HTML = fmt_field(Ns, StructName, Opts, Name, FieldSchema),
     case hocon_schema:field_schema(FieldSchema, hidden) of
-        true -> fmt_fields(Ns, StructName, Fields);
-        _ -> [bin(HTML) | fmt_fields(Ns, StructName, Fields)]
+        true -> fmt_fields(Ns, StructName, Opts, Fields);
+        _ -> [bin(HTML) | fmt_fields(Ns, StructName, Opts, Fields)]
     end.
 
-fmt_field(Ns, StructName, Name, FieldSchema) ->
+fmt_field(Ns, StructName, Opts, Name, FieldSchema) ->
     Type = fmt_type(Ns, hocon_schema:field_schema(FieldSchema, type)),
     Default = fmt_default(hocon_schema:field_schema(FieldSchema, default)),
     Desc = hocon_schema:field_schema(FieldSchema, desc),
     li([ ["<p class=\"fn\">",
           local_anchor(full_path(Ns, StructName, Name), bin(Name)), "</p>\n"]
          , case Desc =/= undefined of
-               true -> html_div("desc", Desc);
+               true -> html_div("desc", fmt_desc(Desc, Opts));
                false -> []
            end
          , html_div("desc", [em("type:"), Type])
@@ -91,6 +94,15 @@ em(X) -> ["<em>", X, "</em>"].
 fmt_default(undefined) -> undefined;
 fmt_default(Value) ->
     pre(hocon_pp:do(Value, #{newline => "\n", embedded => true})).
+
+fmt_desc(Struct, Opts = #{cache := Cache}) ->
+    Desc = hocon_schema:resolve_schema(Struct, Cache),
+    case is_map(Desc) of
+        true ->
+            Lang = maps:get(lang, Opts, "en"),
+            bin(hocon_maps:get(["desc", Lang], Desc));
+        false -> bin(Desc)
+    end.
 
 fmt_type(Ns, T) -> pre(do_type(Ns, T)).
 

@@ -1,6 +1,8 @@
 -module(demo_schema).
 
 -include_lib("typerefl/include/types.hrl").
+-define(DESC(Module, Id), {desc, Module, Id}).
+-define(DESC(Id), ?DESC(?MODULE, Id)).
 
 -behaviour(hocon_schema).
 
@@ -97,11 +99,12 @@ endpoint(_) -> undefined.
 
 greet(mapping) -> "app_foo.greet";
 greet(type) -> typerefl:regexp_string("^hello$");
-greet(desc) -> "greetings";
+greet(desc) -> ?DESC("greetings");
 greet(_) -> undefined.
 
 numbers(mapping) -> "app_foo.numbers";
 numbers(type) -> list(integer());
+numbers(desc) -> "list of numbers";
 numbers(_) -> undefined.
 
 priv_duration(type) -> duration();

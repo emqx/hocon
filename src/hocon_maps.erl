@@ -21,7 +21,7 @@
          deep_merge/2]).
 
 %% Access maybe-rich map values,
-%% Always reutrn plain value.
+%% Always return plain value.
 -export([get/2, get/3]).
 
 -export([flatten/2]).
@@ -99,7 +99,7 @@ boxit(Value, Box) -> Box#{?HOCON_V => Value}.
 %% @doc Get value from a plain or rich map.
 %% `undefined' is returned if no such value path.
 %% NOTE: always return plain-value.
--spec get(string(), config(), term()) -> term().
+-spec get([nonempty_string()] | nonempty_string(), config(), term()) -> term().
 get(Path, Config, Default) ->
     case get(Path, Config) of
         undefined -> Default;
@@ -115,7 +115,7 @@ deep_get(Path, Conf) ->
 
 %% @doc Get value from a maybe-rich map.
 %% always return plain-value.
--spec get(string(), config()) -> term().
+-spec get([nonempty_string()] | nonempty_string(), config()) -> term().
 get(Path, Map) ->
     case is_richmap(Map) of
         true ->
@@ -154,7 +154,9 @@ try_get(Key, Conf, map) when is_list(Conf) ->
     catch
         error : badarg ->
             undefined
-    end.
+    end;
+try_get(Key, Conf, map) -> %% get(["a", "b", "d"], #{<<"a">> => #{<<"b">> => 1}})
+    error({key_not_found, Key, Conf}).
 
 %% @doc Recursively merge two maps.
 %% @see hocon:deep_merge/2 for more.

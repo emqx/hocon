@@ -20,7 +20,7 @@
 -include_lib("typerefl/include/types.hrl").
 
 no_crash_test_() ->
-    [{"demo_schema", gen(demo_schema)},
+    [{"demo_schema", gen(demo_schema, "./test/data/demo_schema_doc.conf")},
      {"demo_schema2", gen(demo_schema2)},
      {"demo_schema3", gen(demo_schema3)},
      {"emqx_schema", gen(emqx_schema)},
@@ -46,6 +46,8 @@ no_crash_test_() ->
     ].
 
 gen(Schema) -> fun() -> hocon_schema_md:gen(Schema, "test") end.
+gen(Schema, DescFile) -> fun() -> hocon_schema_md:gen(Schema,
+  #{title => "test", body => <<>>, desc_file => DescFile}) end.
 
 find_structs_test() ->
     {demo_schema3, _Roots, Subs} = hocon_schema:find_structs(demo_schema3),
