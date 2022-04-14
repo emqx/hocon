@@ -63,6 +63,7 @@ print_help() ->
     ?STDOUT("Commands: now_time: get the current time for generate command's -t option", []),
     ?STDOUT("          generate: generate app.<time>.config and vm.<time>.args", []),
     ?STDOUT("          get: get value of a given key", []),
+    ?STDOUT("          multi_get: get values for given list of keys", []),
     ?STDOUT("          docgen: generate doc for a given schema module", []),
     ?STDOUT("", []),
     getopt:usage(cli_options(), "hocon generate"),
@@ -108,6 +109,8 @@ main(Args) ->
             print_help();
         get ->
             get(ParsedArgs, Extra);
+        multi_get ->
+            multi_get(ParsedArgs, Extra);
         generate ->
             generate(ParsedArgs);
         now_time ->
@@ -133,20 +136,37 @@ is_valid_now_time(T) ->
 -spec get([proplists:property()], [string()]) -> no_return().
 get(_ParsedArgs, []) ->
     %% No query, you get nothing.
-    ?STDOUT("hocon's get command requires a variable to query.", []),
-    ?STDOUT("Try `get setting.name`", []),
+    ?STDOUT("HOCON 'get' command requires one config key to query.", []),
     stop_deactivate();
-get(ParsedArgs, [Query | _]) ->
+get(ParsedArgs, [Key | _]) ->
     Schema = load_schema(ParsedArgs),
     Conf = load_conf(ParsedArgs, fun log_for_get/3),
+    [{_, Value}] = get_values(Schema, Conf, [Key]),
+    ?STDOUT("~0p", [Value]),
+    stop_ok().
+
+multi_get(_ParsedArgs, []) ->
+    ?STDOUT("HOCON 'multi_get' command requires one or more configs keys to query.", []),
+    ?STDOUT("Try `get setting.name1 setting.name2`", []),
+    ?STDOUT("The output format is name=value one line for each value.", []),
+    ?STDOUT("It does not work well for string values having line breaks ", []),
+    stop_deactivate();
+multi_get(ParsedArgs, Keys) ->
+    Schema = load_schema(ParsedArgs),
+    Conf = load_conf(ParsedArgs, fun log_for_get/3),
+    Values = get_values(Schema, Conf, Keys),
+    lists:foreach(fun({K, V}) -> ?STDOUT("~s=~0p", [K, V]) end, Values),
+    stop_ok().
+
+get_values(_Schema, _Conf, []) -> [];
+get_values(Schema, Conf, [Key | Rest]) ->
     %% map only the desired root name
-    [RootName0 | _] = string:tokens(Query, "."),
+    [RootName0 | _] = string:tokens(Key, "."),
     RootName = hocon_schema:resolve_struct_name(Schema, RootName0),
     %% do not log anything for `get` commands
     Opts = #{logger => fun(_, _) -> ok end, apply_override_envs => true},
     {_, NewConf} = hocon_tconf:map(Schema, Conf, [RootName], Opts),
-    ?STDOUT("~0p", [hocon_maps:get(Query, NewConf)]),
-    stop_ok().
+    [{Key, hocon_maps:get(Key, NewConf)} | get_values(Schema, Conf, Rest)].
 
 pretty_print(ParsedArgs) ->
     Conf0 = load_conf(ParsedArgs, fun log/3),
