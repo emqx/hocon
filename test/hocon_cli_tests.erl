@@ -136,13 +136,35 @@ generate_vmargs_test() ->
 get_test_() ->
     [ {"`get` output is correct", fun get_basic/0}
     , {"`get` respect env var", fun get_env/0}
+    , {"`multi_get` values", fun get_multi/0}
+    , {"`get` command tests", fun get_help/0}
+    , {"`multi_get` command tests", fun multi_get_help/0}
     ].
+
+get_help() ->
+    ?CAPTURING(begin
+                   catch hocon_cli:main(["-c", "foo", "-s", "bar", "get"]),
+                   ?assertPrinted("HOCON 'get' command")
+               end).
+
+multi_get_help() ->
+    ?CAPTURING(begin
+                   catch hocon_cli:main(["-c", "foo", "-s", "bar", "multi_get"]),
+                   ?assertPrinted("HOCON 'multi_get' command")
+               end).
 
 get_basic() ->
     ?CAPTURING(begin
                    hocon_cli:main(["-c", etc("demo-schema-example-1.conf"),
                                    "-s", "demo_schema", "get", "foo.setting"]),
                    ?assertPrinted("\"hello\"")
+               end).
+
+get_multi() ->
+    ?CAPTURING(begin
+                   hocon_cli:main(["-c", etc("demo-schema-example-1.conf"),
+                                   "-s", "demo_schema", "multi_get", "foo.min", "foo.max", "a_b"]),
+                   ?assertPrinted("foo.min=1\nfoo.max=10\na_b=undefined\n")
                end).
 
 get_env() ->
