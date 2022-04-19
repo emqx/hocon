@@ -34,9 +34,9 @@
         , assert_fields/2
         ]).
 
--export([ new_cache/1
+-export([ new_desc_cache/1
         , resolve_schema/2
-        , delete_cache/1
+        , delete_desc_cache/1
         ]).
 
 -export_type([ field_schema/0
@@ -44,6 +44,7 @@
              , schema/0
              , typefunc/0
              , translationfunc/0
+             , desc/0
              ]).
 
 -callback namespace() -> name().
@@ -225,7 +226,7 @@ maybe_add_desc(Mod, Name, Meta) ->
                 undefined ->
                     Meta;
                 Desc ->
-                    Meta #{desc => Desc}
+                    Meta#{desc => Desc}
             end;
         false ->
             Meta
@@ -358,8 +359,8 @@ assert_unique_field_names([{Name, _} | Rest], Acc) ->
             assert_unique_field_names(Rest, [BinName | Acc])
     end.
 
-new_cache(undefined) -> #{file => undefined, tab => undefined};
-new_cache(File) ->
+new_desc_cache(undefined) -> #{file => undefined, tab => undefined};
+new_desc_cache(File) ->
   case hocon:load(File) of
     {ok, Schema} ->
       Tab = ets:new(?MODULE, [set]),
@@ -369,8 +370,8 @@ new_cache(File) ->
       error(#{reason => Reason, file => File})
   end.
 
-delete_cache(#{tab := undefined}) -> ok;
-delete_cache(#{tab := Tab}) -> ets:delete(Tab).
+delete_desc_cache(#{tab := undefined}) -> ok;
+delete_desc_cache(#{tab := Tab}) -> ets:delete(Tab).
 
 resolve_schema(?DESC(Mod, Id), State) ->
   Desc =

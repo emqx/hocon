@@ -38,7 +38,7 @@ gen(Schema) ->
 gen(Schema, Opts) ->
     {RootNs, RootFields, Structs} = hocon_schema:find_structs(Schema),
     {File, Opts1} = maps:take(desc_file, Opts),
-    Cache = hocon_schema:new_cache(File),
+    Cache = hocon_schema:new_desc_cache(File),
     Opts2 = Opts1#{cache => Cache},
     Json =
       [ gen_struct(RootNs, RootNs, "Root Config Keys", #{fields => RootFields}, Opts2)
@@ -46,7 +46,7 @@ gen(Schema, Opts) ->
         gen_struct(RootNs, Ns, Name, Fields, Opts2)
                     end, Structs)
       ],
-    hocon_schema:delete_cache(Cache),
+    hocon_schema:delete_desc_cache(Cache),
     Json.
 
 gen_struct(RootNs, Ns0, Name, #{fields := Fields} = Meta, Opts) ->
