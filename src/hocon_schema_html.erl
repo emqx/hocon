@@ -29,12 +29,12 @@
 gen(Schema, Title, File) ->
     {RootNs, RootFields, Structs} = hocon_schema:find_structs(Schema),
     IndexHtml = fmt_index(RootFields, Structs),
-    Cache = hocon_schema:new_cache(File),
+    Cache = hocon_schema:new_desc_cache(File),
     Opts = #{cache => Cache},
     StructsHtml =
         [fmt_structs(1, RootNs, Opts, [{RootNs, ?ROOT_KEYS, #{fields => RootFields}}]),
          fmt_structs(2, RootNs, Opts, Structs)],
-    hocon_schema:delete_cache(Cache),
+    hocon_schema:delete_desc_cache(Cache),
     render([{<<"%%MAGIC_CHICKEN_TITLE%%">>, Title},
             {<<"%%MAGIC_CHICKEN_INDEX%%">>, IndexHtml},
             {<<"%%MAGIC_CHICKEN_STRUCTS%%">>, StructsHtml}
