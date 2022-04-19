@@ -75,11 +75,11 @@ rm_trailing_comma([Other | More], Acc) ->
 %% or a key (which is also string).
 %%
 %% This help function is to 'look-back' from the key-value separator
-%% tokens, namingly ':', '=' and '{', then tranform the proceeding
+%% tokens, namingly ':', '=' and '{', then transform the proceeding
 %% string token to a 'key' token.
 %%
 %% In the second step, it 'look-ahead' for a the last string/variable
-%% token preceeding to a non-string/variable token and transform
+%% token preceding to a non-string/variable token and transform
 %% it to a 'endstr' or 'endvar' token.
 trans_key(Tokens) ->
     trans_splice_end(trans_key(Tokens, [])).

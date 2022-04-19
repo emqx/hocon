@@ -100,7 +100,7 @@ env_override_test() ->
             {"EMQX_bar__field1", ""}
            ])).
 
-%% by defualt apply_override_envs is false
+%% by default apply_override_envs is false
 no_env_override_test() ->
    with_envs(
      fun() ->
@@ -507,7 +507,7 @@ translation_crash_test() ->
 
 %% a schema module may have multiple root names (which the roots/0 returns)
 %% map/2 checks maps all the roots
-%% map/3 allows to pass in the names as the thrid arg.
+%% map/3 allows to pass in the names as the third arg.
 %% this test is to cover map/3 API
 map_just_one_root_test() ->
     Sc = #{roots => [root],
