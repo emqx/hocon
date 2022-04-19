@@ -28,7 +28,7 @@ Definitions.
 %% \x{000D}	|  carriage-return     |  \r
 %% \x{0020}	|  space               |  \s
 %% \x{00A0}	|  non-break space     |  ??
-%% \x{2028}	|  line seperator      |
+%% \x{2028}	|  line separator      |
 %% \x{2029}	|  paragraph separator |
 
 %% Whitespace, Comments and Line Feed

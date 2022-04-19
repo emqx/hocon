@@ -178,7 +178,7 @@ merge_opts(Default, Opts) ->
 %% @doc Check richmap input against schema.
 %% Returns a new config with:
 %% 1) default values from schema if not found in input config
-%% 2) environment variable overrides applyed
+%% 2) environment variable overrides applied
 -spec(check(schema(), hocon:config()) -> hocon:config()).
 check(Schema, Conf) ->
     check(Schema, Conf, #{}).
@@ -190,7 +190,7 @@ check(Schema, Conf, Opts0) ->
 %% @doc Check plain-map input against schema.
 %% Returns a new config with:
 %% 1) default values from schema if not found in input config
-%% 2) environment variable overrides applyed.
+%% 2) environment variable overrides applied.
 %% Returns a plain map (not richmap).
 check_plain(Schema, Conf) ->
     check_plain(Schema, Conf, #{}).
@@ -312,7 +312,7 @@ resolve_root_types(Roots, [Name | Rest]) ->
 
 %% Assert no dot in root struct name.
 %% This is because the dot will cause root name to be splited,
-%% which in turn makes the implimentation complicated.
+%% which in turn makes the implementation complicated.
 %%
 %% e.g. if a root name is 'a.b.c', the schema is only defined
 %% for data below `c` level.

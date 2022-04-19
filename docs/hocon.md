@@ -1,4 +1,4 @@
-## Grammer
+## Grammar
 
 The HOCON grammar in [McKeeman Form](https://www.crockford.com/mckeeman.html):
 

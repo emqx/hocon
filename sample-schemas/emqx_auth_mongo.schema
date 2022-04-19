@@ -47,7 +47,7 @@
 
 {mapping, "auth.mongo.ssl.enable", "emqx_auth_mongo.server", [
   {default, off},
-  {datatype, {enum, [on, off, true, false]}} %% FIXME: ture/false is compatible with 4.0-4.2 version format, plan to delete in 5.0
+  {datatype, {enum, [on, off, true, false]}} %% FIXME: true/false is compatible with 4.0-4.2 version format, plan to delete in 5.0
 ]}.
 
 {mapping, "auth.mongo.ssl.keyfile", "emqx_auth_mongo.server", [

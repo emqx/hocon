@@ -103,7 +103,7 @@ the union member types in the defined order until the given data matches any of 
 When starting a Erlang node it usually requires a system configuration file, (usually named `sys.config`),
 see [Erlang doc](https://erlang.org/doc/man/config.html#sys.config) for more details.
 
-When using HOCON config format, we need a tool to transfrom a HOCON file to a config file of `sys.config` format.
+When using HOCON config format, we need a tool to transform a HOCON file to a config file of `sys.config` format.
 `hocon_schema` is such a tool.
 
 ### Config mapping
@@ -164,7 +164,7 @@ the `validations` optional callback.
 Validations work similar to translations, only the OK (`ok` or `true`) return value is discarded
 and failures are raised as exception in the map call.
 
-NOTE: the integrity validation is performed after all fields are checked and coverted.
+NOTE: the integrity validation is performed after all fields are checked and converted.
 
 Below is an example to ensure that the `min` field is never greater than `max` field.
 
@@ -192,7 +192,7 @@ HOCON schema also supports below field metadata.
 * `validator`: field value validator, an anonymous function which should return `true` or `ok` if
   the value is as expected. NOTE: the input to validator after convert (if present) is applied.
 * `default`: default value of the field. NOTE that default values are to be treated as raw inputs,
-  meaning they are put hrough  the `converter`s and `validator`s etc, and then type-checked.
+  meaning they are put through  the `converter`s and `validator`s etc, and then type-checked.
 * `required`: set to `false` if this field is allowed to be `undefined`.
   NOTE: there is no point setting it to `true` if fields has a default value.
 * `sensitive`: set to `true` if this field's value is sensitive so we will obfuscate the log
@@ -221,12 +221,12 @@ Define `override_env` in struct field metadata.
 ### Complex value override
 
 Environment variables are not parsed as plain string, rather as HOCON values.
-This creates the flexibility for overriding config vlaues in different ways:
+This creates the flexibility for overriding config values in different ways:
 
 * Set individual object paths, for example `export EMQX_MY__KEY__name=zz; export EMQX_MY__KEY__fingers=10`
 * Set the the engire object as escaped HOCON value: `export EMQX_MY__KEY="{name = \"zz\", fingers = 10}"`
 * Load the object from another file `export EMQX_MY__KEY="{\"include /config/my-key-override.conf\"}"`
 
-Using `{include "path/to/file"}` is extremly useful to override a value with large object or an array.
+Using `{include "path/to/file"}` is extremely useful to override a value with large object or an array.
 
 NOTE: currently HOCON schema does not support array index (`KEY__1`, `KEY__2` etc) overrides.

@@ -25,7 +25,7 @@
 %% @doc Pretty print HOCON value.
 %% Options are:
 %% `embedded': boolean, to indicate if the given value is an embedded part
-%% of a wrapping ojbect, when `true', `{' and `}' are wrapped around the fields.
+%% of a wrapping object, when `true', `{' and `}' are wrapped around the fields.
 %%
 %% `newline': string, by default `"\n"' is used, for generating web-content
 %% it should be `"<br>"' instead.
@@ -34,7 +34,7 @@
 %% is added after objects.
 -spec do(term(), map()) -> iodata().
 do(Value, Opts) when is_map(Value) ->
-    %% Root level map should not have outter '{' '}' pair
+    %% Root level map should not have outer '{' '}' pair
     case maps:get(embedded, Opts, false) of
         true ->
             pp(fmt(gen(Value, Opts)), Opts);
