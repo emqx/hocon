@@ -11,9 +11,9 @@
     {env, []},
     {modules, []},
     {licenses, ["Apache 2.0"]},
-    {maintainers, ["Feng Lee <feng@emqx.io>"]},
+    {maintainers, ["EMQX team <contact@emqx.io>"]},
     {links, [
-        {"Homepage", "https://github.com/emqx/hocon"},
+        {"Homepage", "https://www.emqx.com/"},
         {"Github", "https://github.com/emqx/hocon"}
     ]}
 ]}.
