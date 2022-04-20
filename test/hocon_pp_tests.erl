@@ -90,3 +90,9 @@ with_envs(Fun, Args, Envs) -> hocon_test_lib:with_envs(Fun, Args, Envs).
 
 flatten(Map) ->
     iolist_to_binary(hocon_pp:flat_dump(Map)).
+
+escape_test() ->
+    {ok, Conf} = hocon:load("./test/data/unescape.conf"),
+    PP = hocon_pp:do(Conf, #{}),
+    {ok, Conf2} = hocon:binary(PP),
+    ?assertEqual(Conf, Conf2).

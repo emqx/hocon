@@ -554,3 +554,11 @@ array_mrege_test_() ->
     , {"array_override_by_obj",
        ?_assertEqual(#{<<"a">> => #{<<"b">> => 1}}, Parse("a=[1, 2,], a.b=1"))}
     ].
+
+unescape_test() ->
+    {ok, Conf} = hocon:load("./test/data/unescape.conf"),
+    ?assertEqual(#{<<"a">> => <<"a\nb">>,
+                   <<"c">> => <<"e\"f">>,
+                   <<"d">> => <<"x\ty">>,
+                   <<"e">> => <<"x\\ty">>}, Conf).
+
