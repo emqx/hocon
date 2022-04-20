@@ -18,19 +18,6 @@
 
 Definitions.
 
-%% Unicode  |  Name                |  Escape Char
-%% -------- | -------------------- | -----------------
-%% \x{0008}	|  backspace           |  \b
-%% \x{0009}	|  tab                 |  \t
-%% \x{000A}	|  line feed           |  \n
-%% \x{000B}	|  line-tab            |
-%% \x{000C}	|  form feed           |  \f
-%% \x{000D}	|  carriage-return     |  \r
-%% \x{0020}	|  space               |  \s
-%% \x{00A0}	|  non-break space     |  ??
-%% \x{2028}	|  line seperator      |
-%% \x{2029}	|  paragraph separator |
-
 %% Whitespace, Comments and Line Feed
 WhiteSpace          = [\x{0009}\x{000B}\x{000C}\x{0020}\x{00A0}]
 LineFeed            = \x{000A}\x{000D}\x{2028}\x{2029}
@@ -63,7 +50,7 @@ Float               = {Integer}?{Fraction}|{Integer}{Fraction}{Exponent}
 
 %% String
 Hex                 = [0-9A-Fa-f]
-Escape              = ["\\\/bfnrt]
+Escape              = ["\\bfnrt]
 UnicodeEscape       = u{Hex}{Hex}{Hex}{Hex}
 Char                = ([^\"{LineFeed}]|\\{Escape}|\\{UnicodeEscape})
 String              = "{Char}*"
@@ -123,8 +110,15 @@ strip_surrounded_quotes([$" | Rem]) ->
 strip_surrounded_quotes(Str) ->
     Str.
 
-unescape(Str) ->
-    re:replace(Str, "(\\\\\")", "\"", [{return, list}, global]).
+unescape([]) -> [];
+unescape([$\\, $\\ | T]) -> [$\\ | unescape(T)];
+unescape([$\\, $" | T]) -> [$" | unescape(T)];
+unescape([$\\, $n | T]) -> [$\n | unescape(T)];
+unescape([$\\, $t | T]) -> [$\t | unescape(T)];
+unescape([$\\, $r | T]) -> [$\r | unescape(T)];
+unescape([$\\, $b | T]) -> [$\b | unescape(T)];
+unescape([$\\, $f | T]) -> [$\f | unescape(T)];
+unescape([H | T]) -> [H | unescape(T)].
 
 maybe_var_ref_name("${?" ++ Name_CR) ->
     [$} | NameRev] = lists:reverse(Name_CR),
