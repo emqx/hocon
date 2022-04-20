@@ -28,15 +28,17 @@
 -define(IS_NON_EMPTY_STRING(X), (is_list(X) andalso X =/= [] andalso is_integer(hd(X)))).
 
 pipeline_fun(Steps) ->
-    fun (Input) -> pipeline(Input, #{}, Steps) end.
+    fun(Input) -> pipeline(Input, #{}, Steps) end.
 
 pipeline(Input, Ctx, [Fun | Steps]) ->
-    Output = case is_function(Fun, 1) of
-        true -> Fun(Input);
-        false -> Fun(Input, Ctx)
-    end,
+    Output =
+        case is_function(Fun, 1) of
+            true -> Fun(Input);
+            false -> Fun(Input, Ctx)
+        end,
     pipeline(Output, Ctx, Steps);
-pipeline(Result, _Ctx, []) -> Result.
+pipeline(Result, _Ctx, []) ->
+    Result.
 
 stack_multiple_push(List, Ctx) ->
     lists:foldl(fun stack_push/2, Ctx, List).
@@ -110,7 +112,7 @@ is_array_index(I) when is_binary(I) ->
     try
         {true, binary_to_integer(I)}
     catch
-        _ : _ ->
+        _:_ ->
             false
     end.
 
@@ -120,7 +122,8 @@ path_to_env_name(Path) ->
 split_path(Path) ->
     lists:flatten(do_split(str(Path))).
 
-do_split([]) -> [];
+do_split([]) ->
+    [];
 do_split(Path) when ?IS_NON_EMPTY_STRING(Path) ->
     [bin(I) || I <- string:tokens(Path, ".")];
 do_split([H | T]) ->

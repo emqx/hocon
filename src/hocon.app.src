@@ -1,18 +1,19 @@
-{application, hocon,
- [{description, "HOCON configuration file Parser"},
-  {vsn, "git"},
-  {registered, []},
-  {applications,
-   [kernel,
-    stdlib,
-    getopt,
-    typerefl
-   ]},
-  {env,[]},
-  {modules, []},
-  {licenses, ["Apache 2.0"]},
-  {maintainers, ["Feng Lee <feng@emqx.io>"]},
-  {links, [{"Homepage", "https://github.com/emqx/hocon"},
-           {"Github", "https://github.com/emqx/hocon"}
-          ]}
- ]}.
+{application, hocon, [
+    {description, "HOCON configuration file Parser"},
+    {vsn, "git"},
+    {registered, []},
+    {applications, [
+        kernel,
+        stdlib,
+        getopt,
+        typerefl
+    ]},
+    {env, []},
+    {modules, []},
+    {licenses, ["Apache 2.0"]},
+    {maintainers, ["EMQX team <contact@emqx.io>"]},
+    {links, [
+        {"Homepage", "https://www.emqx.com/"},
+        {"Github", "https://github.com/emqx/hocon"}
+    ]}
+]}.

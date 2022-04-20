@@ -56,7 +56,7 @@ indent(N, Lines) when is_list(Lines) ->
     indent(N, unicode:characters_to_binary(infix(Lines, "\n"), utf8));
 indent(N, Lines0) ->
     Pad = lists:duplicate(N, $\s),
-    Lines =  binary:split(Lines0, <<"\n">>, [global]),
+    Lines = binary:split(Lines0, <<"\n">>, [global]),
     infix([pad(Pad, Line) || Line <- Lines], "\n").
 
 pad(_Pad, <<>>) -> <<>>;
@@ -71,15 +71,28 @@ infix([H | T], In) -> [H, In | infix(T, In)].
 %% VuePress likes ':' being replaced by '-'
 anchor(Anchor0) ->
     Anchor = string:lowercase(bin(Anchor0)),
-    Replaces = [{<<"\\.">>, <<"">>}, %% no dot
-                {<<"'">>, <<"">>}, %% no single quotes
-                {<<":">>, <<"-">>}, %% vuepress
-                {<<"\\s">>, <<"-">>} %% space replaced by hyphen
-               ],
-    lists:foldl(fun({Pattern, Replace}, Acc) ->
-                        re:replace(Acc, Pattern, Replace,
-                                   [{return, list}, global])
-                end, Anchor, Replaces).
+    %% no dot
+    Replaces = [
+        {<<"\\.">>, <<"">>},
+        %% no single quotes
+        {<<"'">>, <<"">>},
+        %% vuepress
+        {<<":">>, <<"-">>},
+        %% space replaced by hyphen
+        {<<"\\s">>, <<"-">>}
+    ],
+    lists:foldl(
+        fun({Pattern, Replace}, Acc) ->
+            re:replace(
+                Acc,
+                Pattern,
+                Replace,
+                [{return, list}, global]
+            )
+        end,
+        Anchor,
+        Replaces
+    ).
 
 bin(S) when is_list(S) -> unicode:characters_to_binary(S, utf8);
 bin(A) when is_atom(A) -> atom_to_binary(A, utf8);

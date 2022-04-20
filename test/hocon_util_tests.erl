@@ -19,12 +19,20 @@
 -include_lib("eunit/include/eunit.hrl").
 
 richmap_to_map_test_() ->
-    F = fun(Str) -> {ok, M} = hocon:binary(Str, #{format => richmap}),
-                    richmap_to_map(M) end,
-    [ ?_assertEqual(#{<<"a">> => #{<<"b">> => 1}}, F("a.b=1"))
-    , ?_assertEqual(#{<<"a">> => #{<<"b">> => [1, 2, 3]}}, F("a.b = [1,2,3]"))
-    , ?_assertEqual(#{<<"a">> =>
-                      #{<<"b">> => [1, 2, #{<<"x">> => <<"foo">>}]}}, F("a.b = [1,2,{x=foo}]"))
+    F = fun(Str) ->
+        {ok, M} = hocon:binary(Str, #{format => richmap}),
+        richmap_to_map(M)
+    end,
+    [
+        ?_assertEqual(#{<<"a">> => #{<<"b">> => 1}}, F("a.b=1")),
+        ?_assertEqual(#{<<"a">> => #{<<"b">> => [1, 2, 3]}}, F("a.b = [1,2,3]")),
+        ?_assertEqual(
+            #{
+                <<"a">> =>
+                    #{<<"b">> => [1, 2, #{<<"x">> => <<"foo">>}]}
+            },
+            F("a.b = [1,2,{x=foo}]")
+        )
     ].
 
 richmap_to_map(Map) ->

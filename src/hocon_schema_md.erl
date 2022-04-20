@@ -30,46 +30,61 @@ gen(Schema, #{title := Title, body := Body} = Opts0) ->
     File = maps:get(desc_file, Opts, undefined),
     Lang = maps:get(lang, Opts, "en"),
     Structs = hocon_schema_json:gen(Schema, #{desc_file => File, lang => Lang}),
-    [Title,
-    "\n",
-    Body,
-    "\n",
-    fmt_structs(2, Structs, Opts)].
-
+    [
+        Title,
+        "\n",
+        Body,
+        "\n",
+        fmt_structs(2, Structs, Opts)
+    ].
 
 ensure_env_prefix_opt(Opts) ->
     maps:merge(#{env_prefix => "EMQX_"}, Opts).
 
-fmt_structs(_Weight, [], _) -> [];
+fmt_structs(_Weight, [], _) ->
+    [];
 fmt_structs(Weight, [Struct | Rest], Opts) ->
-    [fmt_struct(Weight, Struct, Opts), "\n" |
-     fmt_structs(Weight, Rest, Opts)].
-
-fmt_struct(Weight, #{ full_name := FullName
-                    , paths := Paths
-                    , fields := Fields
-                    } = Struct, Opts) ->
-    [ hocon_md:h(Weight, FullName)
-    , maps:get(desc, Struct, "")
-    , "\n\n"
-    , fmt_paths(Paths)
-    , fmt_envs(Paths, Opts)
-    , "\n\n**Fields**\n\n"
-    , lists:map(fun(F) -> fmt_field(F, Opts) end, Fields)
+    [
+        fmt_struct(Weight, Struct, Opts),
+        "\n"
+        | fmt_structs(Weight, Rest, Opts)
     ].
 
-fmt_paths([]) -> [];
+fmt_struct(
+    Weight,
+    #{
+        full_name := FullName,
+        paths := Paths,
+        fields := Fields
+    } = Struct,
+    Opts
+) ->
+    [
+        hocon_md:h(Weight, FullName),
+        maps:get(desc, Struct, ""),
+        "\n\n",
+        fmt_paths(Paths),
+        fmt_envs(Paths, Opts),
+        "\n\n**Fields**\n\n",
+        lists:map(fun(F) -> fmt_field(F, Opts) end, Fields)
+    ].
+
+fmt_paths([]) ->
+    [];
 fmt_paths(Paths) ->
-    ["\n**Config paths**\n\n",
-     simple_list(Paths),
-     "\n"
+    [
+        "\n**Config paths**\n\n",
+        simple_list(Paths),
+        "\n"
     ].
 
-fmt_envs([], _) -> [];
+fmt_envs([], _) ->
+    [];
 fmt_envs(Paths, Opts) ->
-    ["\n**Env overrides**\n\n",
-     simple_list([fmt_env(P, Opts) || P <- Paths]),
-     "\n"
+    [
+        "\n**Env overrides**\n\n",
+        simple_list([fmt_env(P, Opts) || P <- Paths]),
+        "\n"
     ].
 
 fmt_env(Path, #{env_prefix := Prefix}) ->
@@ -78,34 +93,36 @@ fmt_env(Path, #{env_prefix := Prefix}) ->
 simple_list(L) ->
     [[" - ", hocon_md:code(I), "\n"] || I <- L].
 
-fmt_field(#{ name := Name
-           , type := Type
-           } = Field,
-    _Opts) ->
+fmt_field(
+    #{
+        name := Name,
+        type := Type
+    } = Field,
+    _Opts
+) ->
     Default = fmt_default(maps:get(default, Field, undefined)),
     Mapping = fmt_mapping(maps:get(mapping, Field, undefined)),
     Desc = maps:get(desc, Field, ""),
-    [ ["- ", Name, ": ", fmt_type(Type), "\n"]
-    , case Default =/= undefined of
-          true  -> [hocon_md:indent(2, ["* default: ", Default]), "\n"];
-          false -> []
-      end
-    , case Mapping =/= undefined of
-          true -> [hocon_md:indent(2, ["* mapping: ", Mapping]), "\n"];
-          false -> []
-      end
-    , case Desc =/= undefined of
-          true -> ["\n", hocon_md:indent(2, [Desc]), "\n"];
-          false -> []
-      end
-    , "\n"
+    [
+        ["- ", Name, ": ", fmt_type(Type), "\n"],
+        case Default =/= undefined of
+            true -> [hocon_md:indent(2, ["* default: ", Default]), "\n"];
+            false -> []
+        end,
+        case Mapping =/= undefined of
+            true -> [hocon_md:indent(2, ["* mapping: ", Mapping]), "\n"];
+            false -> []
+        end,
+        case Desc =/= undefined of
+            true -> ["\n", hocon_md:indent(2, [Desc]), "\n"];
+            false -> []
+        end,
+        "\n"
     ].
 
 fmt_default(undefined) -> undefined;
-fmt_default(#{oneliner := true, hocon := Content}) ->
-    ["`", Content, "`"];
-fmt_default(#{oneliner := false, hocon := Content}) ->
-    ["\n```\n", Content, "```"].
+fmt_default(#{oneliner := true, hocon := Content}) -> ["`", Content, "`"];
+fmt_default(#{oneliner := false, hocon := Content}) -> ["\n```\n", Content, "```"].
 
 fmt_mapping(undefined) -> undefined;
 fmt_mapping(Str) -> ["`", Str, "`"].

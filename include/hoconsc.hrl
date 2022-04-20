@@ -23,7 +23,8 @@
 -define(UNION(OfTypes), {union, OfTypes}).
 -define(ENUM(OfSymbols), {enum, OfSymbols}).
 -define(REF(Name), {ref, Name}).
--define(R_REF(Module, Name), {ref, Module, Name}). % remote ref
+% remote ref
+-define(R_REF(Module, Name), {ref, Module, Name}).
 -define(R_REF(NAME), ?R_REF(?MODULE, NAME)).
 -define(IS_TYPEREFL(X), (is_tuple(X) andalso element(1, Type) =:= '$type_refl')).
 

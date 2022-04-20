@@ -25,7 +25,7 @@
 %% @doc Pretty print HOCON value.
 %% Options are:
 %% `embedded': boolean, to indicate if the given value is an embedded part
-%% of a wrapping ojbect, when `true', `{' and `}' are wrapped around the fields.
+%% of a wrapping object, when `true', `{' and `}' are wrapped around the fields.
 %%
 %% `newline': string, by default `"\n"' is used, for generating web-content
 %% it should be `"<br>"' instead.
@@ -34,7 +34,7 @@
 %% is added after objects.
 -spec do(term(), map()) -> iodata().
 do(Value, Opts) when is_map(Value) ->
-    %% Root level map should not have outter '{' '}' pair
+    %% Root level map should not have outer '{' '}' pair
     case maps:get(embedded, Opts, false) of
         true ->
             pp(fmt(gen(Value, Opts)), Opts);
@@ -52,10 +52,12 @@ flat_dump(Value) ->
     Flatten = hocon_maps:flatten(Value, #{rich_value => true}),
     pp_flat(Flatten).
 
-pp_flat([]) -> [];
+pp_flat([]) ->
+    [];
 pp_flat([{Path, Value} | Rest]) ->
-    [ [Path, " = ", pp_flat_value(Value), "\n"]
-    | pp_flat(Rest)
+    [
+        [Path, " = ", pp_flat_value(Value), "\n"]
+        | pp_flat(Rest)
     ].
 
 pp_flat_value(#{?HOCON_V := Value} = V) ->
@@ -69,14 +71,17 @@ pp_source(#{filename := F, line := Line}) ->
     [" # ", F, ":", integer_to_list(Line)];
 pp_source(#{line := Line}) ->
     [" # line=", integer_to_list(Line)];
-pp_source(undefined) -> "".
+pp_source(undefined) ->
+    "".
 
 pp(IoData, Opts) ->
     NewLine = maps:get(newline, Opts, "\n"),
     infix(split(bin(IoData)), NewLine).
 
-gen([], _Opts) -> <<"[]">>;
-gen(<<>>, _Opts) -> <<"\"\"">>;
+gen([], _Opts) ->
+    <<"[]">>;
+gen(<<>>, _Opts) ->
+    <<"\"\"">>;
 gen(I, _Opts) when is_integer(I) -> integer_to_binary(I);
 gen(F, _Opts) when is_float(F) -> float_to_binary(F, [{decimals, 6}, compact]);
 gen(A, _Opts) when is_atom(A) -> atom_to_binary(A, utf8);
@@ -84,17 +89,18 @@ gen(Bin, Opts) when is_binary(Bin) ->
     gen(unicode:characters_to_list(Bin, utf8), Opts);
 gen(S, Opts) when is_list(S) ->
     case io_lib:printable_unicode_list(S) of
-        true  ->
+        true ->
             %% ~p to ensure always quote string value
             bin(io_lib:format("~100000p", [S]));
         false ->
             gen_list(S, Opts)
     end;
 gen(M, Opts) when is_map(M) ->
-    NL = case maps:get(no_obj_nl, Opts, false) of
-             true -> "";
-             false -> ?NL
-         end,
+    NL =
+        case maps:get(no_obj_nl, Opts, false) of
+            true -> "";
+            false -> ?NL
+        end,
     [gen_map(M, Opts), NL].
 
 gen_list(L, Opts) ->
@@ -107,9 +113,10 @@ gen_list(L, Opts) ->
     end.
 
 do_gen_list([_ | _] = L, Opts) ->
-    [ ["[", ?NL]
-    , do_gen_list_loop(L, Opts#{no_obj_nl => true})
-    , ["]", ?NL]
+    [
+        ["[", ?NL],
+        do_gen_list_loop(L, Opts#{no_obj_nl => true}),
+        ["]", ?NL]
     ].
 
 do_gen_list_loop([I], Opts) ->

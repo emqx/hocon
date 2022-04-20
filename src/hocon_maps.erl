@@ -17,8 +17,11 @@
 -module(hocon_maps).
 
 %% Deep ops of deep maps.
--export([deep_get/2, deep_put/4,
-         deep_merge/2]).
+-export([
+    deep_get/2,
+    deep_put/4,
+    deep_merge/2
+]).
 
 %% Access maybe-rich map values,
 %% Always return plain value.
@@ -26,7 +29,8 @@
 
 -export([flatten/2]).
 
--export([do_put/4]). %% internal
+%% internal
+-export([do_put/4]).
 
 -export([ensure_plain/1, is_richmap/1]).
 
@@ -37,8 +41,10 @@
 -type config() :: hocon:config().
 
 %% this can be the opts() from hocon_tconf, but only `atom_key' is relevant
--type opts() :: #{atom_key => boolean(),
-                  _ => _}.
+-type opts() :: #{
+    atom_key => boolean(),
+    _ => _
+}.
 
 -type flatten_opts() :: #{rich_value => boolean()}.
 
@@ -82,7 +88,7 @@ maybe_atom(#{atom_key := true}, Name) when is_binary(Name) ->
     try
         binary_to_existing_atom(Name, utf8)
     catch
-        _ : _ ->
+        _:_ ->
             error({non_existing_atom, Name})
     end;
 maybe_atom(_Opts, Name) ->
@@ -125,7 +131,8 @@ get(Path, Map) ->
             do_get(hocon_util:split_path(Path), Map, map)
     end.
 
-do_get([], Conf, _Format) -> Conf;
+do_get([], Conf, _Format) ->
+    Conf;
 do_get([H | T], Conf, Format) ->
     FieldV = try_get(H, Conf, Format),
     do_get(T, FieldV, Format).
@@ -141,7 +148,7 @@ try_get(Key, Conf, map) when is_map(Conf) ->
             try binary_to_existing_atom(Key, utf8) of
                 AtomKey -> maps:get(AtomKey, Conf, undefined)
             catch
-                error : badarg ->
+                error:badarg ->
                     undefined
             end;
         Value ->
@@ -152,16 +159,19 @@ try_get(Key, Conf, map) when is_list(Conf) ->
         N ->
             lists:nth(N, Conf)
     catch
-        error : badarg ->
+        error:badarg ->
             undefined
     end;
-try_get(Key, Conf, map) -> %% get(["a", "b", "d"], #{<<"a">> => #{<<"b">> => 1}})
+%% get(["a", "b", "d"], #{<<"a">> => #{<<"b">> => 1}})
+try_get(Key, Conf, map) ->
     error({key_not_found, Key, Conf}).
 
 %% @doc Recursively merge two maps.
 %% @see hocon:deep_merge/2 for more.
-deep_merge(#{?HOCON_T := array, ?HOCON_V := V1} = Base,
-           #{?HOCON_T := object, ?HOCON_V := V2} = Top) ->
+deep_merge(
+    #{?HOCON_T := array, ?HOCON_V := V1} = Base,
+    #{?HOCON_T := object, ?HOCON_V := V2} = Top
+) ->
     NewV = deep_merge2(V1, V2),
     case is_list(NewV) of
         true ->
@@ -186,35 +196,48 @@ deep_merge2(V1, V2) ->
 do_deep_merge(M1, M2, GoDeep) when is_map(M1), is_map(M2) ->
     maps:fold(
         fun(K, V2, Acc) ->
-                V1 = maps:get(K, Acc, undefined),
-                NewV = do_deep_merge(V1, V2, GoDeep),
-                Acc#{K => NewV}
-        end, M1, M2);
+            V1 = maps:get(K, Acc, undefined),
+            NewV = do_deep_merge(V1, V2, GoDeep),
+            Acc#{K => NewV}
+        end,
+        M1,
+        M2
+    );
 do_deep_merge(V1, V2, GoDeep) ->
     GoDeep(V1, V2).
 
 is_indexed_array(M) when is_map(M) ->
-    lists:all(fun(K) -> case is_array_index(K) of
-                            {true, _} -> true;
-                            _ -> false
-                        end
-              end, maps:keys(M));
+    lists:all(
+        fun(K) ->
+            case is_array_index(K) of
+                {true, _} -> true;
+                _ -> false
+            end
+        end,
+        maps:keys(M)
+    );
 is_indexed_array(_) ->
     false.
 
 %% convert indexed array to key-sorted tuple {index, value} list
 indexed_array_as_list(M) when is_map(M) ->
     lists:keysort(
-      1, lists:map(fun({K, V}) ->
-                           {true, I} = is_array_index(K),
-                           {I, V}
-                   end, maps:to_list(M))).
+        1,
+        lists:map(
+            fun({K, V}) ->
+                {true, I} = is_array_index(K),
+                {I, V}
+            end,
+            maps:to_list(M)
+        )
+    ).
 
 merge_array(Array, Top) when is_list(Array) ->
     ToMerge = indexed_array_as_list(Top),
     do_merge_array(Array, ToMerge).
 
-do_merge_array(Array, []) -> Array;
+do_merge_array(Array, []) ->
+    Array;
 do_merge_array(Array, [{I, Value} | Rest]) ->
     GoDeep = fun(Elem) -> deep_merge(Elem, Value) end,
     NewArray = do_update_array_element(Array, I, GoDeep),
@@ -225,23 +248,25 @@ do_update_array_element(List, Index, GoDeep) when is_list(List) ->
     MaxIndex = length(List) + 1,
     Index < MinIndex andalso throw({bad_array_index, "index starts from 1"}),
     Index > MaxIndex andalso
-    begin
-        Msg0 = io_lib:format("should not be greater than ~p.", [MaxIndex]),
-        Msg1 = case Index > 9 of
-                   true ->
-                       "~nEnvironment variable overrides applied in alphabetical "
-                       "make sure to use zero paddings such as '02' to ensure "
-                       "10 is ordered after it";
-                   false ->
-                       []
-               end,
-        throw({bad_array_index, [Msg0, Msg1]})
-    end,
+        begin
+            Msg0 = io_lib:format("should not be greater than ~p.", [MaxIndex]),
+            Msg1 =
+                case Index > 9 of
+                    true ->
+                        "~nEnvironment variable overrides applied in alphabetical "
+                        "make sure to use zero paddings such as '02' to ensure "
+                        "10 is ordered after it";
+                    false ->
+                        []
+                end,
+            throw({bad_array_index, [Msg0, Msg1]})
+        end,
     {Head, Tail0} = lists:split(Index - 1, List),
-    {Nth, Tail} = case Tail0 of
-                      [] -> {#{}, []};
-                      [H | T] -> {H, T}
-                  end,
+    {Nth, Tail} =
+        case Tail0 of
+            [] -> {#{}, []};
+            [H | T] -> {H, T}
+        end,
     Head ++ [GoDeep(Nth) | Tail].
 
 is_array_index(Maybe) ->
@@ -263,13 +288,15 @@ flatten(Conf, Opts, Meta, Stack, Acc) when is_map(Conf) andalso Conf =/= ?EMPTY_
     {Keys, Values} = lists:unzip(maps:to_list(Conf)),
     flatten_l(Values, Opts, Meta, Stack, Acc, Keys);
 flatten(Value, Opts, Meta, Stack, Acc) ->
-    V = case maps:get(rich_value, Opts, false) of
+    V =
+        case maps:get(rich_value, Opts, false) of
             true -> #{?HOCON_V => Value, ?METADATA => Meta};
             false -> Value
         end,
     [{iolist_to_binary(infix(lists:reverse(Stack), ".")), V} | Acc].
 
-flatten_l([], _Opts, _Meta, _Stack, Acc, []) -> Acc;
+flatten_l([], _Opts, _Meta, _Stack, Acc, []) ->
+    Acc;
 flatten_l([H | T], Opts, Meta, Stack, Acc, [Tag | Tags]) ->
     NewAcc = flatten(H, Opts, Meta, [bin(Tag) | Stack], Acc),
     flatten_l(T, Opts, Meta, Stack, NewAcc, Tags).

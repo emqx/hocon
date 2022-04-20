@@ -30,7 +30,7 @@ proplists(Iter, Path, Acc) ->
         {K, M, I} when is_map(M) ->
             Child = proplists(maps:iterator(M), [binary_to_list(K) | Path], []),
             proplists(I, Path, lists:append(Child, Acc));
-        {K, [Bin | _More]=L, I} when is_binary(Bin) ->
+        {K, [Bin | _More] = L, I} when is_binary(Bin) ->
             NewList = [binary_to_list(B) || B <- L],
             ReversedPath = lists:reverse([binary_to_list(K) | Path]),
             proplists(I, Path, [{ReversedPath, NewList} | Acc]);
@@ -111,7 +111,7 @@ onoff(Str) when is_list(Str) ->
 onoff(Other) ->
     Other.
 
-do_onoff("on")  -> true;
+do_onoff("on") -> true;
 do_onoff("off") -> false;
 do_onoff(X) -> X.
 
@@ -156,7 +156,8 @@ do_bytesize(Str) ->
     case re_run_first(Str, MP) of
         {match, [Val, Unit]} ->
             do_bytesize(list_to_integer(Val), Unit);
-        _ -> Str
+        _ ->
+            Str
     end.
 do_bytesize(Val, "kb") -> Val * ?KILOBYTE;
 do_bytesize(Val, "KB") -> Val * ?KILOBYTE;
@@ -197,18 +198,21 @@ do_duration(Str, Sum) ->
             end
     end.
 
-get_decimal([$. | _]=Num) ->
+get_decimal([$. | _] = Num) ->
     get_decimal(["0" | Num]);
 get_decimal(Num) ->
     case string:to_float(Num) of
-        {F, []} -> F;
-        {error, no_float} -> {I, []} = string:to_integer(Num), I
+        {F, []} ->
+            F;
+        {error, no_float} ->
+            {I, []} = string:to_integer(Num),
+            I
     end.
 
-calc_duration(Val, "f")  -> Val * ?FORTNIGHT;
-calc_duration(Val, "w")  -> Val * ?WEEK;
-calc_duration(Val, "d")  -> Val * ?DAY;
-calc_duration(Val, "h")  -> Val * ?HOUR;
-calc_duration(Val, "m")  -> Val * ?MINUTE;
-calc_duration(Val, "s")  -> Val * ?SECOND;
+calc_duration(Val, "f") -> Val * ?FORTNIGHT;
+calc_duration(Val, "w") -> Val * ?WEEK;
+calc_duration(Val, "d") -> Val * ?DAY;
+calc_duration(Val, "h") -> Val * ?HOUR;
+calc_duration(Val, "m") -> Val * ?MINUTE;
+calc_duration(Val, "s") -> Val * ?SECOND;
 calc_duration(Val, "ms") -> Val.

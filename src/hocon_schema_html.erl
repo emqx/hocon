@@ -32,39 +32,49 @@ gen(Schema, Title, File) ->
     Cache = hocon_schema:new_desc_cache(File),
     Opts = #{cache => Cache},
     StructsHtml =
-        [fmt_structs(1, RootNs, Opts, [{RootNs, ?ROOT_KEYS, #{fields => RootFields}}]),
-         fmt_structs(2, RootNs, Opts, Structs)],
+        [
+            fmt_structs(1, RootNs, Opts, [{RootNs, ?ROOT_KEYS, #{fields => RootFields}}]),
+            fmt_structs(2, RootNs, Opts, Structs)
+        ],
     hocon_schema:delete_desc_cache(Cache),
-    render([{<<"%%MAGIC_CHICKEN_TITLE%%">>, Title},
-            {<<"%%MAGIC_CHICKEN_INDEX%%">>, IndexHtml},
-            {<<"%%MAGIC_CHICKEN_STRUCTS%%">>, StructsHtml}
-           ]).
+    render([
+        {<<"%%MAGIC_CHICKEN_TITLE%%">>, Title},
+        {<<"%%MAGIC_CHICKEN_INDEX%%">>, IndexHtml},
+        {<<"%%MAGIC_CHICKEN_STRUCTS%%">>, StructsHtml}
+    ]).
 
-fmt_structs(_Weight, _RootNs, _Opts, []) -> [];
+fmt_structs(_Weight, _RootNs, _Opts, []) ->
+    [];
 fmt_structs(Weight, RootNs, Opts, [{Ns, Name, Fields} | Rest]) ->
-    [fmt_struct(Weight, RootNs, Opts, Ns, Name, Fields), "\n" |
-     fmt_structs(Weight, RootNs, Opts, Rest)].
+    [
+        fmt_struct(Weight, RootNs, Opts, Ns, Name, Fields),
+        "\n"
+        | fmt_structs(Weight, RootNs, Opts, Rest)
+    ].
 
 fmt_struct(Weight, RootNs, Opts, Ns0, Name, #{fields := Fields} = Meta) ->
-    Ns = case RootNs =:= Ns0 of
-             true -> undefined;
-             false -> Ns0
-         end,
-    FieldsHtml= ul(fmt_fields(Ns, Name, Opts, Fields)),
+    Ns =
+        case RootNs =:= Ns0 of
+            true -> undefined;
+            false -> Ns0
+        end,
+    FieldsHtml = ul(fmt_fields(Ns, Name, Opts, Fields)),
     FullNameDisplay = ref(Ns, Name),
     [html_hd(Weight, FullNameDisplay, Opts, Meta), FieldsHtml].
 
 html_hd(Weight, StructName, Opts, Meta) ->
     H = ["<h", integer_to_list(Weight), ">"],
     E = ["</h", integer_to_list(Weight), ">"],
-    [ [H, local_anchor([?REF_PREFIX_STRUCT, bin(StructName)], StructName), E, "\n"],
-      case Meta of
-          #{desc := StructDoc} -> ["<br>", hocon_schema:resolve_schema(StructDoc, Opts)];
-          _ -> []
-      end
+    [
+        [H, local_anchor([?REF_PREFIX_STRUCT, bin(StructName)], StructName), E, "\n"],
+        case Meta of
+            #{desc := StructDoc} -> ["<br>", hocon_schema:resolve_schema(StructDoc, Opts)];
+            _ -> []
+        end
     ].
 
-fmt_fields(_Ns, _StructName, _Opts, []) -> [];
+fmt_fields(_Ns, _StructName, _Opts, []) ->
+    [];
 fmt_fields(Ns, StructName, Opts, [{Name, FieldSchema} | Fields]) ->
     HTML = fmt_field(Ns, StructName, Opts, Name, FieldSchema),
     case hocon_schema:field_schema(FieldSchema, hidden) of
@@ -76,24 +86,27 @@ fmt_field(Ns, StructName, Opts, Name, FieldSchema) ->
     Type = fmt_type(Ns, hocon_schema:field_schema(FieldSchema, type)),
     Default = fmt_default(hocon_schema:field_schema(FieldSchema, default)),
     Desc = hocon_schema:field_schema(FieldSchema, desc),
-    li([ ["<p class=\"fn\">",
-          local_anchor(full_path(Ns, StructName, Name), bin(Name)), "</p>\n"]
-         , case Desc =/= undefined of
-               true -> html_div("desc", fmt_desc(Desc, Opts));
-               false -> []
-           end
-         , html_div("desc", [em("type:"), Type])
-         , case Default =/= undefined of
-               true  -> html_div("desc", [em("default:"), Default]);
-               false -> []
-           end
-       ]).
+    li([
+        [
+            "<p class=\"fn\">",
+            local_anchor(full_path(Ns, StructName, Name), bin(Name)),
+            "</p>\n"
+        ],
+        case Desc =/= undefined of
+            true -> html_div("desc", fmt_desc(Desc, Opts));
+            false -> []
+        end,
+        html_div("desc", [em("type:"), Type]),
+        case Default =/= undefined of
+            true -> html_div("desc", [em("default:"), Default]);
+            false -> []
+        end
+    ]).
 
 em(X) -> ["<em>", X, "</em>"].
 
 fmt_default(undefined) -> undefined;
-fmt_default(Value) ->
-    pre(hocon_pp:do(Value, #{newline => "\n", embedded => true})).
+fmt_default(Value) -> pre(hocon_pp:do(Value, #{newline => "\n", embedded => true})).
 
 fmt_desc(Struct, Opts = #{cache := Cache}) ->
     Desc = hocon_schema:resolve_schema(Struct, Cache),
@@ -101,12 +114,14 @@ fmt_desc(Struct, Opts = #{cache := Cache}) ->
         true ->
             Lang = maps:get(lang, Opts, "en"),
             bin(hocon_maps:get(["desc", Lang], Desc));
-        false -> bin(Desc)
+        false ->
+            bin(Desc)
     end.
 
 fmt_type(Ns, T) -> pre(do_type(Ns, T)).
 
-do_type(_Ns, A) when is_atom(A) -> bin(A); % singleton
+% singleton
+do_type(_Ns, A) when is_atom(A) -> bin(A);
 do_type(Ns, Ref) when is_list(Ref) -> do_type(Ns, ?REF(Ref));
 do_type(Ns, ?REF(Ref)) -> local_struct_href(ref(Ns, Ref));
 do_type(_Ns, ?R_REF(Module, Ref)) -> do_type(hocon_schema:namespace(Module), ?REF(Ref));
@@ -117,7 +132,8 @@ do_type(Ns, ?LAZY(T)) -> do_type(Ns, T);
 do_type(Ns, ?MAP(Name, T)) -> ["{$", bin(Name), " -> ", do_type(Ns, T), "}"];
 do_type(_Ns, {'$type_refl', #{name := Type}}) -> lists:flatten(Type).
 
-ref(undefined, Name) -> bin(Name);
+ref(undefined, Name) ->
+    bin(Name);
 ref(Ns, Name) ->
     %% when namespace is the same as reference name
     %% we do not prepend the reference link with namespace
@@ -145,15 +161,17 @@ render(Substs) ->
     end.
 
 %% poorman's template
-render([], Bin) -> Bin;
+render([], Bin) ->
+    Bin;
 render([{Pattern, Value} | Rest], Bin) ->
     [H, T] = binary:split(Bin, Pattern),
     render(Rest, bin([H, Value, T])).
 
 fmt_index(RootFields, Structs) ->
-    [html_div(ul([li(local_href(root_path(Name), bin(Name))) || {Name, _} <- RootFields])),
-     "<hr/>\n",
-     html_div(ul([li(local_struct_href(ref(Ns, Name))) || {Ns, Name, _} <- Structs]))
+    [
+        html_div(ul([li(local_href(root_path(Name), bin(Name))) || {Name, _} <- RootFields])),
+        "<hr/>\n",
+        html_div(ul([li(local_struct_href(ref(Ns, Name))) || {Ns, Name, _} <- Structs]))
     ].
 
 html_div(X) -> ["<div>", X, "</div>\n"].
@@ -180,15 +198,28 @@ pre(Code) -> ["\n<pre>\n", Code, "\n</pre>\n"].
 
 anchor(Anchor0) ->
     Anchor = string:lowercase(bin(Anchor0)),
-    Replaces = [{<<"\\.">>, <<"">>}, %% no dot
-                {<<"'">>, <<"">>}, %% no single quotes
-                {<<":">>, <<"">>}, %% no colon
-                {<<"\\s">>, <<"-">>} %% space replaced by hyphen
-               ],
-    lists:foldl(fun({Pattern, Replace}, Acc) ->
-                        re:replace(Acc, Pattern, Replace,
-                                   [{return, list}, global])
-                end, Anchor, Replaces).
+    %% no dot
+    Replaces = [
+        {<<"\\.">>, <<"">>},
+        %% no single quotes
+        {<<"'">>, <<"">>},
+        %% no colon
+        {<<":">>, <<"">>},
+        %% space replaced by hyphen
+        {<<"\\s">>, <<"-">>}
+    ],
+    lists:foldl(
+        fun({Pattern, Replace}, Acc) ->
+            re:replace(
+                Acc,
+                Pattern,
+                Replace,
+                [{return, list}, global]
+            )
+        end,
+        Anchor,
+        Replaces
+    ).
 
 full_path(_Ns, ?ROOT_KEYS, FieldName) ->
     root_path(FieldName);

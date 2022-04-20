@@ -27,36 +27,39 @@
 -define(STDOUT(Str, Args), io:format(Str ++ "~n", Args)).
 -define(FORMAT_TEMPLATE, [time, " [", level, "] ", msg, "\n"]).
 
--type file_error() :: file:posix()  %% copied from file:format_error/1
-                    | badarg
-                    | terminated
-                    | system_limit
-                    | {integer(), module(), term()}.
+%% copied from file:format_error/1
+-type file_error() ::
+    file:posix()
+    | badarg
+    | terminated
+    | system_limit
+    | {integer(), module(), term()}.
 
 -elvis([{elvis_style, macro_module_names, disable}]).
 
 cli_options() ->
-%% Option Name, Short Code, Long Code, Argument Spec, Help Message
+    %% Option Name, Short Code, Long Code, Argument Spec, Help Message
     [
-      {help, $h, "help", undefined, "Print this usage page"}
-    , {dest_dir, $d, "dest_dir", string, "specifies the directory to write the config file to"}
-    , {include_dirs, $I, "include_dir", string, "specifies the directory to search include file"}
-    , {dest_file, $f, "dest_file", {string, "app"}, "the file name to write"}
-    , {schema_file, $i, "schema_file", string, "the file name of schema module"}
-    , {schema_module, $s, "schema_module", atom, "the name of schema module"}
-    , {conf_file, $c, "conf_file", string, "hocon conf file, multiple files allowed"}
-    , {log_level, $l, "log_level", {string, "notice"}, "log level"}
-    , {max_history, $m, "max_history", {integer, 3},
-        "the maximum number of generated config files to keep"}
-    , {now_time, $t, "now_time", string, "the time suffix for generated files"}
-    , {verbose_env, $v, "verbose_env", {boolean, false}, "whether to log env overrides to stdout"}
-    , {pa, undefined, "pa", string,
-       "like the -pa flag for erl command, prepend path to load beam files, "
-       "comma separate multiple paths"}
-    , {doctitle, undefined, "doctitle", string,
-       "this option is only valid for docgen command, the string will be used as the head-1 title "
-       "of the generated markdown document"
-      }
+        {help, $h, "help", undefined, "Print this usage page"},
+        {dest_dir, $d, "dest_dir", string, "specifies the directory to write the config file to"},
+        {include_dirs, $I, "include_dir", string, "specifies the directory to search include file"},
+        {dest_file, $f, "dest_file", {string, "app"}, "the file name to write"},
+        {schema_file, $i, "schema_file", string, "the file name of schema module"},
+        {schema_module, $s, "schema_module", atom, "the name of schema module"},
+        {conf_file, $c, "conf_file", string, "hocon conf file, multiple files allowed"},
+        {log_level, $l, "log_level", {string, "notice"}, "log level"},
+        {max_history, $m, "max_history", {integer, 3},
+            "the maximum number of generated config files to keep"},
+        {now_time, $t, "now_time", string, "the time suffix for generated files"},
+        {verbose_env, $v, "verbose_env", {boolean, false},
+            "whether to log env overrides to stdout"},
+        {pa, undefined, "pa", string,
+            "like the -pa flag for erl command, prepend path to load beam files, "
+            "comma separate multiple paths"},
+        {doctitle, undefined, "doctitle", string,
+            "this option is only valid for docgen command, "
+            "the string will be used as the head-1 title "
+            "of the generated markdown document"}
     ].
 
 print_help() ->
@@ -70,15 +73,17 @@ print_help() ->
     stop_deactivate().
 
 parse_and_command(Args) ->
-    {ParsedArgs, Extra} = case getopt:parse(cli_options(), Args) of
-                              {ok, {P, H}} -> {P, H};
-                              _ -> {[help], []}
-                          end,
-    {Command, ExtraArgs} = case {lists:member(help, ParsedArgs), Extra} of
-                               {false, []} -> {generate, []};
-                               {false, [Cmd | E]} -> {list_to_atom(Cmd), E};
-                               _ -> {help, []}
-                           end,
+    {ParsedArgs, Extra} =
+        case getopt:parse(cli_options(), Args) of
+            {ok, {P, H}} -> {P, H};
+            _ -> {[help], []}
+        end,
+    {Command, ExtraArgs} =
+        case {lists:member(help, ParsedArgs), Extra} of
+            {false, []} -> {generate, []};
+            {false, [Cmd | E]} -> {list_to_atom(Cmd), E};
+            _ -> {help, []}
+        end,
     {Command, ParsedArgs, ExtraArgs}.
 
 %% @doc Entry point of the script
@@ -86,22 +91,39 @@ main(Args) ->
     {Command, ParsedArgs, Extra} = parse_and_command(Args),
 
     SuggestedLogLevel = list_to_atom(proplists:get_value(log_level, ParsedArgs)),
-    LogLevel = case lists:member(SuggestedLogLevel, [debug, info, notice, warning,
-        error, critical, alert, emergency]) of
-                   true -> SuggestedLogLevel;
-                   _ -> notice
-               end,
+    LogLevel =
+        case
+            lists:member(SuggestedLogLevel, [
+                debug,
+                info,
+                notice,
+                warning,
+                error,
+                critical,
+                alert,
+                emergency
+            ])
+        of
+            true -> SuggestedLogLevel;
+            _ -> notice
+        end,
     logger:remove_handler(default),
-    logger:add_handler(hocon_cli, logger_std_h,
-        #{config => #{type => standard_io},
-            formatter => {logger_formatter,
-                #{legacy_header => false,
+    logger:add_handler(
+        hocon_cli,
+        logger_std_h,
+        #{
+            config => #{type => standard_io},
+            formatter =>
+                {logger_formatter, #{
+                    legacy_header => false,
                     single_line => true,
-                    template => ?FORMAT_TEMPLATE}},
+                    template => ?FORMAT_TEMPLATE
+                }},
             filter_default => log,
             filters => [],
             level => all
-        }),
+        }
+    ),
 
     logger:set_primary_config(level, LogLevel),
     case Command of
@@ -158,7 +180,8 @@ multi_get(ParsedArgs, Keys) ->
     lists:foreach(fun({K, V}) -> ?STDOUT("~s=~0p", [K, V]) end, Values),
     stop_ok().
 
-get_values(_Schema, _Conf, []) -> [];
+get_values(_Schema, _Conf, []) ->
+    [];
 get_values(Schema, Conf, [Key | Rest]) ->
     %% map only the desired root name
     [RootName0 | _] = string:tokens(Key, "."),
@@ -185,13 +208,18 @@ docgen(ParsedArgs) ->
 
 load_schema(ParsedArgs) ->
     case proplists:get_value(pa, ParsedArgs) of
-        undefined -> ok;
+        undefined ->
+            ok;
         DirsStr ->
             Dirs = string:tokens(DirsStr, ","),
             lists:foreach(fun(Dir) -> code:add_patha(Dir) end, Dirs)
     end,
-    case {proplists:get_value(schema_file, ParsedArgs),
-          proplists:get_value(schema_module, ParsedArgs)} of
+    case
+        {
+            proplists:get_value(schema_file, ParsedArgs),
+            proplists:get_value(schema_module, ParsedArgs)
+        }
+    of
         {undefined, Mod0} ->
             Mod0;
         {SchemaFile, _} ->
@@ -231,30 +259,40 @@ writable_destination_path(ParsedArgs) ->
         ok ->
             AbsoluteDestPath;
         {error, E} ->
-            log(error, "Error creating ~s: ~s",
-                [AbsoluteDestPath, file:format_error(E)]),
+            log(
+                error,
+                "Error creating ~s: ~s",
+                [AbsoluteDestPath, file:format_error(E)]
+            ),
             error
     end.
 
 -spec generate([proplists:property()]) -> ok.
 generate(ParsedArgs) ->
-    AbsPath = case writable_destination_path(ParsedArgs) of
-                  error -> stop_deactivate();
-                  Path -> Path
-              end,
+    AbsPath =
+        case writable_destination_path(ParsedArgs) of
+            error -> stop_deactivate();
+            Path -> Path
+        end,
 
     DestFile = proplists:get_value(dest_file, ParsedArgs),
 
     NowTime0 = proplists:get_value(now_time, ParsedArgs),
-    NowTime = case NowTime0 =:= undefined of
-                  true -> now_time();
-                  false -> NowTime0
-              end,
+    NowTime =
+        case NowTime0 =:= undefined of
+            true -> now_time();
+            false -> NowTime0
+        end,
     case is_valid_now_time(NowTime) of
-        true -> ok;
+        true ->
+            ok;
         false ->
-            log(error, "bad -t|--now_time option, get it from this script's now_time command or "
-                       "from command: date +'%Y.%m.%d.%H.%M.%S'", []),
+            log(
+                error,
+                "bad -t|--now_time option, get it from this script's now_time command or "
+                "from command: date +'%Y.%m.%d.%H.%M.%S'",
+                []
+            ),
             stop_deactivate()
     end,
 
@@ -267,10 +305,11 @@ generate(ParsedArgs) ->
 
     Schema = load_schema(ParsedArgs),
     Conf = load_conf(ParsedArgs, fun log/3),
-    LogFun = case proplists:get_value(verbose_env, ParsedArgs) of
-                 true -> fun log_for_generator/2;
-                 false -> fun(_, _) -> ok end
-             end,
+    LogFun =
+        case proplists:get_value(verbose_env, ParsedArgs) of
+            true -> fun log_for_generator/2;
+            false -> fun(_, _) -> ok end
+        end,
     Opts = #{logger => LogFun, apply_override_envs => true},
     try hocon_tconf:generate(Schema, Conf, Opts) of
         NewConfig ->
@@ -282,8 +321,12 @@ generate(ParsedArgs) ->
             prune(Destination, MaxHistory),
             prune(DestinationVMArgs, MaxHistory),
 
-            case { file:write_file(Destination, io_lib:fwrite("~p.\n", [AppConfig])),
-                   file:write_file(DestinationVMArgs, string:join(VmArgs, "\n"))} of
+            case
+                {
+                    file:write_file(Destination, io_lib:fwrite("~p.\n", [AppConfig])),
+                    file:write_file(DestinationVMArgs, string:join(VmArgs, "\n"))
+                }
+            of
                 {ok, ok} ->
                     ok;
                 {Err1, Err2} ->
@@ -292,7 +335,7 @@ generate(ParsedArgs) ->
                     stop_deactivate()
             end
     catch
-        throw : {Schema, Errors} ->
+        throw:{Schema, Errors} ->
             log(error, "failed_to_check_schema: ~0p", [Schema]),
             lists:foreach(fun(E) -> log(error, "~0p", [E]) end, Errors),
             stop_deactivate()
@@ -309,7 +352,7 @@ prune(Filename, MaxHistory) ->
     Files =
         lists:sort(filelib:wildcard(Base ++ ".*" ++ Ext, Path)),
 
-    delete([ filename:join([Path, F]) || F <- Files], MaxHistory),
+    delete([filename:join([Path, F]) || F <- Files], MaxHistory),
     ok.
 
 -spec delete(file:name_all(), non_neg_integer()) -> ok.
@@ -323,8 +366,7 @@ do_delete(_Files, 0) ->
 do_delete([File | Files], Left) ->
     case file:delete(File) of
         ok -> ok;
-        {error, Reason} ->
-            log(error, "Could not delete ~s, ~0p", [File, Reason])
+        {error, Reason} -> log(error, "Could not delete ~s, ~0p", [File, Reason])
     end,
     do_delete(Files, Left - 1).
 
@@ -343,8 +385,7 @@ filename_maker(Filename, NowTime, Extension) ->
 stringify(undefined) ->
     [];
 stringify(VMArgsProplist) ->
-    [ stringify_line(K, V) || {K, V} <- VMArgsProplist ].
-
+    [stringify_line(K, V) || {K, V} <- VMArgsProplist].
 
 stringify_line(K, V) when is_list(V) ->
     io_lib:format("~s ~s", [K, V]);
@@ -355,8 +396,10 @@ log_for_generator(_Level, #{hocon_env_var_name := Var, path := P, value := V}) w
     ?STDOUT("~s = ~s = ~s", [P, Var, V]);
 log_for_generator(_Level, #{hocon_env_var_name := Var, path := P, value := V}) ->
     ?STDOUT("~s = ~s = ~0p", [P, Var, V]);
-log_for_generator(debug, _Args) -> ok;
-log_for_generator(info, _Args) -> ok;
+log_for_generator(debug, _Args) ->
+    ok;
+log_for_generator(info, _Args) ->
+    ok;
 log_for_generator(Level, Msg) when is_binary(Msg) ->
     io:format(standard_error, "[~0p] ~s~n", [Level, Msg]);
 log_for_generator(Level, Args) ->
@@ -372,7 +415,6 @@ stop_deactivate() ->
 stop_ok() ->
     init:stop(0).
 -endif.
-
 
 -ifdef(TEST).
 %% In test mode we don't want to kill the test VM prematurely.

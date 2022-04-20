@@ -19,8 +19,9 @@
 -include_lib("typerefl/include/types.hrl").
 
 pp_test_() ->
-    [ {"emqx.conf", do_fun("etc/emqx.conf")}
-    , {"unescape.conf", do_fun("etc/unescape.conf")}
+    [
+        {"emqx.conf", do_fun("etc/emqx.conf")},
+        {"unescape.conf", do_fun("etc/unescape.conf")}
     ].
 
 do_fun(File) ->
@@ -34,26 +35,36 @@ do(File) ->
 
 load_file_pp_test() ->
     TmpF = "/tmp/load_file_pp_test",
-    F = fun (Raw, Format) ->
-                ok = file:write_file(TmpF, Raw),
-                {ok, M} = hocon:load(TmpF, #{format => Format}),
-                Bin = flatten(M),
-                [I || I <- binary:split(Bin, <<"\n">>, [global]), I =/= <<>>]
-        end,
-    ?assertEqual([ <<"f1 = 1 # /tmp/load_file_pp_test:3">>,
-                   <<"foo = [] # /tmp/load_file_pp_test:1">>
-                 ], F("foo=[]\n\nf1=1", richmap)),
-    ?assertEqual([<<"f1 = 1 # /tmp/load_file_pp_test:2">>,
-                  <<"foo.1 = \"a\" # /tmp/load_file_pp_test:1">>,
-                  <<"foo.2 = \"b\" # /tmp/load_file_pp_test:1">>
-                 ], F("foo=[a,b]\nf1=1", richmap)).
+    F = fun(Raw, Format) ->
+        ok = file:write_file(TmpF, Raw),
+        {ok, M} = hocon:load(TmpF, #{format => Format}),
+        Bin = flatten(M),
+        [I || I <- binary:split(Bin, <<"\n">>, [global]), I =/= <<>>]
+    end,
+    ?assertEqual(
+        [
+            <<"f1 = 1 # /tmp/load_file_pp_test:3">>,
+            <<"foo = [] # /tmp/load_file_pp_test:1">>
+        ],
+        F("foo=[]\n\nf1=1", richmap)
+    ),
+    ?assertEqual(
+        [
+            <<"f1 = 1 # /tmp/load_file_pp_test:2">>,
+            <<"foo.1 = \"a\" # /tmp/load_file_pp_test:1">>,
+            <<"foo.2 = \"b\" # /tmp/load_file_pp_test:1">>
+        ],
+        F("foo=[a,b]\nf1=1", richmap)
+    ).
 
 load_binary_pp_test() ->
-    Sc = #{roots => [root],
-           fields => #{root => [{"val", hoconsc:mk(hoconsc:ref(sub))}],
-                       sub => [{"f1", integer()}]
-                      }
-          },
+    Sc = #{
+        roots => [root],
+        fields => #{
+            root => [{"val", hoconsc:mk(hoconsc:ref(sub))}],
+            sub => [{"f1", integer()}]
+        }
+    },
     Conf = "root = {val = {f1 = 43}}",
     {ok, Raw} = hocon:binary(Conf, #{format => richmap}),
     M1 = hocon_tconf:check(Sc, Raw, #{}),
@@ -65,19 +76,25 @@ load_binary_pp_test() ->
     ok.
 
 env_flat_pp_test() ->
-    Sc = #{roots => [root],
-           fields => #{root => [{"val", hoconsc:mk(hoconsc:ref(sub))}],
-                       sub => [{"f1", integer()}]
-                      }
-          },
+    Sc = #{
+        roots => [root],
+        fields => #{
+            root => [{"val", hoconsc:mk(hoconsc:ref(sub))}],
+            sub => [{"f1", integer()}]
+        }
+    },
     Conf = "root = {val = {f1 = 43}}",
     {ok, Raw} = hocon:binary(Conf, #{format => richmap}),
     Check = fun(F) ->
-                    with_envs(F, [Sc, Raw, #{apply_override_envs => true}],
-                              [ {"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"}
-                              , {"EMQX_ROOT__VAL", "{f1:42}"}
-                              ])
-            end,
+        with_envs(
+            F,
+            [Sc, Raw, #{apply_override_envs => true}],
+            [
+                {"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"},
+                {"EMQX_ROOT__VAL", "{f1:42}"}
+            ]
+        )
+    end,
     M1 = Check(fun hocon_tconf:check/3),
     M2 = Check(fun hocon_tconf:check_plain/3),
     %% print source as comment
