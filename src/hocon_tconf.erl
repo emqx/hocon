@@ -34,31 +34,34 @@
 -define(FROM_ENV_VAR(Name, Value), {'$FROM_ENV_VAR', Name, Value}).
 -type loggerfunc() :: fun((atom(), map()) -> ok).
 %% Config map/check options.
--type opts() :: #{ logger => loggerfunc()
-                   %% only_fill_defaults is to only to fill default values for the input
-                   %% config to be checked, only primitive value type check (validation)
-                   %% but not complex value validation and mapping
-                 , only_fill_defaults => boolean()
-                 , atom_key => boolean()
-                 , return_plain => boolean()
-                   %% apply environment variable overrides when
-                   %% apply_override_envs is set to true and also
-                   %% HOCON_ENV_OVERRIDE_PREFIX is set.
-                   %% default is true.
-                 , apply_override_envs => boolean()
-                   %% `required` is false by default, which allow all fields to be `undefined`.
-                   %% if `required` is set to `true`
-                   %% map or check APIs fail with validation_error
-                   %% when required field is not found or required field's value is `undefined`.
-                   %% NOTE: this option serves as default value for field's `required` spec
-                 , required => boolean() %% default: false for map, true for check
+-type opts() :: #{
+    logger => loggerfunc(),
+    %% only_fill_defaults is to only to fill default values for the input
+    %% config to be checked, only primitive value type check (validation)
+    %% but not complex value validation and mapping
+    only_fill_defaults => boolean(),
+    atom_key => boolean(),
+    return_plain => boolean(),
+    %% apply environment variable overrides when
+    %% apply_override_envs is set to true and also
+    %% HOCON_ENV_OVERRIDE_PREFIX is set.
+    %% default is true.
+    apply_override_envs => boolean(),
+    %% `required` is false by default, which allow all fields to be `undefined`.
+    %% if `required` is set to `true`
+    %% map or check APIs fail with validation_error
+    %% when required field is not found or required field's value is `undefined`.
+    %% NOTE: this option serves as default value for field's `required` spec
 
-                 %% below options are generated internally and should not be passed in by callers
-                 , format => map | richmap
-                 , stack => [name()]
-                 , schema => schema()
-                 , check_lazy => boolean()
-                 }.
+    %% default: false for map, true for check
+    required => boolean(),
+
+    %% below options are generated internally and should not be passed in by callers
+    format => map | richmap,
+    stack => [name()],
+    schema => schema(),
+    check_lazy => boolean()
+}.
 -type name() :: hocon_schema:name().
 -type schema() :: hocon_schema:schema().
 
@@ -79,7 +82,7 @@
 %%    lists:foreach(fun({AppName, Envs}) ->
 %%        [application:set_env(AppName, Par, Val) || {Par, Val} <- Envs]
 %%    end, hocon_schema_generate(Schema, Conf)).
--spec(generate(schema(), hocon:config()) -> [proplists:property()]).
+-spec generate(schema(), hocon:config()) -> [proplists:property()].
 generate(Schema, Conf) ->
     generate(Schema, Conf, #{}).
 
@@ -87,15 +90,15 @@ generate(Schema, Conf, Opts) ->
     {Mapped, _NewConf} = map_translate(Schema, Conf, Opts),
     Mapped.
 
--spec(map_translate(schema(), hocon:config(), opts()) ->
-    {[proplists:property()], hocon:config()}).
+-spec map_translate(schema(), hocon:config(), opts()) ->
+    {[proplists:property()], hocon:config()}.
 map_translate(Schema, Conf, Opts) ->
     {Mapped, NewConf} = map(Schema, Conf, all, Opts),
     Translated = translate(Schema, NewConf, Mapped),
     {nest(Translated), NewConf}.
 
 %% @private returns a nested proplist with atom keys
--spec(nest([proplists:property()]) -> [proplists:property()]).
+-spec nest([proplists:property()]) -> [proplists:property()].
 nest(Proplist) ->
     nest(Proplist, []).
 
@@ -115,71 +118,100 @@ set_value([HeadToken | MoreTokens], PList, Value) ->
 -spec translate(schema(), hocon:config(), [proplists:property()]) -> [proplists:property()].
 translate(Schema, Conf, Mapped) ->
     case hocon_schema:translations(Schema) of
-        [] -> Mapped;
+        [] ->
+            Mapped;
         Namespaces ->
-            Res = lists:append([do_translate(hocon_schema:translation(Schema, N),
-                                             str(N), Conf, Mapped) ||
-                        N <- Namespaces]),
+            Res = lists:append([
+                do_translate(
+                    hocon_schema:translation(Schema, N),
+                    str(N),
+                    Conf,
+                    Mapped
+                )
+             || N <- Namespaces
+            ]),
             ok = assert_no_error(Schema, Res),
             %% rm field if translation returns undefined
             [{K, V} || {K, V} <- lists:ukeymerge(1, Res, Mapped), V =/= undefined]
     end.
 
-do_translate([], _Namespace, _Conf, Acc) -> Acc;
+do_translate([], _Namespace, _Conf, Acc) ->
+    Acc;
 do_translate([{MappedField, Translator} | More], TrNamespace, Conf, Acc) ->
     MappedField0 = TrNamespace ++ "." ++ MappedField,
     try Translator(Conf) of
         Value ->
             do_translate(More, TrNamespace, Conf, [{string:tokens(MappedField0, "."), Value} | Acc])
     catch
-        Exception : Reason : St ->
-            Error = {error, ?TRANSLATION_ERRS(#{reason => Reason,
-                                                stacktrace => St,
-                                                value_path => MappedField0,
-                                                exception => Exception
-                                               })},
+        Exception:Reason:St ->
+            Error =
+                {error,
+                    ?TRANSLATION_ERRS(#{
+                        reason => Reason,
+                        stacktrace => St,
+                        value_path => MappedField0,
+                        exception => Exception
+                    })},
             do_translate(More, TrNamespace, Conf, [Error | Acc])
     end.
 
 assert_integrity(Schema, Conf0, #{format := Format}) ->
-    Conf = case Format of
-               richmap -> ensure_plain(Conf0);
-               map -> Conf0
-           end,
+    Conf =
+        case Format of
+            richmap -> ensure_plain(Conf0);
+            map -> Conf0
+        end,
     Names = hocon_schema:validations(Schema),
     Errors = assert_integrity(Schema, Names, Conf, []),
     ok = assert_no_error(Schema, Errors).
 
-assert_integrity(_Schema, [], _Conf, Result) -> lists:reverse(Result);
+assert_integrity(_Schema, [], _Conf, Result) ->
+    lists:reverse(Result);
 assert_integrity(Schema, [{Name, Validator} | Rest], Conf, Acc) ->
     try Validator(Conf) of
         OK when OK =:= true orelse OK =:= ok ->
             assert_integrity(Schema, Rest, Conf, Acc);
         Other ->
-            assert_integrity(Schema, Rest, Conf,
-                             [{error, ?VALIDATION_ERRS(#{reason => integrity_validation_failure,
-                                                         validation_name => Name,
-                                                         result => Other})}])
+            assert_integrity(
+                Schema,
+                Rest,
+                Conf,
+                [
+                    {error,
+                        ?VALIDATION_ERRS(#{
+                            reason => integrity_validation_failure,
+                            validation_name => Name,
+                            result => Other
+                        })}
+                ]
+            )
     catch
-        Exception : Reason : St ->
-            Error = {error, ?VALIDATION_ERRS(#{reason => integrity_validation_crash,
-                                               validation_name => Name,
-                                               exception => {Exception, Reason},
-                                               stacktrace => St
-                                              })},
+        Exception:Reason:St ->
+            Error =
+                {error,
+                    ?VALIDATION_ERRS(#{
+                        reason => integrity_validation_crash,
+                        validation_name => Name,
+                        exception => {Exception, Reason},
+                        stacktrace => St
+                    })},
             assert_integrity(Schema, Rest, Conf, [Error | Acc])
     end.
 
 merge_opts(Default, Opts) ->
-    maps:merge(Default#{apply_override_envs => false,
-                        atom_key => false
-                       }, Opts).
+    maps:merge(
+        Default#{
+            apply_override_envs => false,
+            atom_key => false
+        },
+        Opts
+    ).
 
 %% @doc Check richmap input against schema.
 %% Returns a new config with:
 %% 1) default values from schema if not found in input config
 %% 2) environment variable overrides applied
--spec(check(schema(), hocon:config()) -> hocon:config()).
+-spec check(schema(), hocon:config()) -> hocon:config().
 check(Schema, Conf) ->
     check(Schema, Conf, #{}).
 
@@ -220,24 +252,31 @@ map(Schema, Conf) ->
     map(Schema, Conf, Roots, #{}).
 
 -spec map(schema(), hocon:config(), all | [name()]) ->
-        {[proplists:property()], hocon:config()}.
+    {[proplists:property()], hocon:config()}.
 map(Schema, Conf, RootNames) ->
     map(Schema, Conf, RootNames, #{}).
 
 -spec map(schema(), hocon:config(), all | [name()], opts()) ->
-        {[proplists:property()], hocon:config()}.
+    {[proplists:property()], hocon:config()}.
 map(Schema, Conf, all, Opts) ->
     map(Schema, Conf, hocon_schema:root_names(Schema), Opts);
 map(Schema, Conf0, Roots0, Opts0) ->
-    Opts = merge_opts(#{schema => Schema,
-                        format => richmap
-                       }, Opts0),
+    Opts = merge_opts(
+        #{
+            schema => Schema,
+            format => richmap
+        },
+        Opts0
+    ),
     Conf1 = ensure_format(Conf0, Opts),
     Roots = resolve_root_types(hocon_schema:roots(Schema), Roots0),
     %% assert
-    lists:foreach(fun({RootName, _RootSc}) ->
-                          ok = assert_no_dot(Schema, RootName)
-                  end, Roots),
+    lists:foreach(
+        fun({RootName, _RootSc}) ->
+            ok = assert_no_dot(Schema, RootName)
+        end,
+        Roots
+    ),
     Conf2 = filter_by_roots(Opts, Conf1, Roots),
     Conf = apply_envs(Schema, Conf2, Opts, Roots),
     {Mapped0, NewConf} = do_map(Roots, Conf, Opts, ?MAGIC_SCHEMA),
@@ -261,7 +300,8 @@ ensure_format(Conf, #{format := map}) ->
 merge_env_overrides(Schema, Conf0, all, Opts) ->
     merge_env_overrides(Schema, Conf0, hocon_schema:root_names(Schema), Opts);
 merge_env_overrides(Schema, Conf0, Roots0, Opts0) ->
-    Opts = Opts0#{apply_override_envs => true}, %% force
+    %% force
+    Opts = Opts0#{apply_override_envs => true},
     Roots = resolve_root_types(hocon_schema:roots(Schema), Roots0),
     Conf = filter_by_roots(Opts, Conf0, Roots),
     apply_envs(Schema, Conf, Opts, Roots).
@@ -269,7 +309,8 @@ merge_env_overrides(Schema, Conf0, Roots0, Opts0) ->
 %% the config 'map' call returns env overrides in mapping
 %% resutls, this function helps to drop them from  the list
 %% and log the overrides
-log_and_drop_env_overrides(_Opts, []) -> [];
+log_and_drop_env_overrides(_Opts, []) ->
+    [];
 log_and_drop_env_overrides(Opts, [#{hocon_env_var_name := _} = H | T]) ->
     _ = log(Opts, info, H),
     log_and_drop_env_overrides(Opts, T);
@@ -277,22 +318,25 @@ log_and_drop_env_overrides(Opts, [H | T]) ->
     [H | log_and_drop_env_overrides(Opts, T)].
 
 %% Merge environment overrides into HOCON value before checking it against the schema.
-apply_envs(_Schema, Conf, #{apply_override_envs := false}, _Roots) -> Conf;
+apply_envs(_Schema, Conf, #{apply_override_envs := false}, _Roots) ->
+    Conf;
 apply_envs(Schema, Conf, Opts, Roots) ->
     {EnvNamespace, Envs} = collect_envs(Schema, Opts, Roots),
     do_apply_envs(EnvNamespace, Envs, Opts, Roots, Conf).
 
-do_apply_envs(_EnvNamespace, _Envs, _Opts, [], Conf) -> Conf;
+do_apply_envs(_EnvNamespace, _Envs, _Opts, [], Conf) ->
+    Conf;
 do_apply_envs(EnvNamespace, Envs, Opts, [{RootName, RootSc} | Roots], Conf) ->
     ShouldApply =
         case field_schema(RootSc, type) of
             ?LAZY(_) -> maps:get(check_lazy, Opts, false);
             _ -> true
         end,
-    NewConf = case ShouldApply of
-                  true -> apply_env(EnvNamespace, Envs, RootName, Conf, Opts);
-                  false -> Conf
-                end,
+    NewConf =
+        case ShouldApply of
+            true -> apply_env(EnvNamespace, Envs, RootName, Conf, Opts);
+            false -> Conf
+        end,
     do_apply_envs(EnvNamespace, Envs, Opts, Roots, NewConf).
 
 %% silently drop unknown data (root level only)
@@ -300,7 +344,8 @@ filter_by_roots(Opts, Conf, Roots) ->
     Names = lists:map(fun({N, _}) -> bin(N) end, Roots),
     boxit(Opts, maps:with(Names, unbox(Opts, Conf)), Conf).
 
-resolve_root_types(_Roots, []) -> [];
+resolve_root_types(_Roots, []) ->
+    [];
 resolve_root_types(Roots, [Name | Rest]) ->
     case lists:keyfind(bin(Name), 1, Roots) of
         {_, {OrigName, Sc}} ->
@@ -357,8 +402,8 @@ do_map2(Fields, Value0, Opts) ->
     DataFields = drop_nulls(Opts, DataFields0),
     Value = boxit(Opts, DataFields, Value0),
     case check_unknown_fields(Opts, SchemaFieldNames, DataFields) of
-      ok -> map_fields(Fields, Value, [], Opts);
-      Errors -> {Errors, Value}
+        ok -> map_fields(Fields, Value, [], Opts);
+        Errors -> {Errors, Value}
     end.
 
 map_fields([], Conf, Mapped, _Opts) ->
@@ -373,15 +418,30 @@ map_fields([{FieldName, FieldSchema} | Fields], Conf0, Acc, Opts) ->
         catch
             %% there is no test coverage for these lines
             %% if this happens, it's a bug!
-            C : #{reason := failed_to_check_field} = E : St ->
+            C:#{reason := failed_to_check_field} = E:St ->
                 erlang:raise(C, E, St);
-            C : E : St ->
-                Err = #{reason => failed_to_check_field,
-                        field => FieldName,
-                        path => try path(Opts) catch _ : _ -> [] end,
-                        exception => E},
-                catch log(Opts, error, bin(io_lib:format("input-config:~n~p~n~p~n",
-                                                         [FieldValue, Err]))),
+            C:E:St ->
+                Err = #{
+                    reason => failed_to_check_field,
+                    field => FieldName,
+                    path =>
+                        try
+                            path(Opts)
+                        catch
+                            _:_ -> []
+                        end,
+                    exception => E
+                },
+                catch log(
+                    Opts,
+                    error,
+                    bin(
+                        io_lib:format(
+                            "input-config:~n~p~n~p~n",
+                            [FieldValue, Err]
+                        )
+                    )
+                ),
                 erlang:raise(C, Err, St)
         end,
     Conf = put_value(Opts, FieldName, unbox(Opts, FValue), Conf0),
@@ -435,28 +495,36 @@ map_field_maybe_convert(Type, Schema, Value0, Opts, Converter) ->
                 false -> {Mapped, Value}
             end
     catch
-        throw : Reason ->
+        throw:Reason ->
             {validation_errs(Opts, #{reason => Reason}), Value0};
-        C : E : St ->
-            {validation_errs(Opts, #{reason => converter_crashed,
-                                     exception => {C, E},
-                                     stacktrace => St
-                                    }), Value0}
+        C:E:St ->
+            {
+                validation_errs(Opts, #{
+                    reason => converter_crashed,
+                    exception => {C, E},
+                    stacktrace => St
+                }),
+                Value0
+            }
     end.
 
 map_field(?MAP(_Name, Type), FieldSchema, Value, Opts) ->
     %% map type always has string keys
     Keys = maps_keys(unbox(Opts, Value)),
     case [str(K) || K <- Keys] of
-        [] -> {[], Value};
+        [] ->
+            {[], Value};
         FieldNames ->
             case get_invalid_name(FieldNames) of
                 [] ->
                     %% All objects in this map should share the same schema.
-                    NewSc = hocon_schema:override(FieldSchema,
-                        #{type => Type, mapping => undefined}),
+                    NewSc = hocon_schema:override(
+                        FieldSchema,
+                        #{type => Type, mapping => undefined}
+                    ),
                     NewFields = [{FieldName, NewSc} || FieldName <- FieldNames],
-                    do_map(NewFields, Value, Opts, NewSc); %% start over
+                    %% start over
+                    do_map(NewFields, Value, Opts, NewSc);
                 InvalidNames ->
                     Reason =
                         #{
@@ -479,11 +547,11 @@ map_field(Ref, FieldSchema, Value, #{schema := Schema} = Opts) when is_list(Ref)
 map_field(?UNION(Types), Schema0, Value, Opts) ->
     %% union is not a boxed value
     F = fun(Type) ->
-                %% go deep with union member's type, but all
-                %% other schema information should be inherited from the enclosing schema
-                Schema = sub_schema(Schema0, Type),
-                map_field(Type, Schema, Value, Opts)
-        end,
+        %% go deep with union member's type, but all
+        %% other schema information should be inherited from the enclosing schema
+        Schema = sub_schema(Schema0, Type),
+        map_field(Type, Schema, Value, Opts)
+    end,
     case do_map_union(Types, F, #{}, Opts) of
         {ok, {Mapped, NewValue}} -> {Mapped, NewValue};
         Error -> {Error, Value}
@@ -498,21 +566,23 @@ map_field(?ARRAY(Type), _Schema, Value0, Opts) ->
     %% array needs an unbox
     Array = unbox(Opts, Value0),
     F = fun(I, Elem) ->
-               NewOpts = push_stack(Opts, integer_to_binary(I)),
-               map_one_field(Type, Type, Elem, NewOpts)
-       end,
+        NewOpts = push_stack(Opts, integer_to_binary(I)),
+        map_one_field(Type, Type, Elem, NewOpts)
+    end,
     Do = fun(ArrayForSure) ->
-                 case do_map_array(F, ArrayForSure, [], 1, []) of
-                     {ok, {NewArray, Mapped}} ->
-                         true = is_list(NewArray), %% assert
-                         %% and we need to box it back
-                         {Mapped, boxit(Opts, NewArray, Value0)};
-                     {error, Reasons} ->
-                         {[{error, Reasons}], Value0}
-                 end
-         end,
+        case do_map_array(F, ArrayForSure, [], 1, []) of
+            {ok, {NewArray, Mapped}} ->
+                %% assert
+                true = is_list(NewArray),
+                %% and we need to box it back
+                {Mapped, boxit(Opts, NewArray, Value0)};
+            {error, Reasons} ->
+                {[{error, Reasons}], Value0}
+        end
+    end,
     case is_list(Array) of
-        true -> Do(Array);
+        true ->
+            Do(Array);
         false when Array =:= undefined ->
             {[], undefined};
         false when is_map(Array) ->
@@ -544,8 +614,9 @@ is_primitive_type(?ENUM(_)) -> true;
 is_primitive_type(_) -> false.
 
 sub_schema(EnclosingSchema, MaybeType) ->
-    fun(type) -> field_schema(MaybeType, type);
-       (Other) -> field_schema(EnclosingSchema, Other)
+    fun
+        (type) -> field_schema(MaybeType, type);
+        (Other) -> field_schema(EnclosingSchema, Other)
     end.
 
 sub_type(EnclosingSchema, MaybeType) ->
@@ -555,17 +626,19 @@ sub_type(EnclosingSchema, MaybeType) ->
 maps_keys(undefined) -> [];
 maps_keys(Map) -> maps:keys(Map).
 
-check_unknown_fields(_Opts, _SchemaFieldNames, undefined) -> ok;
+check_unknown_fields(_Opts, _SchemaFieldNames, undefined) ->
+    ok;
 check_unknown_fields(Opts, SchemaFieldNames, DataFields) ->
     case match_field_names(SchemaFieldNames, DataFields) of
         ok ->
             ok;
         {error, {Expected, Unknowns}} ->
-            Err = #{reason => unknown_fields,
-                    path => path(Opts),
-                    expected_fields => Expected,
-                    unknown_fields => Unknowns
-                   },
+            Err = #{
+                reason => unknown_fields,
+                path => path(Opts),
+                expected_fields => Expected,
+                unknown_fields => Unknowns
+            },
             validation_errs(Opts, Err)
     end.
 
@@ -573,15 +646,18 @@ match_field_names(SchemaFieldNames0, DataFields) ->
     SchemaFieldNames = lists:map(fun bin/1, SchemaFieldNames0),
     match_field_names(SchemaFieldNames, maps:to_list(DataFields), []).
 
-match_field_names(_Expected, [], []) -> ok;
-match_field_names(Expected, [], Unknowns) -> {error, {Expected, Unknowns}};
+match_field_names(_Expected, [], []) ->
+    ok;
+match_field_names(Expected, [], Unknowns) ->
+    {error, {Expected, Unknowns}};
 match_field_names(Expected, [{DfName, DfValue} | Rest], Unknowns) ->
     case match_field_name(DfName, Expected) of
         {[], _} ->
-            Unknown = case meta(DfValue) of
-                          undefined -> DfName;
-                          Meta -> {DfName, Meta}
-                      end,
+            Unknown =
+                case meta(DfValue) of
+                    undefined -> DfName;
+                    Meta -> {DfName, Meta}
+                end,
             match_field_names(Expected, Rest, [Unknown | Unknowns]);
         {[_], RestExpected} ->
             match_field_names(RestExpected, Rest, Unknowns)
@@ -599,10 +675,11 @@ is_required(Opts, Schema) ->
 field_schema(Sc, Key) ->
     hocon_schema:field_schema(Sc, Key).
 
-maybe_mapping(undefined, _) -> []; % no mapping defined for this field
-maybe_mapping(_, undefined) -> []; % no value retrieved for this field
-maybe_mapping(MappedPath, PlainValue) ->
-    [{string:tokens(MappedPath, "."), PlainValue}].
+% no mapping defined for this field
+maybe_mapping(undefined, _) -> [];
+% no value retrieved for this field
+maybe_mapping(_, undefined) -> [];
+maybe_mapping(MappedPath, PlainValue) -> [{string:tokens(MappedPath, "."), PlainValue}].
 
 push_stack(#{stack := Stack} = X, New) ->
     X#{stack := [New | Stack]};
@@ -610,13 +687,16 @@ push_stack(X, New) ->
     X#{stack => [New]}.
 
 %% get type validation stack.
-path(#{stack := Stack}) -> path(Stack);
+path(#{stack := Stack}) ->
+    path(Stack);
 path(Stack) when is_list(Stack) ->
     string:join(lists:reverse(lists:map(fun str/1, Stack)), ".").
 
 do_map_union([], _TypeCheck, PerTypeResult, Opts) ->
-    validation_errs(Opts, #{reason => matched_no_union_member,
-                            mismatches => PerTypeResult});
+    validation_errs(Opts, #{
+        reason => matched_no_union_member,
+        mismatches => PerTypeResult
+    });
 do_map_union([Type | Types], TypeCheck, PerTypeResult, Opts) ->
     {Mapped, Value} = TypeCheck(Type),
     case find_errors(Mapped) of
@@ -638,18 +718,21 @@ do_map_array(F, [Elem | Rest], Res, Index, Acc) ->
 resolve_field_value(Schema, FieldValue, Opts) ->
     case unbox(Opts, FieldValue) of
         ?FROM_ENV_VAR(EnvName, EnvValue) ->
-            {[env_override_for_log(Schema, EnvName, path(Opts), EnvValue)],
-             maybe_mkrich(Opts, EnvValue, ?META_BOX(from_env, EnvName))};
+            {
+                [env_override_for_log(Schema, EnvName, path(Opts), EnvValue)],
+                maybe_mkrich(Opts, EnvValue, ?META_BOX(from_env, EnvName))
+            };
         _ ->
-            {[],
-             maybe_use_default(field_schema(Schema, default), FieldValue, Opts)}
+            {[], maybe_use_default(field_schema(Schema, default), FieldValue, Opts)}
     end.
 
 %% use default value if field value is 'undefined'
-maybe_use_default(undefined, Value, _Opts) -> Value;
+maybe_use_default(undefined, Value, _Opts) ->
+    Value;
 maybe_use_default(Default, undefined, Opts) ->
     maybe_mkrich(Opts, Default, ?META_BOX(made_for, default_value));
-maybe_use_default(_, Value, _Opts) -> Value.
+maybe_use_default(_, Value, _Opts) ->
+    Value.
 
 collect_envs(Schema, Opts, Roots) ->
     Ns = hocon_util:env_prefix(_Default = undefined),
@@ -659,15 +742,22 @@ collect_envs(Schema, Opts, Roots) ->
     end.
 
 collect_envs(Schema, Ns, Opts, Roots) ->
-    Pairs = [begin
-                 [Name, Value] = string:split(KV, "="),
-                 {Name, Value}
-             end || KV <- os:getenv(), string:prefix(KV, Ns) =/= nomatch],
-    Envs = lists:map(fun({N, V}) ->
-                             {check_env(Schema, Roots, Ns, N), N, V}
-                     end, Pairs),
+    Pairs = [
+        begin
+            [Name, Value] = string:split(KV, "="),
+            {Name, Value}
+        end
+     || KV <- os:getenv(), string:prefix(KV, Ns) =/= nomatch
+    ],
+    Envs = lists:map(
+        fun({N, V}) ->
+            {check_env(Schema, Roots, Ns, N), N, V}
+        end,
+        Pairs
+    ),
     case [Name || {warn, Name, _} <- Envs] of
-        [] -> ok;
+        [] ->
+            ok;
         Names ->
             UnknownVars = lists:sort(Names),
             Msg = bin(io_lib:format("unknown_env_vars: ~p", [UnknownVars])),
@@ -694,7 +784,8 @@ check_env(Schema, Roots, Ns, EnvVarName) ->
             end
     end.
 
-is_field([], _Name) -> false;
+is_field([], _Name) ->
+    false;
 is_field([{FN, FT} | Fields], Name) ->
     case bin(FN) =:= bin(Name) of
         true ->
@@ -704,7 +795,8 @@ is_field([{FN, FT} | Fields], Name) ->
             is_field(Fields, Name)
     end.
 
-is_path(_Schema, _Name, []) -> true;
+is_path(_Schema, _Name, []) ->
+    true;
 is_path(Schema, Name, Path) when is_list(Name) ->
     is_path2(Schema, Name, Path);
 is_path(Schema, ?REF(Name), Path) ->
@@ -741,7 +833,8 @@ env_name_to_path(Ns, VarName) ->
         Path -> Path
     end.
 
-read_hocon_val("", _Opts) -> "";
+read_hocon_val("", _Opts) ->
+    "";
 read_hocon_val(Value, Opts) ->
     case hocon:binary(Value, #{}) of
         {ok, HoconVal} -> HoconVal;
@@ -754,13 +847,18 @@ read_informal_hocon_val(Value, Opts) ->
         {ok, HoconVal} ->
             maps:get(<<"fake_key">>, HoconVal);
         {error, Reason} ->
-            Msg = iolist_to_binary(io_lib:format("invalid_hocon_string: ~p, reason: ~p",
-                      [Value, Reason])),
+            Msg = iolist_to_binary(
+                io_lib:format(
+                    "invalid_hocon_string: ~p, reason: ~p",
+                    [Value, Reason]
+                )
+            ),
             log(Opts, debug, Msg),
             Value
     end.
 
-apply_env(_Ns, [], _RootName, Conf, _Opts) -> Conf;
+apply_env(_Ns, [], _RootName, Conf, _Opts) ->
+    Conf;
 apply_env(Ns, [{VarName, V} | More], RootName, Conf, Opts) ->
     %% match [_ | _] here because the name is already validated
     [_ | _] = Path0 = env_name_to_path(Ns, VarName),
@@ -772,15 +870,16 @@ apply_env(Ns, [{VarName, V} | More], RootName, Conf, Opts) ->
                 %% and the value will be logged later when checking against schema
                 %% so we know if the value is sensitive or not.
                 %% NOTE: never translate to atom key here
-                Value = case only_fill_defaults(Opts) of
-                            true -> V;
-                            false -> ?FROM_ENV_VAR(VarName, V)
-                        end,
+                Value =
+                    case only_fill_defaults(Opts) of
+                        true -> V;
+                        false -> ?FROM_ENV_VAR(VarName, V)
+                    end,
                 try
                     put_value(Opts#{atom_key => false}, Path, Value, Conf)
                 catch
-                    throw : {bad_array_index, Reason} ->
-                        Msg = ["bad_array_index from ",  VarName, ", ", Reason],
+                    throw:{bad_array_index, Reason} ->
+                        Msg = ["bad_array_index from ", VarName, ", ", Reason],
                         log(Opts, error, iolist_to_binary(Msg)),
                         error({bad_array_index, VarName})
                 end;
@@ -835,9 +934,12 @@ mkrich(Arr, Box) when is_list(Arr) ->
     NewArr = [mkrich(I, Box) || I <- Arr],
     boxit(NewArr, Box);
 mkrich(Map, Box) when is_map(Map) ->
-    boxit(maps:from_list(
-            [{Name, mkrich(Value, Box)} || {Name, Value} <- maps:to_list(Map)]),
-          Box);
+    boxit(
+        maps:from_list(
+            [{Name, mkrich(Value, Box)} || {Name, Value} <- maps:to_list(Map)]
+        ),
+        Box
+    );
 mkrich(Val, Box) ->
     boxit(Val, Box).
 
@@ -855,17 +957,19 @@ put_value(#{format := map} = Opts, Path, V, Conf) ->
 
 split(Path) -> hocon_util:split_path(Path).
 
-validators(undefined) -> [];
+validators(undefined) ->
+    [];
 validators(Validator) when is_function(Validator) ->
     validators([Validator]);
 validators(Validators) when is_list(Validators) ->
-    true = lists:all(fun(F) -> is_function(F, 1) end, Validators), %% assert
+    %% assert
+    true = lists:all(fun(F) -> is_function(F, 1) end, Validators),
     Validators.
 
 builtin_validators(?ENUM(Symbols)) ->
     [fun(Value) -> check_enum_sybol(Value, Symbols) end];
 builtin_validators(Type) ->
-    TypeChecker = fun (Value) -> typerefl:typecheck(Type, Value) end,
+    TypeChecker = fun(Value) -> typerefl:typecheck(Type, Value) end,
     [TypeChecker].
 
 check_enum_sybol(Value, Symbols) when is_atom(Value); is_integer(Value) ->
@@ -876,19 +980,20 @@ check_enum_sybol(Value, Symbols) when is_atom(Value); is_integer(Value) ->
 check_enum_sybol(_Value, _Symbols) ->
     {error, unable_to_convert_to_enum_symbol}.
 
-
 validate(Opts, Schema, Value, Validators) ->
     validate(Opts, Schema, Value, is_required(Opts, Schema), Validators).
 
 validate(_Opts, _Schema, undefined, false, _Validators) ->
-    []; % do not validate if no value is set
+    % do not validate if no value is set
+    [];
 validate(Opts, _Schema, undefined, true, _Validators) ->
     validation_errs(Opts, mandatory_required_field, undefined);
 validate(Opts, Schema, Value, _IsRequired, Validators) ->
     do_validate(Opts, Schema, Value, Validators).
 
 %% returns on the first failure
-do_validate(_Opts, _Schema, _Value, []) -> [];
+do_validate(_Opts, _Schema, _Value, []) ->
+    [];
 do_validate(Opts, Schema, Value, [H | T]) ->
     try H(Value) of
         OK when OK =:= ok orelse OK =:= true ->
@@ -898,44 +1003,56 @@ do_validate(Opts, Schema, Value, [H | T]) ->
         {error, Reason} ->
             validation_errs(Opts, Reason, obfuscate(Schema, Value))
     catch
-        C : E : St ->
-            validation_errs(Opts, #{exception => {C, E},
-                                    stacktrace => St
-                                   }, obfuscate(Schema, Value))
+        C:E:St ->
+            validation_errs(
+                Opts,
+                #{
+                    exception => {C, E},
+                    stacktrace => St
+                },
+                obfuscate(Schema, Value)
+            )
     end.
 
 validation_errs(Opts, Reason, Value) ->
-    Err = case meta(Value) of
-              undefined -> #{reason => Reason, value => Value};
-              Meta -> #{reason => Reason, value => ensure_plain(Value), location => Meta}
-          end,
+    Err =
+        case meta(Value) of
+            undefined -> #{reason => Reason, value => Value};
+            Meta -> #{reason => Reason, value => ensure_plain(Value), location => Meta}
+        end,
     validation_errs(Opts, Err).
 
 validation_errs(Opts, Context) ->
     [{error, ?VALIDATION_ERRS(Context#{path => path(Opts)})}].
 
 -spec plain_put(opts(), [binary()], term(), hocon:confing()) -> hocon:config().
-plain_put(_Opts, [], Value, _Old) -> Value;
+plain_put(_Opts, [], Value, _Old) ->
+    Value;
 plain_put(Opts, [Name | Path], Value, Conf0) ->
     GoDeep = fun(V) -> plain_put(Opts, Path, Value, V) end,
     hocon_maps:do_put(Conf0, Name, GoDeep, Opts).
 
-type_hint(B) when is_binary(B) -> string; %% maybe secret, do not hint value
+%% maybe secret, do not hint value
+type_hint(B) when is_binary(B) -> string;
 type_hint(X) -> X.
 
 ensure_plain(MaybeRichMap) ->
     hocon_maps:ensure_plain(MaybeRichMap).
 
 %% treat 'null' as absence
-drop_nulls(_Opts, undefined) -> undefined;
+drop_nulls(_Opts, undefined) ->
+    undefined;
 drop_nulls(Opts, Map) when is_map(Map) ->
-    maps:filter(fun(_Key, Value) ->
-                        case unbox(Opts, Value) of
-                            null -> false;
-                            {'$FROM_ENV_VAR', _, null} -> false;
-                            _ -> true
-                        end
-                end, Map).
+    maps:filter(
+        fun(_Key, Value) ->
+            case unbox(Opts, Value) of
+                null -> false;
+                {'$FROM_ENV_VAR', _, null} -> false;
+                _ -> true
+            end
+        end,
+        Map
+    ).
 
 assert_no_error(Schema, List) ->
     case find_errors(List) of
@@ -965,7 +1082,8 @@ ensure_bin_str(Value) when is_list(Value) ->
         true -> unicode:characters_to_binary(Value, utf8);
         false -> Value
     end;
-ensure_bin_str(Value) -> Value.
+ensure_bin_str(Value) ->
+    Value.
 
 check_indexed_array(List) ->
     case check_indexed_array(List, [], []) of
@@ -973,7 +1091,8 @@ check_indexed_array(List) ->
         {_, Bad} -> {error, #{bad_array_index_keys => Bad}}
     end.
 
-check_indexed_array([], Good, Bad) -> {Good, Bad};
+check_indexed_array([], Good, Bad) ->
+    {Good, Bad};
 check_indexed_array([{I, V} | Rest], Good, Bad) ->
     case hocon_util:is_array_index(I) of
         {true, Index} -> check_indexed_array(Rest, [{Index, V} | Good], Bad);
@@ -987,14 +1106,19 @@ check_index_seq(I, [{Index, V} | Rest], Acc) ->
         true ->
             check_index_seq(I + 1, Rest, [V | Acc]);
         false ->
-            {error, #{expected_index => I,
-                      got_index => Index}}
+            {error, #{
+                expected_index => I,
+                got_index => Index
+            }}
     end.
 
 get_invalid_name(Names) ->
-    lists:filter(fun(F) ->
-        nomatch =:= re:run(F, "^[A-Za-z0-9]+[A-Za-z0-9-_]*$")
-                 end, Names).
+    lists:filter(
+        fun(F) ->
+            nomatch =:= re:run(F, "^[A-Za-z0-9]+[A-Za-z0-9-_]*$")
+        end,
+        Names
+    ).
 
 -ifndef(TEST).
 assert_fields(_, _) -> ok.

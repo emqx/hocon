@@ -20,24 +20,26 @@
 
 deep_put_test_() ->
     F = fun(Str, Key, Value) ->
-                {ok, M} = hocon:binary(Str, #{format => richmap}),
-                NewM = hocon_maps:deep_put(Key, Value, M, #{}),
-                deep_get(Key, NewM, ?HOCON_V)
-        end,
-    [ ?_assertEqual(2, F("a=1", "a", 2))
-    , ?_assertEqual(2, F("a={b=1}", "a.b", 2))
-    , ?_assertEqual(#{x => 1}, F("a={b=1}", "a.b", #{x => 1}))
+        {ok, M} = hocon:binary(Str, #{format => richmap}),
+        NewM = hocon_maps:deep_put(Key, Value, M, #{}),
+        deep_get(Key, NewM, ?HOCON_V)
+    end,
+    [
+        ?_assertEqual(2, F("a=1", "a", 2)),
+        ?_assertEqual(2, F("a={b=1}", "a.b", 2)),
+        ?_assertEqual(#{x => 1}, F("a={b=1}", "a.b", #{x => 1}))
     ].
 
 deep_get_test_() ->
     F = fun(Str, Key, Param) ->
-                {ok, M} = hocon:binary(Str, #{format => richmap}),
-                deep_get(Key, M, Param)
-        end,
-    [ ?_assertEqual(1, F("a=1", "a", ?HOCON_V))
-    , ?_assertMatch(#{line := 1}, F("a=1", "a", ?METADATA))
-    , ?_assertEqual(1, F("a={b=1}", "a.b", ?HOCON_V))
-    , ?_assertEqual(undefined, F("a={b=1}", "a.c", ?HOCON_V))
+        {ok, M} = hocon:binary(Str, #{format => richmap}),
+        deep_get(Key, M, Param)
+    end,
+    [
+        ?_assertEqual(1, F("a=1", "a", ?HOCON_V)),
+        ?_assertMatch(#{line := 1}, F("a=1", "a", ?METADATA)),
+        ?_assertEqual(1, F("a={b=1}", "a.b", ?HOCON_V)),
+        ?_assertEqual(undefined, F("a={b=1}", "a.c", ?HOCON_V))
     ].
 
 deep_get(Path, Conf, Param) ->
@@ -50,12 +52,18 @@ deep_get(Path, Conf, Param) ->
 %% expect no crash
 flatten_test_() ->
     Dir = code:lib_dir(hocon),
-    Files = filelib:wildcard(filename:join([Dir, "sample-configs", "**", "*.conf"])) ++
+    Files =
+        filelib:wildcard(filename:join([Dir, "sample-configs", "**", "*.conf"])) ++
             filelib:wildcard(filename:join([Dir, "etc", "*.conf"])),
-    [begin {F, fun() ->
-                       test_flatten(F, richmap),
-                       test_flatten(F, map)
-               end} end || F <- Files].
+    [
+        begin
+            {F, fun() ->
+                test_flatten(F, richmap),
+                test_flatten(F, map)
+            end}
+        end
+     || F <- Files
+    ].
 
 test_flatten(File, Format) ->
     case hocon:load(File, #{format => Format}) of
@@ -75,7 +83,8 @@ test_flatten(File, Format) ->
             ok = assert_flatten_value(Conf, Pairs)
     end.
 
-assert_flatten_value(_, []) -> ok;
+assert_flatten_value(_, []) ->
+    ok;
 assert_flatten_value(Conf, [{Path, Val} | Pairs]) ->
     case hocon_maps:get(Path, Conf) of
         Val -> assert_flatten_value(Conf, Pairs);
@@ -86,5 +95,7 @@ flatten_primitive_value_test() ->
     ?assertEqual([{<<>>, 1}], hocon_maps:flatten(1, #{})).
 
 key_not_found_test() ->
-    ?assertError({key_not_found, <<"d">>, 1},
-        hocon_maps:get(["a", "b", "d"], #{<<"a">> => #{<<"b">> => 1}})).
+    ?assertError(
+        {key_not_found, <<"d">>, 1},
+        hocon_maps:get(["a", "b", "d"], #{<<"a">> => #{<<"b">> => 1}})
+    ).

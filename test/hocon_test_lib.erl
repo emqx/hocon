@@ -29,7 +29,7 @@ with_envs(Fun, Args, [{_Name, _Value} | _] = Envs) ->
     end.
 
 set_envs([{_Name, _Value} | _] = Envs) ->
-    lists:map(fun ({Name, Value}) -> os:putenv(Name, Value) end, Envs).
+    lists:map(fun({Name, Value}) -> os:putenv(Name, Value) end, Envs).
 
 unset_envs([{_Name, _Value} | _] = Envs) ->
-    lists:map(fun ({Name, _}) -> os:unsetenv(Name) end, Envs).
+    lists:map(fun({Name, _}) -> os:unsetenv(Name) end, Envs).

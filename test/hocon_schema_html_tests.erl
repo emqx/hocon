@@ -19,18 +19,22 @@
 -include_lib("eunit/include/eunit.hrl").
 
 no_crash_test_() ->
-    [{"demo_schema", gen(demo_schema, "./test/data/demo_schema_doc.conf")},
-     {"demo_schema2", gen(demo_schema2)},
-     {"emqx_schema", gen(emqx_schema)},
-     {"arbitrary1", gen(#{namespace => dummy,
-                          roots => [foo],
-                          fields => #{foo => [{"f1", hoconsc:enum([bar])}]}
-                         })},
-     {"arbitrary2",
-      gen(#{namespace => dummy,
-            roots => [foo],
-            fields => #{foo => [{"f1", hoconsc:mk(hoconsc:ref(emqx_schema, "zone"))}]}
-           })}
+    [
+        {"demo_schema", gen(demo_schema, "./test/data/demo_schema_doc.conf")},
+        {"demo_schema2", gen(demo_schema2)},
+        {"emqx_schema", gen(emqx_schema)},
+        {"arbitrary1",
+            gen(#{
+                namespace => dummy,
+                roots => [foo],
+                fields => #{foo => [{"f1", hoconsc:enum([bar])}]}
+            })},
+        {"arbitrary2",
+            gen(#{
+                namespace => dummy,
+                roots => [foo],
+                fields => #{foo => [{"f1", hoconsc:mk(hoconsc:ref(emqx_schema, "zone"))}]}
+            })}
     ].
 
 gen(Schema) -> fun() -> hocon_schema_html:gen(Schema, "test", undefined) end.

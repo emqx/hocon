@@ -37,11 +37,14 @@ do_convert({_Translations, Mappings, _Validators}, Output) ->
     ModuleErl = io_lib:format("-module(~s).\n\n", [filename:basename(Output, ".erl")]),
     {PresentTypes, MappingErl} = convert_mapping(Mappings),
     AddedTypes = maps:without(maps:keys(default_types()), PresentTypes),
-    TypesErl = "-include_lib(\"typerefl/include/types.hrl\").\n\n"
-    ++ [io_lib:format("-type ~s :: ~s.\n", [K, V]) || {K, V} <- maps:to_list(AddedTypes)],
+    TypesErl =
+        "-include_lib(\"typerefl/include/types.hrl\").\n\n" ++
+            [io_lib:format("-type ~s :: ~s.\n", [K, V]) || {K, V} <- maps:to_list(AddedTypes)],
     Behaviour = "-behaviour(hocon_schema).\n\n",
-    ReflectType = io_lib:format("-reflect_type([~s]).\n\n",
-        [string:join([string:replace(T, "()", "/0") || T <- maps:keys(AddedTypes)], ", ")]),
+    ReflectType = io_lib:format(
+        "-reflect_type([~s]).\n\n",
+        [string:join([string:replace(T, "()", "/0") || T <- maps:keys(AddedTypes)], ", ")]
+    ),
     Export = "-export([roots/0, fields/1, translations/0, translation/1]).\n\n",
     lists:flatten([ModuleErl, TypesErl, Behaviour, ReflectType, Export, MappingErl]).
 
@@ -61,9 +64,17 @@ convert_mapping([M | More], PresentTypes, Acc) ->
     ValidatorsClause = validators(FuncName, cuttlefish_mapping:validators(M)),
     OverrideClause = override_env(FuncName, cuttlefish_mapping:override_env(M)),
     WildCardClause = wildcard(FuncName),
-    NewAcc = lists:flatten([Doc, MappingClause, TypeClause,
-                            DefaultClause, ValidatorsClause, OverrideClause,
-                            WildCardClause, "\n", Acc]),
+    NewAcc = lists:flatten([
+        Doc,
+        MappingClause,
+        TypeClause,
+        DefaultClause,
+        ValidatorsClause,
+        OverrideClause,
+        WildCardClause,
+        "\n",
+        Acc
+    ]),
     convert_mapping(More, NewTypes, NewAcc).
 
 doc([]) ->
@@ -71,14 +82,15 @@ doc([]) ->
 doc(Doc) ->
     lists:flatten(io_lib:format("%% @doc ~s~n", [Doc])).
 
-
 mapping(FuncName, Mapping) ->
     lists:flatten(io_lib:format("~s(mapping) -> ~p;~n", [FuncName, Mapping])).
 
 type(FuncName, Types, PresentTypes) ->
     NewTypes = add_types(Types, PresentTypes),
-    GetTypeString = fun ({enum, Enum}, _) -> typename_enum(Enum);
-                        (T, Types) -> maps:get(T, Types) end,
+    GetTypeString = fun
+        ({enum, Enum}, _) -> typename_enum(Enum);
+        (T, Types) -> maps:get(T, Types)
+    end,
     case length(Types) of
         1 ->
             TypeString = GetTypeString(hd(Types), NewTypes),
@@ -86,8 +98,9 @@ type(FuncName, Types, PresentTypes) ->
         _ ->
             TypeName = typename_union(NewTypes),
             TypeString = string:join([GetTypeString(T, NewTypes) || T <- Types], " | "),
-            {lists:flatten(io_lib:format("~s(type) -> ~s;~n", [FuncName, TypeName])),
-             NewTypes#{TypeName => TypeString}}
+            {lists:flatten(io_lib:format("~s(type) -> ~s;~n", [FuncName, TypeName])), NewTypes#{
+                TypeName => TypeString
+            }}
     end.
 
 add_types([], PresentTypes) ->
@@ -129,18 +142,19 @@ wildcard(FuncName) ->
     lists:flatten(io_lib:format("~s(_) -> undefined.~n", [FuncName])).
 
 default_types() ->
-    #{integer => "integer()"
-    , string => "string()"
-    , boolean => "boolean()"
-    , atom => "atom()"
-    , float => "float()"
-    , {duration, ms} => "duration()"
-    , {duration, s} => "duration()"
-    , {percent, float} => "percent()"
-    , bytesize => "bytesize()"
-    , flag => "flag()"
-    , ip => "typerefl:ip4_address()"
-    , file => "file()"
+    #{
+        integer => "integer()",
+        string => "string()",
+        boolean => "boolean()",
+        atom => "atom()",
+        float => "float()",
+        {duration, ms} => "duration()",
+        {duration, s} => "duration()",
+        {percent, float} => "percent()",
+        bytesize => "bytesize()",
+        flag => "flag()",
+        ip => "typerefl:ip4_address()",
+        file => "file()"
     }.
 
 typename_enum(Enum) ->
@@ -157,20 +171,23 @@ basic_test() ->
     ConfFile = "etc/cuttlefish-1.conf",
     Dest = "generated/my_module.erl",
     ok = hocon_schema_cuttlefish:convert(CuttlefishSchemaFile, Dest),
-    Manual = "roots() -> [a].\n"
-             "fields(a) ->\n"
-             "    [ {b, fun a__b/1}\n"
-             "    , {c, fun a__c/1}\n"
-             "    , {d, fun a__d/1}\n"
-             "    , {e, fun a__e/1}].\n"
-             "translations() -> [].\n"
-             "translation(_) -> undefined.",
+    Manual =
+        "roots() -> [a].\n"
+        "fields(a) ->\n"
+        "    [ {b, fun a__b/1}\n"
+        "    , {c, fun a__c/1}\n"
+        "    , {d, fun a__d/1}\n"
+        "    , {e, fun a__e/1}].\n"
+        "translations() -> [].\n"
+        "translation(_) -> undefined.",
     ok = file:write_file(Dest, Manual, [append]),
     {ok, Conf} = hocon:load(ConfFile, #{format => richmap}),
     {ok, my_module} = compile:file(Dest),
     CuttlefishSchema = cuttlefish_schema:files([CuttlefishSchemaFile]),
-    ?assertEqual(cuttlefish_generator:map(CuttlefishSchema, cuttlefish_conf:file(ConfFile)),
-                 hocon_schema:generate(my_module, Conf)),
+    ?assertEqual(
+        cuttlefish_generator:map(CuttlefishSchema, cuttlefish_conf:file(ConfFile)),
+        hocon_schema:generate(my_module, Conf)
+    ),
 
     {ok, BadConf} = hocon:binary("a.b=aaa", #{format => richmap}),
     ?assertThrow({validation_error, _}, hocon_schema:generate(my_module, BadConf)).

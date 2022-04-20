@@ -17,35 +17,39 @@
 -module(hocon_schema).
 
 %% behaviour APIs
--export([ roots/1
-        , fields/2
-        , fields_and_meta/2
-        , translations/1
-        , translation/2
-        , validations/1
-        ]).
+-export([
+    roots/1,
+    fields/2,
+    fields_and_meta/2,
+    translations/1,
+    translation/2,
+    validations/1
+]).
 
--export([ find_structs/1
-        , override/2
-        , namespace/1
-        , resolve_struct_name/2
-        , root_names/1
-        , field_schema/2
-        , assert_fields/2
-        ]).
+-export([
+    find_structs/1,
+    override/2,
+    namespace/1,
+    resolve_struct_name/2,
+    root_names/1,
+    field_schema/2,
+    assert_fields/2
+]).
 
--export([ new_desc_cache/1
-        , resolve_schema/2
-        , delete_desc_cache/1
-        ]).
+-export([
+    new_desc_cache/1,
+    resolve_schema/2,
+    delete_desc_cache/1
+]).
 
--export_type([ field_schema/0
-             , name/0
-             , schema/0
-             , typefunc/0
-             , translationfunc/0
-             , desc/0
-             ]).
+-export_type([
+    field_schema/0,
+    name/0,
+    schema/0,
+    typefunc/0,
+    translationfunc/0,
+    desc/0
+]).
 
 -callback namespace() -> name().
 -callback roots() -> [root_type()].
@@ -55,14 +59,15 @@
 -callback validations() -> [validation()].
 -callback desc(name()) -> iodata() | undefined.
 
--optional_callbacks([ namespace/0
-                    , roots/0
-                    , fields/1
-                    , translations/0
-                    , translation/1
-                    , validations/0
-                    , desc/1
-                    ]).
+-optional_callbacks([
+    namespace/0,
+    roots/0,
+    fields/1,
+    translations/0,
+    translation/1,
+    validations/0,
+    desc/1
+]).
 
 -include("hoconsc.hrl").
 -include("hocon_private.hrl").
@@ -70,50 +75,68 @@
 -type name() :: atom() | string() | binary().
 -type desc_id() :: atom() | string() | binary().
 -type desc() :: iodata() | {desc, module(), desc_id()}.
--type type() :: typerefl:type() %% primitive (or complex, but terminal) type
-              | name() %% reference to another struct
-              | ?ARRAY(type()) %% array of
-              | ?UNION([type()]) %% one-of
-              | ?ENUM([atom()]) %% one-of atoms, data is allowed to be binary()
-              .
+%% primitive (or complex, but terminal) type
+-type type() ::
+    typerefl:type()
+    %% reference to another struct
+    | name()
+    %% array of
+    | ?ARRAY(type())
+    %% one-of
+    | ?UNION([type()])
+    %% one-of atoms, data is allowed to be binary()
+    | ?ENUM([atom()]).
 
--type field_schema() :: typerefl:type()
-                      | ?UNION([type()])
-                      | ?ARRAY(type())
-                      | ?ENUM(type())
-                      | field_schema_map()
-                      | field_schema_fun().
+-type field_schema() ::
+    typerefl:type()
+    | ?UNION([type()])
+    | ?ARRAY(type())
+    | ?ENUM(type())
+    | field_schema_map()
+    | field_schema_fun().
 
 -type field_schema_fun() :: fun((_) -> _).
 -type field_schema_map() ::
-        #{ type := type()
-         , default => term()
-         , mapping => undefined | string()
-         , converter => undefined | translationfunc()
-         , validator => undefined | validationfun()
-           %% set false if a field is allowed to be `undefined`
-           %% NOTE: has no point setting it to `true` if field has a default value
-         , required => boolean() | {false, recursively} % default = false
-           %% for sensitive data obfuscation (password, token)
-         , sensitive => boolean()
-         , desc => desc()
-         , hidden => boolean() %% hide it from doc generation
-         , extra => map() %% transparent metadata
-         }.
+    #{
+        type := type(),
+        default => term(),
+        mapping => undefined | string(),
+        converter => undefined | translationfunc(),
+        validator => undefined | validationfun(),
+        %% set false if a field is allowed to be `undefined`
+        %% NOTE: has no point setting it to `true` if field has a default value
+
+        % default = false
+        required => boolean() | {false, recursively},
+        %% for sensitive data obfuscation (password, token)
+        sensitive => boolean(),
+        desc => desc(),
+        %% hide it from doc generation
+        hidden => boolean(),
+        %% transparent metadata
+        extra => map()
+    }.
 
 -type field() :: {name(), typefunc() | field_schema()}.
--type fields() :: [field()] | #{fields := [field()],
-                                desc => desc()
-                               }.
+-type fields() ::
+    [field()]
+    | #{
+        fields := [field()],
+        desc => desc()
+    }.
 -type validation() :: {name(), validationfun()}.
 -type root_type() :: name() | field().
--type schema() :: module()
-                | #{ roots := [root_type()]
-                   , fields => #{name() => fields()} | fun((name()) -> fields())
-                   , translations => #{name() => [translation()]} %% for config mappings
-                   , validations => [validation()] %% for config integrity checks
-                   , namespace => atom()
-                   }.
+-type schema() ::
+    module()
+    | #{
+        roots := [root_type()],
+        fields => #{name() => fields()} | fun((name()) -> fields()),
+        %% for config mappings
+        translations => #{name() => [translation()]},
+        %% for config integrity checks
+        validations => [validation()],
+        namespace => atom()
+    }.
 
 -type translation() :: {name(), translationfunc()}.
 -type typefunc() :: fun((_) -> _).
@@ -133,7 +156,8 @@ translations(Mod) when is_atom(Mod) ->
         false -> [];
         true -> Mod:translations()
     end;
-translations(#{translations := Trs}) -> maps:keys(Trs);
+translations(#{translations := Trs}) ->
+    maps:keys(Trs);
 translations(Sc) when is_map(Sc) -> [].
 
 %% @doc Get all validations from the given schema.
@@ -143,16 +167,17 @@ validations(Mod) when is_atom(Mod) ->
         false -> [];
         true -> Mod:validations()
     end;
-validations(Sc) -> maps:get(validations, Sc, []).
+validations(Sc) ->
+    maps:get(validations, Sc, []).
 
 %% @doc Make a higher order schema by overriding `Base' with `OnTop'
 -spec override(field_schema(), field_schema_map()) -> field_schema_fun().
 override(Base, OnTop) ->
     fun(SchemaKey) ->
-            case maps:is_key(SchemaKey, OnTop) of
-                true -> field_schema(OnTop, SchemaKey);
-                false -> field_schema(Base, SchemaKey)
-            end
+        case maps:is_key(SchemaKey, OnTop) of
+            true -> field_schema(OnTop, SchemaKey);
+            false -> field_schema(Base, SchemaKey)
+        end
     end.
 
 %% @doc Get namespace of a schema.
@@ -161,7 +186,7 @@ namespace(Schema) ->
     case is_atom(Schema) of
         true ->
             case erlang:function_exported(Schema, namespace, 0) of
-                true  -> Schema:namespace();
+                true -> Schema:namespace();
                 false -> undefined
             end;
         false ->
@@ -183,14 +208,18 @@ root_names(Schema) -> [Name || {Name, _} <- roots(Schema)].
 -spec roots(schema()) -> [{bin_name(), {name(), field_schema()}}].
 roots(Schema) ->
     All =
-      lists:map(fun({N, T}) -> {bin(N), {N, T}};
-                   (N) when is_atom(Schema) -> {bin(N), {N, ?R_REF(Schema, N)}};
-                   (N) -> {bin(N), {N, ?REF(N)}}
-                end, do_roots(Schema)),
+        lists:map(
+            fun
+                ({N, T}) -> {bin(N), {N, T}};
+                (N) when is_atom(Schema) -> {bin(N), {N, ?R_REF(Schema, N)}};
+                (N) -> {bin(N), {N, ?REF(N)}}
+            end,
+            do_roots(Schema)
+        ),
     AllNames = [Name || {Name, _} <- All],
     UniqueNames = lists:usort(AllNames),
     case length(UniqueNames) =:= length(AllNames) of
-        true  ->
+        true ->
             All;
         false ->
             error({duplicated_root_names, AllNames -- UniqueNames})
@@ -240,7 +269,8 @@ find_structs(Schema, Fields) ->
 
 find_structs(Schema, #{fields := Fields}, Acc, Stack, TStack) ->
     find_structs(Schema, Fields, Acc, Stack, TStack);
-find_structs(_Schema, [], Acc, _Stack, _TStack) -> Acc;
+find_structs(_Schema, [], Acc, _Stack, _TStack) ->
+    Acc;
 find_structs(Schema, [{FieldName, FieldSchema} | Fields], Acc0, Stack, TStack) ->
     Type = field_schema(FieldSchema, type),
     Acc = find_structs_per_type(Schema, Type, Acc0, [str(FieldName) | Stack], TStack),
@@ -257,9 +287,13 @@ find_structs_per_type(Schema, ?LAZY(Type), Acc, Stack, TStack) ->
 find_structs_per_type(Schema, ?ARRAY(Type), Acc, Stack, TStack) ->
     find_structs_per_type(Schema, Type, Acc, ["$INDEX" | Stack], TStack);
 find_structs_per_type(Schema, ?UNION(Types), Acc, Stack, TStack) ->
-    lists:foldl(fun(T, AccIn) ->
-                        find_structs_per_type(Schema, T, AccIn, Stack, TStack)
-                end, Acc, Types);
+    lists:foldl(
+        fun(T, AccIn) ->
+            find_structs_per_type(Schema, T, AccIn, Stack, TStack)
+        end,
+        Acc,
+        Types
+    );
 find_structs_per_type(Schema, ?MAP(Name, Type), Acc, Stack, TStack) ->
     find_structs_per_type(Schema, Type, Acc, ["$" ++ str(Name) | Stack], TStack);
 find_structs_per_type(_Schema, _Type, Acc, _Stack, _TStack) ->
@@ -286,20 +320,24 @@ find_ref(Schema, Name, Acc, Stack, TStack) ->
 
 %% @doc Collect all structs defined in the given schema.
 -spec find_structs(schema()) ->
-        {RootNs :: name(), RootFields :: [field()],
-         [{Namespace :: name(), Name :: name(), fields()}]}.
+    {RootNs :: name(), RootFields :: [field()], [{Namespace :: name(), Name :: name(), fields()}]}.
 find_structs(Schema) ->
     RootFields = unify_roots(Schema),
     All = find_structs(Schema, RootFields),
     RootNs = hocon_schema:namespace(Schema),
-    {RootNs, RootFields,
-     [{Ns, Name, Fields} || {{Ns, Name}, Fields} <- lists:keysort(1, maps:to_list(All))]}.
+    {RootNs, RootFields, [
+        {Ns, Name, Fields}
+     || {{Ns, Name}, Fields} <- lists:keysort(1, maps:to_list(All))
+    ]}.
 
 unify_roots(Schema) ->
     Roots = ?MODULE:roots(Schema),
-    lists:map(fun({_BinName, {RootFieldName, RootFieldSchema}}) ->
-                      {RootFieldName, RootFieldSchema}
-              end, Roots).
+    lists:map(
+        fun({_BinName, {RootFieldName, RootFieldSchema}}) ->
+            {RootFieldName, RootFieldSchema}
+        end,
+        Roots
+    ).
 
 str(A) when is_atom(A) -> atom_to_list(A);
 str(S) when is_list(S) -> S.
@@ -348,46 +386,52 @@ assert_fields(EnclosingSchema, Fields) ->
 assert_unique_field_names(Fields) ->
     assert_unique_field_names(Fields, []).
 
-assert_unique_field_names([], _) -> ok;
+assert_unique_field_names([], _) ->
+    ok;
 assert_unique_field_names([{Name, _} | Rest], Acc) ->
     BinName = bin(Name),
     case lists:member(BinName, Acc) of
         true ->
-            {error, #{reason => duplicated_field_name,
-                      name => Name}};
+            {error, #{
+                reason => duplicated_field_name,
+                name => Name
+            }};
         false ->
             assert_unique_field_names(Rest, [BinName | Acc])
     end.
 
-new_desc_cache(undefined) -> #{file => undefined, tab => undefined};
+new_desc_cache(undefined) ->
+    #{file => undefined, tab => undefined};
 new_desc_cache(File) ->
-  case hocon:load(File) of
-    {ok, Schema} ->
-      Tab = ets:new(?MODULE, [set]),
-      ets:insert(Tab, {File, Schema}),
-      #{tab => Tab, file => File};
-    {error, Reason} ->
-      error(#{reason => Reason, file => File})
-  end.
+    case hocon:load(File) of
+        {ok, Schema} ->
+            Tab = ets:new(?MODULE, [set]),
+            ets:insert(Tab, {File, Schema}),
+            #{tab => Tab, file => File};
+        {error, Reason} ->
+            error(#{reason => Reason, file => File})
+    end.
 
 delete_desc_cache(#{tab := undefined}) -> ok;
 delete_desc_cache(#{tab := Tab}) -> ets:delete(Tab).
 
 resolve_schema(?DESC(Mod, Id), State) ->
-  Desc =
-    case get_cache_schema(State) of
-      undefined -> undefined;
-      Cache -> hocon_maps:get([str(Mod), str(Id)], Cache)
-    end,
-  case Desc of
-    undefined -> error(#{reason => no_desc_for_id, key => {Mod, Id}, state => State});
-    _ -> Desc
-  end;
-resolve_schema(Any, _State) -> Any.
+    Desc =
+        case get_cache_schema(State) of
+            undefined -> undefined;
+            Cache -> hocon_maps:get([str(Mod), str(Id)], Cache)
+        end,
+    case Desc of
+        undefined -> error(#{reason => no_desc_for_id, key => {Mod, Id}, state => State});
+        _ -> Desc
+    end;
+resolve_schema(Any, _State) ->
+    Any.
 
 -spec get_cache_schema(#{tab := undefined | ets:tab(), file := undefined | file:name_all()}) ->
-        undefined | hocon:config().
-get_cache_schema(#{tab := undefined }) -> undefined;
+    undefined | hocon:config().
+get_cache_schema(#{tab := undefined}) ->
+    undefined;
 get_cache_schema(#{tab := Tab, file := File}) ->
-  [{_, Schema}] = ets:lookup(Tab, File),
-  Schema.
+    [{_, Schema}] = ets:lookup(Tab, File),
+    Schema.

@@ -30,13 +30,17 @@ convert(Symbol, ?ENUM(_OfSymbols)) ->
     case is_binary(Symbol) of
         true ->
             case string:to_integer(Symbol) of
-                {Int, <<>>} -> Int;
+                {Int, <<>>} ->
+                    Int;
                 _ ->
-                    try binary_to_existing_atom(Symbol, utf8)
-                    catch _ : _ -> Symbol
+                    try
+                        binary_to_existing_atom(Symbol, utf8)
+                    catch
+                        _:_ -> Symbol
                     end
             end;
-        false -> Symbol
+        false ->
+            Symbol
     end;
 convert(Int, Type) when is_integer(Int) ->
     case Type =:= string() of
@@ -48,7 +52,6 @@ convert(Int, Type) when is_integer(Int) ->
 convert(Bin, Type) when is_binary(Bin) ->
     Str = unicode:characters_to_list(Bin, utf8),
     convert(Str, Type);
-
 convert(Str, Type) when is_list(Str) ->
     case io_lib:printable_unicode_list(Str) of
         true ->
