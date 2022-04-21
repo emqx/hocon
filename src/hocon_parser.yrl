@@ -93,4 +93,4 @@ str_to_bin(#{'$hcTyp' := T, '$hcVal' := V} = M) when T =:= string -> M#{'$hcVal'
 line_of(Token) -> element(2, Token).
 value_of(Token) -> element(3, Token).
 
-bin(Value) -> iolist_to_binary(Value).
+bin(Value) -> unicode:characters_to_binary(Value, utf8).

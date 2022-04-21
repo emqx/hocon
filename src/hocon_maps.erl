@@ -293,7 +293,7 @@ flatten(Value, Opts, Meta, Stack, Acc) ->
             true -> #{?HOCON_V => Value, ?METADATA => Meta};
             false -> Value
         end,
-    [{iolist_to_binary(infix(lists:reverse(Stack), ".")), V} | Acc].
+    [{unicode_bin(infix(lists:reverse(Stack), ".")), V} | Acc].
 
 flatten_l([], _Opts, _Meta, _Stack, Acc, []) ->
     Acc;
@@ -317,3 +317,5 @@ ensure_plain(M) ->
 %% @doc Check if it's a richmap.
 %% A richmap always has a `?HOCON_V' field.
 is_richmap(M) -> hocon_util:is_richmap(M).
+
+unicode_bin(L) -> unicode:characters_to_binary(L, utf8).

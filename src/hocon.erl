@@ -69,8 +69,20 @@ files(Files) ->
     files(Files, #{format => map}).
 
 files(Files, Opts) ->
-    IncludesAll = lists:append(["include \"" ++ Filename ++ "\"\n" || Filename <- Files]),
+    IncludesAll = [include(Filename) || Filename <- Files],
     binary(IncludesAll, Opts).
+
+include(Filename) when is_atom(Filename) ->
+    include(atom_to_list(Filename));
+include(Filename) when is_binary(Filename) ->
+    include(unicode:characters_to_list(Filename, utf8));
+include(Filename) ->
+    ["include \"", esc(Filename), "\"\n"].
+
+esc([]) -> [];
+esc([$\\ | T]) -> [$\\, $\\ | esc(T)];
+esc([$" | T]) -> [$\\, $" | esc(T)];
+esc([H | T]) -> [H | esc(T)].
 
 apply_opts(Map, Opts) ->
     ConvertedMap =
@@ -127,7 +139,7 @@ binary(Binary, Opts) ->
 deep_merge(Base, Override) -> hocon_maps:deep_merge(Base, Override).
 
 do_binary(String, Ctx) when is_list(String) ->
-    do_binary(iolist_to_binary(String), Ctx);
+    do_binary(unicode_bin(String), Ctx);
 do_binary(Binary, Ctx) when is_binary(Binary) ->
     hocon_util:pipeline(
         Binary,
@@ -322,7 +334,7 @@ do_concat([], MetaKey, [#{?HOCON_T := string, ?METADATA := MetaFirstElem} | _] =
     case lists:all(fun(A) -> type_of(A) =:= string end, Acc) of
         true ->
             BinList = lists:map(fun(M) -> maps:get(?HOCON_V, M) end, lists:reverse(Acc)),
-            #{?HOCON_T => string, ?HOCON_V => iolist_to_binary(BinList), ?METADATA => Metadata};
+            #{?HOCON_T => string, ?HOCON_V => unicode_bin(BinList), ?METADATA => Metadata};
         false ->
             concat_error(lists:reverse(Acc), #{?METADATA => Metadata})
     end;
@@ -393,9 +405,9 @@ remove_nothing(List) ->
     ).
 
 paths(Key) when is_binary(Key) ->
-    paths(binary_to_list(Key));
+    paths(unicode:characters_to_list(Key, utf8));
 paths(Key) when is_list(Key) ->
-    lists:map(fun list_to_binary/1, string:tokens(Key, ".")).
+    lists:map(fun unicode_bin/1, string:tokens(Key, ".")).
 
 merge(Key, Val, Map) when is_map(Val) ->
     case maps:find(Key, Map) of
@@ -411,16 +423,16 @@ resolve_error(Unresolved) ->
     NFL = fun(V) -> io_lib:format(", ~p ~s", [name_of(V), location(V)]) end,
     <<_LeadingComma, Enriched/binary>> = lists:foldl(
         fun(V, AccIn) ->
-            iolist_to_binary([AccIn, NFL(V)])
+            unicode_bin([AccIn, NFL(V)])
         end,
         "",
         Unresolved
     ),
-    throw({resolve_error, iolist_to_binary(["failed_to_resolve", Enriched])}).
+    throw({resolve_error, unicode_bin(["failed_to_resolve", Enriched])}).
 
 concat_error(Acc, Metadata) ->
     ErrorInfo = io_lib:format("failed_to_concat ~p ~s", [format_tokens(Acc), location(Metadata)]),
-    throw({concat_error, iolist_to_binary(ErrorInfo)}).
+    throw({concat_error, unicode_bin(ErrorInfo)}).
 
 location(Metadata) ->
     io_lib:format("at_line ~p~s", [line_of(Metadata), maybe_filename(Metadata)]).
@@ -474,3 +486,5 @@ new_meta(Meta, Filename, Line) ->
     L = [{filename, Filename}, {line, Line}],
     NewMeta = maps:from_list([{N, V} || {N, V} <- L, V =/= undefined]),
     maps:merge(Meta, NewMeta).
+
+unicode_bin(L) -> unicode:characters_to_binary(L, utf8).
