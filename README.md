@@ -1,6 +1,6 @@
 # Hocon
 
-LALR grammar based HOCON-like configuration Parser for Erlang/OTP.
+HOCON data parser for Erlang/OTP.
 
 ## Spec
 
@@ -8,7 +8,6 @@ HOCON spec for reference: https://lightbend.github.io/config/
 
 ### Divergence from Spec and Caveats
 
-- No unicode support (at least not verified).
 - The forbidden character `@` is allowed in unquoted strings.
 - Value concatenation is not allowed in keys e.g. `a b c : 42` is invalid.
 - Newlines do not prevent concatenation.
@@ -54,5 +53,4 @@ Apache License 2.0, see [LICENSE](./LICENSE).
 
 ## Authors
 
-EMQ X team
-
+EMQX team

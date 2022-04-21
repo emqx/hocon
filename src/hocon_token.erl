@@ -58,7 +58,7 @@ read(Filename) ->
 
 -spec scan(binary() | string(), hocon:ctx()) -> list().
 scan(Input, Ctx) when is_binary(Input) ->
-    scan(binary_to_list(Input), Ctx);
+    scan(unicode_list(Input), Ctx);
 scan(Input, Ctx) when is_list(Input) ->
     case hocon_scanner:string(Input) of
         {ok, Tokens, _EndLine} ->
@@ -214,7 +214,7 @@ abspath(Var, PathStack) ->
 do_abspath(Var, ['$root']) ->
     Var;
 do_abspath(Var, [#{?HOCON_T := key} = K | More]) ->
-    do_abspath(iolist_to_binary([value_of(K), <<".">>, Var]), More).
+    do_abspath(unicode_bin([value_of(K), <<".">>, Var]), More).
 
 -spec load_include(boxed(), hocon:ctx()) -> boxed() | nothing.
 
@@ -258,7 +258,7 @@ search_file([], _File, []) ->
 search_file([], _File, Reasons) ->
     {error, Reasons};
 search_file([Dir | Dirs], File, Reasons0) ->
-    Filename = binary_to_list(filename:join([Dir, File])),
+    Filename = unicode_list(filename:join([Dir, File])),
     case file:read_file_info(Filename) of
         {ok, _} ->
             {ok, Filename};
@@ -284,7 +284,7 @@ parse_error(Line, ErrorInfo, Ctx) ->
     throw({parse_error, format_error(Line, ErrorInfo, Ctx)}).
 
 format_error(Line, ErrorInfo, #{filename := [undefined]}) ->
-    unicode:characters_to_binary(
+    unicode_bin(
         [
             ErrorInfo,
             io_lib:format(
@@ -294,7 +294,7 @@ format_error(Line, ErrorInfo, #{filename := [undefined]}) ->
         ]
     );
 format_error(Line, ErrorInfo, Ctx) ->
-    unicode:characters_to_binary(
+    unicode_bin(
         [
             ErrorInfo,
             io_lib:format(
@@ -303,3 +303,6 @@ format_error(Line, ErrorInfo, Ctx) ->
             )
         ]
     ).
+
+unicode_bin(L) -> unicode:characters_to_binary(L, utf8).
+unicode_list(B) -> unicode:characters_to_list(B, utf8).

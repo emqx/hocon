@@ -122,11 +122,11 @@ unescape([H | T]) -> [H | unescape(T)].
 
 maybe_var_ref_name("${?" ++ Name_CR) ->
     [$} | NameRev] = lists:reverse(Name_CR),
-    list_to_binary(string:trim(lists:reverse(NameRev))).
+    unicode:characters_to_binary(string:trim(lists:reverse(NameRev)), utf8).
 
 var_ref_name("${" ++ Name_CR) ->
     [$} | NameRev] = lists:reverse(Name_CR),
-    list_to_binary(string:trim(lists:reverse(NameRev))).
+    unicode:characters_to_binary(string:trim(lists:reverse(NameRev)), utf8).
 
 to_float("." ++ Fraction) -> to_float("0." ++ Fraction);
 to_float(Str) -> list_to_float(Str).

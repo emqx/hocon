@@ -28,17 +28,17 @@ proplists(Map) when is_map(Map) ->
 proplists(Iter, Path, Acc) ->
     case maps:next(Iter) of
         {K, M, I} when is_map(M) ->
-            Child = proplists(maps:iterator(M), [binary_to_list(K) | Path], []),
+            Child = proplists(maps:iterator(M), [unicode_list(K) | Path], []),
             proplists(I, Path, lists:append(Child, Acc));
         {K, [Bin | _More] = L, I} when is_binary(Bin) ->
-            NewList = [binary_to_list(B) || B <- L],
-            ReversedPath = lists:reverse([binary_to_list(K) | Path]),
+            NewList = [unicode_list(B) || B <- L],
+            ReversedPath = lists:reverse([unicode_list(K) | Path]),
             proplists(I, Path, [{ReversedPath, NewList} | Acc]);
         {K, Bin, I} when is_binary(Bin) ->
-            ReversedPath = lists:reverse([binary_to_list(K) | Path]),
-            proplists(I, Path, [{ReversedPath, binary_to_list(Bin)} | Acc]);
+            ReversedPath = lists:reverse([unicode_list(K) | Path]),
+            proplists(I, Path, [{ReversedPath, unicode_list(Bin)} | Acc]);
         {K, V, I} ->
-            ReversedPath = lists:reverse([binary_to_list(K) | Path]),
+            ReversedPath = lists:reverse([unicode_list(K) | Path]),
             proplists(I, Path, [{ReversedPath, V} | Acc]);
         none ->
             Acc
@@ -99,12 +99,12 @@ is_null(null) -> true;
 is_null(_Other) -> false.
 
 onoff(Bin) when is_binary(Bin) ->
-    erlang:display(do_onoff(binary_to_list(Bin))),
-    case do_onoff(binary_to_list(Bin)) of
+    Str = unicode_list(Bin),
+    case do_onoff(Str) of
         Bool when Bool =:= true orelse Bool =:= false ->
             Bool;
         Str when is_list(Str) ->
-            list_to_binary(Str)
+            unicode_bin(Str)
     end;
 onoff(Str) when is_list(Str) ->
     do_onoff(Str);
@@ -119,11 +119,11 @@ re_run_first(Str, MP) ->
     re:run(Str, MP, [{capture, all_but_first, list}]).
 
 percent(Bin) when is_binary(Bin) ->
-    case do_percent(binary_to_list(Bin)) of
+    case do_percent(unicode_list(Bin)) of
         Percent when is_float(Percent) ->
             Percent;
         Str when is_list(Str) ->
-            list_to_binary(Str)
+            unicode_bin(Str)
     end;
 percent(Str) when is_list(Str) ->
     do_percent(Str);
@@ -140,11 +140,11 @@ do_percent(Str) ->
     end.
 
 bytesize(Bin) when is_binary(Bin) ->
-    case do_bytesize(binary_to_list(Bin)) of
+    case do_bytesize(unicode_list(Bin)) of
         Byte when is_integer(Byte) ->
             Byte;
         Str when is_list(Str) ->
-            list_to_binary(Str)
+            unicode_bin(Str)
     end;
 bytesize(Str) when is_list(Str) ->
     do_bytesize(Str);
@@ -167,7 +167,7 @@ do_bytesize(Val, "gb") -> Val * ?GIGABYTE;
 do_bytesize(Val, "GB") -> Val * ?GIGABYTE.
 
 duration(Bin) when is_binary(Bin) ->
-    case do_duration(binary_to_list(Bin)) of
+    case do_duration(unicode_list(Bin)) of
         Duration when is_integer(Duration) ->
             Duration;
         Unchanged when is_list(Unchanged) ->
@@ -216,3 +216,7 @@ calc_duration(Val, "h") -> Val * ?HOUR;
 calc_duration(Val, "m") -> Val * ?MINUTE;
 calc_duration(Val, "s") -> Val * ?SECOND;
 calc_duration(Val, "ms") -> Val.
+
+unicode_list(B) when is_binary(B) -> unicode:characters_to_list(B, utf8).
+
+unicode_bin(L) when is_list(L) -> unicode:characters_to_binary(L, utf8).

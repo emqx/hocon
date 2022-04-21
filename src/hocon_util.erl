@@ -107,7 +107,7 @@ env_prefix(Default) ->
     end.
 
 is_array_index(L) when is_list(L) ->
-    is_array_index(list_to_binary(L));
+    is_array_index(bin(L));
 is_array_index(I) when is_binary(I) ->
     try
         {true, binary_to_integer(I)}
@@ -129,8 +129,8 @@ do_split(Path) when ?IS_NON_EMPTY_STRING(Path) ->
 do_split([H | T]) ->
     [do_split(H) | do_split(T)].
 
-str(A) when is_atom(A) -> atom_to_list(A);
-str(B) when is_binary(B) -> binary_to_list(B);
+str(A) when is_atom(A) -> str(atom_to_binary(A, utf8));
+str(B) when is_binary(B) -> unicode:characters_to_list(B, utf8);
 str(S) when is_list(S) -> S.
 
-bin(S) -> iolist_to_binary(S).
+bin(S) -> unicode:characters_to_binary(S, utf8).

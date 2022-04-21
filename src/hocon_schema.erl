@@ -343,7 +343,7 @@ str(A) when is_atom(A) -> atom_to_list(A);
 str(S) when is_list(S) -> S.
 
 bin(A) when is_atom(A) -> atom_to_binary(A, utf8);
-bin(S) -> iolist_to_binary(S).
+bin(S) -> unicode:characters_to_binary(S, utf8).
 
 %% get type validation stack.
 path(Stack) when is_list(Stack) ->

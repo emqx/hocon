@@ -371,12 +371,12 @@ assert_no_dot(Schema, RootName) ->
         _ -> error({bad_root_name, Schema, RootName})
     end.
 
-str(A) when is_atom(A) -> atom_to_list(A);
-str(B) when is_binary(B) -> binary_to_list(B);
+str(A) when is_atom(A) -> str(atom_to_binary(A, utf8));
+str(B) when is_binary(B) -> unicode:characters_to_list(B, utf8);
 str(S) when is_list(S) -> S.
 
 bin(A) when is_atom(A) -> atom_to_binary(A, utf8);
-bin(S) -> iolist_to_binary(S).
+bin(S) -> unicode:characters_to_binary(S, utf8).
 
 do_map(Fields, Value, Opts, ParentSchema) ->
     ok = assert_fields(ParentSchema, Fields),
@@ -847,11 +847,12 @@ read_informal_hocon_val(Value, Opts) ->
         {ok, HoconVal} ->
             maps:get(<<"fake_key">>, HoconVal);
         {error, Reason} ->
-            Msg = iolist_to_binary(
+            Msg = unicode:characters_to_binary(
                 io_lib:format(
                     "invalid_hocon_string: ~p, reason: ~p",
                     [Value, Reason]
-                )
+                ),
+                utf8
             ),
             log(Opts, debug, Msg),
             Value
@@ -880,7 +881,7 @@ apply_env(Ns, [{VarName, V} | More], RootName, Conf, Opts) ->
                 catch
                     throw:{bad_array_index, Reason} ->
                         Msg = ["bad_array_index from ", VarName, ", ", Reason],
-                        log(Opts, error, iolist_to_binary(Msg)),
+                        log(Opts, error, unicode:characters_to_binary(Msg, utf8)),
                         error({bad_array_index, VarName})
                 end;
             false ->

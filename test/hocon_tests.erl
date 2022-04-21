@@ -740,6 +740,43 @@ files_test() ->
     ?assertEqual(2, deep_get("b", Conf, ?HOCON_V)),
     ?assertEqual("b_2.conf", Filename(deep_get("b", Conf, ?METADATA))).
 
+files_esc_test() ->
+    Filename = fun(Metadata) -> filename:basename(maps:get(filename, Metadata)) end,
+    {ok, Conf} = hocon:files(
+        ['sample-configs/a_1.conf', <<"sample-configs/b_2.conf">>, "test/data/a\\b.conf"],
+        #{format => richmap}
+    ),
+    ?assertEqual(1, deep_get("a", Conf, ?HOCON_V)),
+    ?assertEqual("a_1.conf", Filename(deep_get("a", Conf, ?METADATA))),
+    ?assertEqual(2, deep_get("b", Conf, ?HOCON_V)),
+    ?assertEqual("b_2.conf", Filename(deep_get("b", Conf, ?METADATA))),
+    ?assertEqual(<<"gotcha">>, deep_get("backslash", Conf, ?HOCON_V)).
+
+files_unicode_path_test() ->
+    Content =
+        <<
+            "a=1\n"
+            "b=2\n"
+            "unicode = \"测试unicode文件路径\"\n"
+            "\"语言.英文\" = english\n"/utf8
+        >>,
+    Filename =
+        case file:native_name_encoding() of
+            latin1 -> <<"a\"filen\tame">>;
+            utf8 -> <<"文件\"名\ta"/utf8>>
+        end,
+    ok = file:write_file(Filename, Content),
+    try
+        {ok, Conf} = hocon:files(
+            [Filename],
+            #{format => richmap}
+        ),
+        ?assertEqual(<<"测试unicode文件路径"/utf8>>, deep_get("unicode", Conf, ?HOCON_V)),
+        ?assertEqual(<<"english">>, deep_get("语言.英文", Conf, ?HOCON_V))
+    after
+        file:delete(Filename)
+    end.
+
 deep_get(Key, Conf, Tag) ->
     Map = hocon_maps:deep_get(Key, Conf),
     maps:get(Tag, Map).
@@ -752,7 +789,7 @@ re_error(Filename0) ->
     {error, {_ErrorType, Msg}} = hocon:load(Filename0),
     {ok, MP} = re:compile("([^ \(\t\n\r\f]+) at_line ([0-9]+) in_file ([^ \t\n\r\f,]+)"),
     {match, VLFs} = re:run(
-        binary_to_list(Msg),
+        Msg,
         MP,
         [global, {capture, all_but_first, list}]
     ),
