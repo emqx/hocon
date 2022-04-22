@@ -741,16 +741,23 @@ files_test() ->
     ?assertEqual("b_2.conf", Filename(deep_get("b", Conf, ?METADATA))).
 
 files_esc_test() ->
-    Filename = fun(Metadata) -> filename:basename(maps:get(filename, Metadata)) end,
-    {ok, Conf} = hocon:files(
-        ['sample-configs/a_1.conf', <<"sample-configs/b_2.conf">>, "test/data/a\\b.conf"],
-        #{format => richmap}
-    ),
-    ?assertEqual(1, deep_get("a", Conf, ?HOCON_V)),
-    ?assertEqual("a_1.conf", Filename(deep_get("a", Conf, ?METADATA))),
-    ?assertEqual(2, deep_get("b", Conf, ?HOCON_V)),
-    ?assertEqual("b_2.conf", Filename(deep_get("b", Conf, ?METADATA))),
-    ?assertEqual(<<"gotcha">>, deep_get("backslash", Conf, ?HOCON_V)).
+    Content = "backslash = gotcha\n",
+    SpecialFile = "test/data/a\\b.conf",
+    ok = file:write_file(SpecialFile, Content),
+    try
+        Filename = fun(Metadata) -> filename:basename(maps:get(filename, Metadata)) end,
+        {ok, Conf} = hocon:files(
+            ['sample-configs/a_1.conf', <<"sample-configs/b_2.conf">>, SpecialFile],
+            #{format => richmap}
+        ),
+        ?assertEqual(1, deep_get("a", Conf, ?HOCON_V)),
+        ?assertEqual("a_1.conf", Filename(deep_get("a", Conf, ?METADATA))),
+        ?assertEqual(2, deep_get("b", Conf, ?HOCON_V)),
+        ?assertEqual("b_2.conf", Filename(deep_get("b", Conf, ?METADATA))),
+        ?assertEqual(<<"gotcha">>, deep_get("backslash", Conf, ?HOCON_V))
+    after
+        file:delete(SpecialFile)
+    end.
 
 files_unicode_path_test() ->
     Content =
