@@ -64,6 +64,7 @@ check_child_name(Conf) ->
 
 field1(type) -> string();
 field1(desc) -> "field1 desc";
+field1(sensitive) -> true;
 field1(_) -> undefined.
 
 union_with_default(type) ->
@@ -86,6 +87,66 @@ default_value_test() ->
         },
         Res
     ).
+
+obfuscate_sensitive_values_test() ->
+    Conf = "{\"bar.field1\": \"foo\"}",
+    Res = check(Conf, #{format => richmap}),
+    Res1 = check_plain(Conf, #{obfuscate_sensitive_values => true}),
+    ?assertNotEqual(Res, Res1),
+    ?assertEqual(
+        #{
+            <<"bar">> => #{
+                <<"union_with_default">> => dummy,
+                <<"field1">> => "******"
+            }
+        },
+        Res1
+    ).
+
+obfuscate_sensitive_map_test() ->
+    {ok, Hocon} = hocon:binary(
+        "foo.setting=val,foo.min=1,foo.max=2",
+        #{format => richmap}
+    ),
+    Opts1 = #{obfuscate_sensitive_values => true},
+    Conf1 = map_translate_conf(Hocon, Opts1),
+    ?assertMatch(
+        #{<<"foo">> := #{<<"max">> := 2, <<"min">> := 1, <<"setting">> := "******"}},
+        richmap_to_map(Conf1)
+    ),
+    ok.
+
+map_translate_conf(Hocon, Opts1) ->
+    [{app_foo, C1}] = hocon_tconf:generate(demo_schema, Hocon, Opts1),
+    {[{app_foo, C1}], Conf1} = hocon_tconf:map_translate(demo_schema, Hocon, Opts1),
+    Conf1.
+
+obfuscate_sensitive_fill_default_test() ->
+    {ok, Hocon} = hocon:binary(
+        "foo.min=1,foo.max=2",
+        #{format => richmap}
+    ),
+    Opts1 = #{obfuscate_sensitive_values => true, only_fill_defaults => true},
+    Conf1 = map_translate_conf(Hocon, Opts1),
+    ?assertMatch(
+        #{<<"foo">> := #{<<"max">> := 2, <<"min">> := 1, <<"setting">> := "******"}},
+        richmap_to_map(Conf1)
+    ),
+
+    Opts2 = #{only_fill_defaults => true},
+    Conf2 = map_translate_conf(Hocon, Opts2),
+    ?assertMatch(
+        #{<<"foo">> := #{<<"max">> := 2, <<"min">> := 1, <<"setting">> := "default"}},
+        richmap_to_map(Conf2)
+    ),
+
+    Opts3 = #{obfuscate_sensitive_values => true},
+    Conf3 = map_translate_conf(Hocon, Opts3),
+    ?assertMatch(
+        #{<<"foo">> := #{<<"max">> := 2, <<"min">> := 1, <<"setting">> := "******"}},
+        richmap_to_map(Conf3)
+    ),
+    ok.
 
 env_override_test() ->
     with_envs(
@@ -195,23 +256,33 @@ mapping_test_() ->
         {Mapped, _} = hocon_tconf:map(demo_schema, M),
         Mapped
     end,
+    Setting = {["app_foo", "setting"], "default"},
     [
         ?_assertEqual([{["app_foo", "setting"], "hello"}], F("foo.setting=hello")),
         ?_assertEqual([{["app_foo", "setting"], "1"}], F("foo.setting=1")),
         ?GEN_VALIDATION_ERR(_, F("foo.setting=[a,b,c]")),
-        ?_assertEqual([{["app_foo", "endpoint"], {127, 0, 0, 1}}], F("foo.endpoint=\"127.0.0.1\"")),
+        ?_assertEqual(
+            [
+                {["app_foo", "endpoint"], {127, 0, 0, 1}},
+                Setting
+            ],
+            F("foo.endpoint=\"127.0.0.1\"")
+        ),
         ?GEN_VALIDATION_ERR(_, F("foo.setting=hi, foo.endpoint=hi")),
         ?GEN_VALIDATION_ERR(_, F("foo.greet=foo")),
-        ?_assertEqual([{["app_foo", "numbers"], [1, 2, 3]}], F("foo.numbers=[1,2,3]")),
-        ?_assertEqual([{["a_b", "some_int"], 1}], F("a_b.some_int=1")),
-        ?_assertEqual([], F("foo.ref_x_y={some_int = 1}")),
+        ?_assertEqual(
+            [{["app_foo", "numbers"], [1, 2, 3]}, Setting],
+            F("foo.numbers=[1,2,3]")
+        ),
+        ?_assertEqual([{["a_b", "some_int"], 1}, Setting], F("a_b.some_int=1")),
+        ?_assertEqual([Setting], F("foo.ref_x_y={some_int = 1}")),
         ?GEN_VALIDATION_ERR(_, F("foo.ref_x_y={some_int = aaa}")),
         ?_assertEqual(
-            [],
+            [Setting],
             F("foo.ref_x_y={some_dur = 5s}")
         ),
         ?_assertEqual(
-            [{["app_foo", "refjk"], #{<<"some_int">> => 1}}],
+            [{["app_foo", "refjk"], #{<<"some_int">> => 1}}, Setting],
             F("foo.ref_j_k={some_int = 1}")
         ),
         ?_assertThrow(
@@ -221,12 +292,12 @@ mapping_test_() ->
             ]},
             F("foo.greet=foo\n foo.endpoint=hi")
         ),
-        ?_assertEqual([{["app_foo", "u"], #{<<"val">> => 1}}], F("b.u.val=1")),
-        ?_assertEqual([{["app_foo", "u"], #{<<"val">> => true}}], F("b.u.val=true")),
+        ?_assertEqual([{["app_foo", "u"], #{<<"val">> => 1}}, Setting], F("b.u.val=1")),
+        ?_assertEqual([{["app_foo", "u"], #{<<"val">> => true}}, Setting], F("b.u.val=true")),
         ?GEN_VALIDATION_ERR(#{reason := matched_no_union_member}, F("b.u.val=aaa")),
-        ?_assertEqual([{["app_foo", "u"], #{<<"val">> => 44}}], F("b.u.val=44")),
+        ?_assertEqual([{["app_foo", "u"], #{<<"val">> => 44}}, Setting], F("b.u.val=44")),
         ?_assertEqual(
-            [{["app_foo", "arr"], [#{<<"val">> => 1}, #{<<"val">> => 2}]}],
+            [{["app_foo", "arr"], [#{<<"val">> => 1}, #{<<"val">> => 2}]}, Setting],
             F("b.arr=[{val=1},{val=2}]")
         ),
         ?GEN_VALIDATION_ERR(#{path := "b.arr.3.val"}, F("b.arr=[{val=1},{val=2},{val=a}]")),
@@ -236,7 +307,7 @@ mapping_test_() ->
             F("b.ua=[{val=1},{val=a},{val=true}]")
         ),
         ?_assertEqual(
-            [{["app_foo", "ua"], [#{<<"val">> => 1}, #{<<"val">> => true}]}],
+            [{["app_foo", "ua"], [#{<<"val">> => 1}, #{<<"val">> => true}]}, Setting],
             F("b.ua=[{val=1},{val=true}]")
         )
     ].
@@ -328,17 +399,18 @@ env_test_() ->
         ),
         Mapped
     end,
+    Setting = {["app_foo", "setting"], "default"},
     [
         ?_assertEqual(
             [{["app_foo", "setting"], "hi"}],
             F("foo.setting=hello", [{"EMQX_FOO__SETTING", "hi"}])
         ),
         ?_assertEqual(
-            [{["app_foo", "numbers"], [4, 5, 6]}],
+            [{["app_foo", "numbers"], [4, 5, 6]}, Setting],
             F("foo.numbers=[1,2,3]", [{"EMQX_FOO__NUMBERS", "[4,5,6]"}])
         ),
         ?_assertEqual(
-            [{["app_foo", "greet"], "hello"}],
+            [{["app_foo", "greet"], "hello"}, Setting],
             F("", [{"EMQX_FOO__GREET", "hello"}])
         )
     ].
@@ -413,12 +485,13 @@ translate_test_() ->
         {Mapped, Conf} = hocon_tconf:map(demo_schema, M),
         hocon_tconf:translate(demo_schema, Conf, Mapped)
     end,
+    Setting = {["app_foo", "setting"], "default"},
     [
         ?_assertEqual(
-            [{["app_foo", "range"], {1, 2}}],
+            [{["app_foo", "range"], {1, 2}}, Setting],
             F("foo.min=1, foo.max=2")
         ),
-        ?_assertEqual([], F("foo.min=2, foo.max=1"))
+        ?_assertEqual([Setting], F("foo.min=2, foo.max=1"))
     ].
 
 nest_test_() ->
@@ -873,7 +946,7 @@ sensitive_data_obfuscation_test() ->
             receive
                 #{hocon_env_var_name := "EMQX_SECRET", path := Path, value := Value} ->
                     ?assertEqual("secret", Path),
-                    ?assertEqual("*******", Value)
+                    ?assertEqual("******", Value)
             end
         end,
         envs([{"EMQX_SECRET", "bbb"}])

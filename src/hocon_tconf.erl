@@ -40,6 +40,7 @@
     %% config to be checked, only primitive value type check (validation)
     %% but not complex value validation and mapping
     only_fill_defaults => boolean(),
+    obfuscate_sensitive_values => boolean(),
     atom_key => boolean(),
     return_plain => boolean(),
     %% apply environment variable overrides when
@@ -489,11 +490,13 @@ map_field_maybe_convert(Type, Schema, Value0, Opts, Converter) ->
     try Converter(Value1) of
         Value2 ->
             Value3 = maybe_mkrich(Opts, Value2, Value0),
-            {Mapped, Value} = map_field(Type, Schema, Value3, Opts),
-            case only_fill_defaults(Opts) of
-                true -> {Mapped, ensure_bin_str(Value0)};
-                false -> {Mapped, Value}
-            end
+            {Mapped, Value4} = map_field(Type, Schema, Value3, Opts),
+            Value5 =
+                case only_fill_defaults(Opts) of
+                    true -> ensure_bin_str(Value0);
+                    false -> Value4
+                end,
+            {Mapped, ensure_obfuscate_sensitive(Opts, Schema, Value5)}
     catch
         throw:Reason ->
             {validation_errs(Opts, #{reason => Reason}), Value0};
@@ -603,10 +606,12 @@ map_field(Type, Schema, Value0, Opts) ->
     ConvertedValue = hocon_schema_builtin:convert(PlainValue, Type),
     Validators = validators(field_schema(Schema, validator)) ++ builtin_validators(Type),
     ValidationResult = validate(Opts, Schema, ConvertedValue, Validators),
-    case only_fill_defaults(Opts) of
-        true -> {ValidationResult, ensure_bin_str(Value0)};
-        false -> {ValidationResult, boxit(Opts, ConvertedValue, Value0)}
-    end.
+    Value1 =
+        case only_fill_defaults(Opts) of
+            true -> ensure_bin_str(Value0);
+            false -> boxit(Opts, ConvertedValue, Value0)
+        end,
+    {ValidationResult, ensure_obfuscate_sensitive(Opts, Schema, Value1)}.
 
 is_primitive_type(Type) when ?IS_TYPEREFL(Type) -> true;
 is_primitive_type(Atom) when is_atom(Atom) -> true;
@@ -893,9 +898,19 @@ env_override_for_log(Schema, Var, K, V0) ->
     V = obfuscate(Schema, V0),
     #{hocon_env_var_name => Var, path => K, value => V}.
 
+ensure_obfuscate_sensitive(Opts, Schema, Val) ->
+    case obfuscate_sensitive_values(Opts) of
+        true ->
+            UnboxVal = unbox(Opts, Val),
+            UnboxVal1 = obfuscate(Schema, UnboxVal),
+            boxit(Opts, UnboxVal1, Val);
+        false ->
+            Val
+    end.
+
 obfuscate(Schema, Value) ->
     case field_schema(Schema, sensitive) of
-        true -> "*******";
+        true -> "******";
         _ -> Value
     end.
 
@@ -1077,6 +1092,9 @@ do_find_error([_ | More], Errors) ->
 
 only_fill_defaults(#{only_fill_defaults := true}) -> true;
 only_fill_defaults(_) -> false.
+
+obfuscate_sensitive_values(#{obfuscate_sensitive_values := true}) -> true;
+obfuscate_sensitive_values(_) -> false.
 
 ensure_bin_str(Value) when is_list(Value) ->
     case io_lib:printable_unicode_list(Value) of
