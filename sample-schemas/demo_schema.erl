@@ -80,7 +80,9 @@ translation("app_foo") ->
     [ {"range", fun range/1} ].
 
 setting(mapping) -> "app_foo.setting";
+setting(sensitive) -> true;
 setting(type) -> string();
+setting(default) -> "default";
 setting(_) -> undefined.
 
 range(Conf) ->
