@@ -911,7 +911,7 @@ ensure_obfuscate_sensitive(Opts, Schema, Val) ->
 
 obfuscate(Schema, Value) ->
     case field_schema(Schema, sensitive) of
-        true -> "******";
+        true -> <<"******">>;
         _ -> Value
     end.
 
