@@ -300,8 +300,8 @@ find_structs_per_type(_Schema, _Type, Acc, _Stack, _TStack) ->
     Acc.
 
 find_ref(Schema, Name, Acc, Stack, TStack) ->
-    Namespace = hocon_schema:namespace(Schema),
-    Key = {Namespace, Name},
+    Namespace = namespace(Schema),
+    Key = {Namespace, Schema, Name},
     Path = path(Stack),
     Paths =
         case maps:find(Key, Acc) of
@@ -327,7 +327,7 @@ find_structs(Schema) ->
     RootNs = hocon_schema:namespace(Schema),
     {RootNs, RootFields, [
         {Ns, Name, Fields}
-     || {{Ns, Name}, Fields} <- lists:keysort(1, maps:to_list(All))
+     || {{Ns, _Schema, Name}, Fields} <- lists:keysort(1, maps:to_list(All))
     ]}.
 
 unify_roots(Schema) ->

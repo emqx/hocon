@@ -77,6 +77,7 @@
 -define(NULL_BOX, #{?METADATA => #{made_for => null_value}}).
 -define(MAGIC, '$magic_chicken').
 -define(MAGIC_SCHEMA, #{type => ?MAGIC}).
+-define(MAP_KEY_RE, <<"^[A-Za-z0-9]+[A-Za-z0-9-_]*$">>).
 
 %% @doc generates application env from a parsed .conf and a schema module.
 %% For example, one can set the output values by
@@ -529,13 +530,13 @@ map_field(?MAP(_Name, Type), FieldSchema, Value, Opts) ->
                     %% start over
                     do_map(NewFields, Value, Opts, NewSc);
                 InvalidNames ->
-                    Reason =
+                    Context =
                         #{
                             reason => invalid_map_key,
-                            path => path(Opts),
+                            expected_data_type => ?MAP_KEY_RE,
                             got => InvalidNames
                         },
-                    {validation_errs(Opts, Reason), Value}
+                    {validation_errs(Opts, Context), Value}
             end
     end;
 map_field(?R_REF(Module, Ref), FieldSchema, Value, Opts) ->
@@ -910,7 +911,7 @@ ensure_obfuscate_sensitive(Opts, Schema, Val) ->
 
 obfuscate(Schema, Value) ->
     case field_schema(Schema, sensitive) of
-        true -> "******";
+        true -> <<"******">>;
         _ -> Value
     end.
 
@@ -1136,7 +1137,7 @@ get_invalid_name(Names) ->
         fun(F) ->
             nomatch =:=
                 try
-                    re:run(F, "^[A-Za-z0-9]+[A-Za-z0-9-_]*$")
+                    re:run(F, ?MAP_KEY_RE)
                 catch
                     _:_ -> nomatch
                 end

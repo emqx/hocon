@@ -97,7 +97,7 @@ obfuscate_sensitive_values_test() ->
         #{
             <<"bar">> => #{
                 <<"union_with_default">> => dummy,
-                <<"field1">> => "******"
+                <<"field1">> => <<"******">>
             }
         },
         Res1
@@ -111,7 +111,7 @@ obfuscate_sensitive_map_test() ->
     Opts1 = #{obfuscate_sensitive_values => true},
     Conf1 = map_translate_conf(Hocon, Opts1),
     ?assertMatch(
-        #{<<"foo">> := #{<<"max">> := 2, <<"min">> := 1, <<"setting">> := "******"}},
+        #{<<"foo">> := #{<<"max">> := 2, <<"min">> := 1, <<"setting">> := <<"******">>}},
         richmap_to_map(Conf1)
     ),
     ok.
@@ -129,7 +129,7 @@ obfuscate_sensitive_fill_default_test() ->
     Opts1 = #{obfuscate_sensitive_values => true, only_fill_defaults => true},
     Conf1 = map_translate_conf(Hocon, Opts1),
     ?assertMatch(
-        #{<<"foo">> := #{<<"max">> := 2, <<"min">> := 1, <<"setting">> := "******"}},
+        #{<<"foo">> := #{<<"max">> := 2, <<"min">> := 1, <<"setting">> := <<"******">>}},
         richmap_to_map(Conf1)
     ),
 
@@ -143,7 +143,7 @@ obfuscate_sensitive_fill_default_test() ->
     Opts3 = #{obfuscate_sensitive_values => true},
     Conf3 = map_translate_conf(Hocon, Opts3),
     ?assertMatch(
-        #{<<"foo">> := #{<<"max">> := 2, <<"min">> := 1, <<"setting">> := "******"}},
+        #{<<"foo">> := #{<<"max">> := 2, <<"min">> := 1, <<"setting">> := <<"******">>}},
         richmap_to_map(Conf3)
     ),
     ok.
@@ -946,7 +946,7 @@ sensitive_data_obfuscation_test() ->
             receive
                 #{hocon_env_var_name := "EMQX_SECRET", path := Path, value := Value} ->
                     ?assertEqual("secret", Path),
-                    ?assertEqual("******", Value)
+                    ?assertEqual(<<"******">>, Value)
             end
         end,
         envs([{"EMQX_SECRET", "bbb"}])
