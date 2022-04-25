@@ -1134,7 +1134,7 @@ check_index_seq(I, [{Index, V} | Rest], Acc) ->
 
 get_invalid_name(Names) ->
     lists:filter(
-        fun(F) ->            
+        fun(F) ->
             nomatch =:=
                 try
                     re:run(F, ?MAP_KEY_RE)
