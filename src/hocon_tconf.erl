@@ -1134,8 +1134,13 @@ check_index_seq(I, [{Index, V} | Rest], Acc) ->
 
 get_invalid_name(Names) ->
     lists:filter(
-        fun(F) ->
-            nomatch =:= re:run(F, ?MAP_KEY_RE)
+        fun(F) ->            
+            nomatch =:=
+                try
+                    re:run(F, ?MAP_KEY_RE)
+                catch
+                    _:_ -> nomatch
+                end
         end,
         Names
     ).
