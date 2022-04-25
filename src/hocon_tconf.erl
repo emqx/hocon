@@ -1134,7 +1134,12 @@ check_index_seq(I, [{Index, V} | Rest], Acc) ->
 get_invalid_name(Names) ->
     lists:filter(
         fun(F) ->
-            nomatch =:= re:run(F, "^[A-Za-z0-9]+[A-Za-z0-9-_]*$")
+            nomatch =:=
+                try
+                    re:run(F, "^[A-Za-z0-9]+[A-Za-z0-9-_]*$")
+                catch
+                    _:_ -> nomatch
+                end
         end,
         Names
     ).
