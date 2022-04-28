@@ -151,7 +151,7 @@ do_translate([{MappedField, Translator} | More], TrNamespace, Conf, Acc) ->
                     ?TRANSLATION_ERRS(#{
                         reason => Reason,
                         stacktrace => St,
-                        value_path => MappedField0,
+                        path => MappedField0,
                         exception => Exception
                     })},
             do_translate(More, TrNamespace, Conf, [Error | Acc])
