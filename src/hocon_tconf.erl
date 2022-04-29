@@ -23,7 +23,7 @@
 -export([translate/3]).
 -export([generate/2, generate/3, map_translate/3]).
 -export([check/2, check/3, check_plain/2, check_plain/3, check_plain/4]).
--export([merge_env_overrides/4]).
+-export([merge_env_overrides/4, remove_env_meta/1]).
 -export([nest/1]).
 
 -include("hoconsc.hrl").
@@ -31,7 +31,6 @@
 
 -export_type([opts/0]).
 
--define(FROM_ENV_VAR(Name, Value), {'$FROM_ENV_VAR', Name, Value}).
 -type loggerfunc() :: fun((atom(), map()) -> ok).
 %% Config map/check options.
 -type opts() :: #{
@@ -307,6 +306,26 @@ merge_env_overrides(Schema, Conf0, Roots0, Opts0) ->
     Roots = resolve_root_types(hocon_schema:roots(Schema), Roots0),
     Conf = filter_by_roots(Opts, Conf0, Roots),
     apply_envs(Schema, Conf, Opts, Roots).
+
+%% @doc remove FROM_ENV_VAR from value
+remove_env_meta(Map) when is_map(Map) ->
+    remove_env_meta(maps:iterator(Map), #{});
+remove_env_meta(Array) when is_list(Array) ->
+    [remove_env_meta(R) || R <- Array];
+remove_env_meta(Value) ->
+    Value.
+
+remove_env_meta(Iter, Map) ->
+    case maps:next(Iter) of
+        {K, ?FROM_ENV_VAR(_Env, Val), I} ->
+            remove_env_meta(I, Map#{K => Val});
+        {K, V, I} when is_binary(V) ->
+            remove_env_meta(I, Map#{K => V});
+        {K, V, I} ->
+            remove_env_meta(I, Map#{K => remove_env_meta(V)});
+        none ->
+            Map
+    end.
 
 %% the config 'map' call returns env overrides in mapping
 %% resutls, this function helps to drop them from  the list

@@ -20,6 +20,7 @@
 -define(METADATA, '$hcMeta').
 -define(HOCON_V, '$hcVal').
 -define(HOCON_T, '$hcTyp').
+-define(FROM_ENV_VAR(Name, Value), {'$FROM_ENV_VAR', Name, Value}).
 
 %% random magic bytes to work as newline instead of "\n"
 -define(NL, <<"magic-chicken", 255, 156, 173, 82, 187, 168, 136>>).
