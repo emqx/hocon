@@ -28,12 +28,14 @@
 
 -export([
     find_structs/1,
+    find_structs/2,
     override/2,
     namespace/1,
     resolve_struct_name/2,
     root_names/1,
     field_schema/2,
-    assert_fields/2
+    assert_fields/2,
+    path/1
 ]).
 
 -export([
@@ -100,6 +102,7 @@
     #{
         type := type(),
         default => term(),
+        examples => term(),
         mapping => undefined | string(),
         converter => undefined | translationfunc(),
         validator => undefined | validationfun(),
