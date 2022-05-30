@@ -59,12 +59,7 @@ gen(Schema, Opts) ->
     hocon_schema:delete_desc_cache(Cache),
     Json.
 
-gen_struct(RootNs, Ns0, Name, #{fields := Fields} = Meta, Opts) ->
-    Ns =
-        case RootNs =:= Ns0 of
-            true -> undefined;
-            false -> Ns0
-        end,
+gen_struct(_RootNs, Ns, Name, #{fields := Fields} = Meta, Opts) ->
     Paths =
         case Meta of
             #{paths := Ps} -> lists:sort(maps:keys(Ps));
@@ -97,6 +92,7 @@ fmt_field(Ns, Name, FieldSchema, Opts) ->
         {name, bin(Name)},
         {type, fmt_type(Ns, hocon_schema:field_schema(FieldSchema, type))},
         {default, fmt_default(hocon_schema:field_schema(FieldSchema, default))},
+        {examples, hocon_schema:field_schema(FieldSchema, examples)},
         {desc, fmt_desc(hocon_schema:field_schema(FieldSchema, desc), Opts)},
         {extra, hocon_schema:field_schema(FieldSchema, extra)},
         {mapping, bin(hocon_schema:field_schema(FieldSchema, mapping))}
