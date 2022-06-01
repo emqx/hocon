@@ -144,6 +144,14 @@ do_translate([{MappedField, Translator} | More], TrNamespace, Conf, Acc) ->
         Value ->
             do_translate(More, TrNamespace, Conf, [{string:tokens(MappedField0, "."), Value} | Acc])
     catch
+        throw:Reason ->
+            Error =
+                {error,
+                    ?TRANSLATION_ERRS(#{
+                        reason => Reason,
+                        path => MappedField0
+                    })},
+            do_translate(More, TrNamespace, Conf, [Error | Acc]);
         Exception:Reason:St ->
             Error =
                 {error,
@@ -173,20 +181,10 @@ assert_integrity(Schema, [{Name, Validator} | Rest], Conf, Acc) ->
         OK when OK =:= true orelse OK =:= ok ->
             assert_integrity(Schema, Rest, Conf, Acc);
         Other ->
-            assert_integrity(
-                Schema,
-                Rest,
-                Conf,
-                [
-                    {error,
-                        ?VALIDATION_ERRS(#{
-                            reason => integrity_validation_failure,
-                            validation_name => Name,
-                            result => Other
-                        })}
-                ]
-            )
+            assert_integrity_failure(Schema, Rest, Conf, Name, Other)
     catch
+        throw:Reason ->
+            assert_integrity_failure(Schema, Rest, Conf, Name, Reason);
         Exception:Reason:St ->
             Error =
                 {error,
@@ -198,6 +196,21 @@ assert_integrity(Schema, [{Name, Validator} | Rest], Conf, Acc) ->
                     })},
             assert_integrity(Schema, Rest, Conf, [Error | Acc])
     end.
+
+assert_integrity_failure(Schema, Rest, Conf, Name, Reason) ->
+    assert_integrity(
+        Schema,
+        Rest,
+        Conf,
+        [
+            {error,
+                ?VALIDATION_ERRS(#{
+                    reason => integrity_validation_failure,
+                    validation_name => Name,
+                    result => Reason
+                })}
+        ]
+    ).
 
 merge_opts(Default, Opts) ->
     maps:merge(
@@ -1039,6 +1052,8 @@ do_validate(Opts, Schema, Value, [H | T]) ->
         {error, Reason} ->
             validation_errs(Opts, Reason, obfuscate(Schema, Value))
     catch
+        throw:Reason ->
+            validation_errs(Opts, Reason, obfuscate(Schema, Value));
         C:E:St ->
             validation_errs(
                 Opts,
