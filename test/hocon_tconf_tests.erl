@@ -767,7 +767,22 @@ translation_crash_test() ->
     {ok, Data} = hocon:binary("f1=12,f2=foo", #{format => richmap}),
     {Mapped, Conf} = hocon_tconf:map(Sc, Data),
     ?assertThrow(
-        {_, [{translation_error, #{reason := always, exception := error}}]},
+        {_, [{translation_error, #{reason := always, exception := error, stacktrace := _}}]},
+        hocon_tconf:translate(Sc, Conf, Mapped)
+    ).
+
+translation_throw_test() ->
+    Sc = #{
+        roots => [
+            {f1, hoconsc:mk(integer())},
+            {f2, hoconsc:mk(string())}
+        ],
+        translations => #{"tr1" => [{"f3", fun(_Conf) -> throw(expect) end}]}
+    },
+    {ok, Data} = hocon:binary("f1=12,f2=foo", #{format => richmap}),
+    {Mapped, Conf} = hocon_tconf:map(Sc, Data),
+    ?assertThrow(
+        {_, [{translation_error, #{reason := expect}}]},
         hocon_tconf:translate(Sc, Conf, Mapped)
     ).
 
@@ -1017,6 +1032,23 @@ integrity_crash_test() ->
         #{
             reason := integrity_validation_crash,
             validation_name := "always-crash"
+        },
+        check_plain_bin(Sc, Data1, #{atom_key => true})
+    ),
+    ok.
+
+integrity_throw_test() ->
+    Sc = #{
+        roots => [root],
+        fields => #{root => [{f1, integer()}]},
+        validations => [{"always-throw", fun(_) -> throw(expect) end}]
+    },
+    Data1 = "root={f1=1}",
+    ?VALIDATION_ERR(
+        #{
+            reason := integrity_validation_failure,
+            validation_name := "always-throw",
+            result := expect
         },
         check_plain_bin(Sc, Data1, #{atom_key => true})
     ),

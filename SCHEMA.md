@@ -179,7 +179,7 @@ min_max(Conf) ->
     Max = hocon_maps:get("foo.max", Conf),
     case Min =< Max of
         true -> ok %% return true | ok to pass this validation
-        false -> "min > max is not allowed"
+        false -> "min > max is not allowed" %% or If you need to return early, use throw(Reason)
     end.
 ```
 
