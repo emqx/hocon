@@ -130,7 +130,7 @@ do_type(Ns, ?UNION(Ts)) -> lists:join(" | ", [do_type(Ns, T) || T <- Ts]);
 do_type(_Ns, ?ENUM(Symbols)) -> lists:join(" | ", [bin(S) || S <- Symbols]);
 do_type(Ns, ?LAZY(T)) -> do_type(Ns, T);
 do_type(Ns, ?MAP(Name, T)) -> ["{$", bin(Name), " -> ", do_type(Ns, T), "}"];
-do_type(_Ns, {'$type_refl', #{name := Type}}) -> lists:flatten(Type).
+do_type(_Ns, Type) when ?IS_TYPEREFL(Type) -> lists:flatten(typerefl:name(Type)).
 
 ref(undefined, Name) ->
     bin(Name);

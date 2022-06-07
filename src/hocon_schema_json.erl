@@ -144,10 +144,10 @@ fmt_type(Ns, ?MAP(Name, T)) ->
         name => bin(Name),
         values => fmt_type(Ns, T)
     };
-fmt_type(_Ns, {'$type_refl', #{name := Type}}) ->
+fmt_type(_Ns, Type) when ?IS_TYPEREFL(Type) ->
     #{
         kind => primitive,
-        name => bin(lists:flatten(Type))
+        name => bin(typerefl:name(Type))
     }.
 
 fmt_ref(undefined, Name) ->
