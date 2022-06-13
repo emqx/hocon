@@ -829,20 +829,20 @@ unknown_fields_test_() ->
     ?GEN_VALIDATION_ERR(
         #{
             reason := unknown_fields,
-            expected_fields := [],
-            unknown_fields := [{<<"name">>, #{line := 1}}]
+            unmatched := none,
+            unknown := <<"name">>
         },
         hocon_tconf:map(demo_schema, M, all)
     ).
 
 expected_fields_not_matched_test_() ->
-    Conf = "\nperson.name=mike",
+    Conf = "\nperson.name=mike\nperson.key=foo\nperson.val=bar\n",
     {ok, M} = hocon:binary(Conf, #{format => richmap}),
     ?GEN_VALIDATION_ERR(
         #{
             reason := unknown_fields,
-            expected_fields := [<<"id">>],
-            unknown_fields := [{<<"name">>, #{line := 2}}]
+            unmatched := <<"id">>,
+            unknown := <<"key,name...">>
         },
         hocon_tconf:map(demo_schema, M, all)
     ).

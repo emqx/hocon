@@ -154,7 +154,18 @@ fmt_field(#{type := #{kind := map, name := MapName} = Type} = Field, Path0, Opts
             Indent1 = Indent ++ ?INDENT,
             Opts1 = Opts#{indent => Indent1, comment => true},
             ValFields = fmt_sub_fields(Opts1, Field, Path),
-            [Fix1, Indent1, ?COMMENT, Name, ".", str(MapName), bind_symbol(Opts), ?NL, ValFields, ?NL];
+            [
+                Fix1,
+                Indent1,
+                ?COMMENT,
+                Name,
+                ".",
+                str(MapName),
+                bind_symbol(Opts),
+                ?NL,
+                ValFields,
+                ?NL
+            ];
         false ->
             [Fix1, ?NL]
     end;

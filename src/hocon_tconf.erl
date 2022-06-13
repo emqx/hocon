@@ -590,7 +590,7 @@ map_field(?UNION(Types), Schema0, Value, Opts) ->
     end,
     case do_map_union(Types, F, #{}, Opts) of
         {ok, {Mapped, NewValue}} -> {Mapped, NewValue};
-        Error -> {Error, Value}
+        Errors -> {Errors, Value}
     end;
 map_field(?LAZY(Type), Schema, Value, Opts) ->
     SubType = sub_type(Schema, Type),
@@ -674,8 +674,8 @@ check_unknown_fields(Opts, SchemaFieldNames, DataFields) ->
             Err = #{
                 reason => unknown_fields,
                 path => path(Opts),
-                expected_fields => Expected,
-                unknown_fields => Unknowns
+                unmatched => fmt_field_names(Expected),
+                unknown => fmt_field_names(Unknowns)
             },
             validation_errs(Opts, Err)
     end.
@@ -688,15 +688,10 @@ match_field_names(_Expected, [], []) ->
     ok;
 match_field_names(Expected, [], Unknowns) ->
     {error, {Expected, Unknowns}};
-match_field_names(Expected, [{DfName, DfValue} | Rest], Unknowns) ->
+match_field_names(Expected, [{DfName, _DfValue} | Rest], Unknowns) ->
     case match_field_name(DfName, Expected) of
         {[], _} ->
-            Unknown =
-                case meta(DfValue) of
-                    undefined -> DfName;
-                    Meta -> {DfName, Meta}
-                end,
-            match_field_names(Expected, Rest, [Unknown | Unknowns]);
+            match_field_names(Expected, Rest, [DfName | Unknowns]);
         {[_], RestExpected} ->
             match_field_names(RestExpected, Rest, Unknowns)
     end.
@@ -741,7 +736,12 @@ do_map_union([Type | Types], TypeCheck, PerTypeResult, Opts) ->
         ok ->
             {ok, {Mapped, Value}};
         {error, Reasons} ->
-            do_map_union(Types, TypeCheck, PerTypeResult#{Type => Reasons}, Opts)
+            do_map_union(
+                Types,
+                TypeCheck,
+                PerTypeResult#{hocon_schema:readable_type(Type) => maybe_hd(Reasons)},
+                Opts
+            )
     end.
 
 do_map_array(_F, [], Elems, _Index, Acc) ->
@@ -1178,6 +1178,17 @@ get_invalid_name(Names) ->
         end,
         Names
     ).
+
+fmt_field_names(Names) ->
+    do_fmt_field_names(lists:sort(lists:map(fun bin/1, Names))).
+
+do_fmt_field_names([]) -> none;
+do_fmt_field_names([Name1]) -> Name1;
+do_fmt_field_names([Name1, Name2]) -> bin([Name1, ",", Name2]);
+do_fmt_field_names([Name1, Name2 | _]) -> bin([do_fmt_field_names([Name1, Name2]), "..."]).
+
+maybe_hd([OnlyOne]) -> OnlyOne;
+maybe_hd(Other) -> Other.
 
 -ifndef(TEST).
 assert_fields(_, _) -> ok.
