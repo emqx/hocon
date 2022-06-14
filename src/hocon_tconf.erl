@@ -65,10 +65,8 @@
 -type name() :: hocon_schema:name().
 -type schema() :: hocon_schema:schema().
 
--define(ERR(Code, Context), {Code, Context}).
--define(ERRS(Code, Context), [?ERR(Code, Context)]).
--define(VALIDATION_ERRS(Context), ?ERRS(validation_error, Context)).
--define(TRANSLATION_ERRS(Context), ?ERRS(translation_error, Context)).
+-define(VALIDATION_ERRS(Context), [Context#{kind => validation_error}]).
+-define(TRANSLATION_ERRS(Context), [Context#{kind => translation_error}]).
 
 -define(DEFAULT_REQUIRED, false).
 
@@ -739,7 +737,7 @@ do_map_union([Type | Types], TypeCheck, PerTypeResult, Opts) ->
             do_map_union(
                 Types,
                 TypeCheck,
-                PerTypeResult#{hocon_schema:readable_type(Type) => maybe_hd(Reasons)},
+                PerTypeResult#{readable_type(Type) => maybe_hd(Reasons)},
                 Opts
             )
     end.
@@ -1018,7 +1016,16 @@ validators(Validators) when is_list(Validators) ->
 builtin_validators(?ENUM(Symbols)) ->
     [fun(Value) -> check_enum_sybol(Value, Symbols) end];
 builtin_validators(Type) ->
-    TypeChecker = fun(Value) -> typerefl:typecheck(Type, Value) end,
+    TypeChecker = fun(Value) ->
+        case typerefl:typecheck(Type, Value) of
+            ok ->
+                ok;
+            {error, _Reason} ->
+                %% discard typerefl reason because it contains the actual value
+                %% which could potentially be sensitive (hence need obfuscation)
+                {error, #{expected_type => readable_type(Type)}}
+        end
+    end,
     [TypeChecker].
 
 check_enum_sybol(Value, Symbols) when is_atom(Value); is_integer(Value) ->
@@ -1107,8 +1114,11 @@ drop_nulls(Opts, Map) when is_map(Map) ->
 
 assert_no_error(Schema, List) ->
     case find_errors(List) of
-        ok -> ok;
-        {error, Reasons} -> throw({Schema, Reasons})
+        ok ->
+            ok;
+        {error, Reasons} ->
+            true = lists:all(fun erlang:is_map/1, Reasons),
+            throw({Schema, Reasons})
     end.
 
 %% find error but do not throw, return result
@@ -1189,6 +1199,8 @@ do_fmt_field_names([Name1, Name2 | _]) -> bin([do_fmt_field_names([Name1, Name2]
 
 maybe_hd([OnlyOne]) -> OnlyOne;
 maybe_hd(Other) -> Other.
+
+readable_type(T) -> hocon_schema:readable_type(T).
 
 -ifndef(TEST).
 assert_fields(_, _) -> ok.

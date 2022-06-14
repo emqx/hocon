@@ -22,10 +22,10 @@
 -export([roots/0, fields/1, validations/0, desc/1]).
 
 -define(GEN_VALIDATION_ERR(Reason, Expr),
-    ?_assertThrow({_, [{validation_error, Reason}]}, Expr)
+    ?_assertThrow({_, [Reason]}, Expr)
 ).
 -define(VALIDATION_ERR(Reason, Expr),
-    ?assertThrow({_, [{validation_error, Reason}]}, Expr)
+    ?assertThrow({_, [Reason]}, Expr)
 ).
 
 roots() -> [bar].
@@ -287,8 +287,8 @@ mapping_test_() ->
         ),
         ?_assertThrow(
             {_, [
-                {validation_error, _},
-                {validation_error, _}
+                #{kind := validation_error},
+                #{kind := validation_error}
             ]},
             F("foo.greet=foo\n foo.endpoint=hi")
         ),
@@ -565,10 +565,11 @@ bad_array_index_test() ->
     {ok, PlainMap} = hocon:binary(Conf, #{}),
     ?assertThrow(
         {_, [
-            {validation_error, #{
+            #{
+                kind := validation_error,
                 bad_array_index_keys := [<<"first">>],
                 path := "val"
-            }}
+            }
         ]},
         hocon_tconf:check_plain(Sc, PlainMap)
     ).
@@ -658,7 +659,7 @@ validator_test() ->
 validator_error_test() ->
     Sc = #{roots => [{f1, hoconsc:mk(string(), #{validator => fun not_empty/1})}]},
     ?assertEqual(#{<<"f1">> => "1"}, hocon_tconf:check_plain(Sc, #{<<"f1">> => "1"})),
-    Expect = #{path => "f1", reason => "Can not be empty", value => ""},
+    Expect = #{kind => validation_error, path => "f1", reason => "Can not be empty", value => ""},
     ?VALIDATION_ERR(Expect, hocon_tconf:check_plain(Sc, #{<<"f1">> => ""})),
     ok.
 
@@ -767,7 +768,7 @@ translation_crash_test() ->
     {ok, Data} = hocon:binary("f1=12,f2=foo", #{format => richmap}),
     {Mapped, Conf} = hocon_tconf:map(Sc, Data),
     ?assertThrow(
-        {_, [{translation_error, #{reason := always, exception := error, stacktrace := _}}]},
+        {_, [#{kind := translation_error, reason := always, exception := error, stacktrace := _}]},
         hocon_tconf:translate(Sc, Conf, Mapped)
     ).
 
@@ -782,7 +783,7 @@ translation_throw_test() ->
     {ok, Data} = hocon:binary("f1=12,f2=foo", #{format => richmap}),
     {Mapped, Conf} = hocon_tconf:map(Sc, Data),
     ?assertThrow(
-        {_, [{translation_error, #{reason := expect}}]},
+        {_, [#{kind := translation_error, reason := expect}]},
         hocon_tconf:translate(Sc, Conf, Mapped)
     ).
 
@@ -927,8 +928,8 @@ multiple_errors_test() ->
     Sc = #{roots => [{m1, integer()}, {m2, integer()}]},
     ?assertThrow(
         {_, [
-            {validation_error, #{path := "m1"}},
-            {validation_error, #{path := "m2"}}
+            #{kind := validation_error, path := "m1"},
+            #{kind := validation_error, path := "m2"}
         ]},
         check_return_atom_keys(Sc, "m1=a,m2=b")
     ),
@@ -1288,11 +1289,12 @@ bad_indexed_map_test() ->
     Conf = #{<<"foo">> => #{<<"bar">> => Array}},
     ?assertThrow(
         {_, [
-            {validation_error, #{
+            #{
+                kind := validation_error,
                 expected_index := 3,
                 got_index := 4,
                 path := "foo.bar"
-            }}
+            }
         ]},
         hocon_tconf:check(Sc, Conf, #{format => map})
     ).
@@ -1344,7 +1346,9 @@ array_env_override_test_() ->
             Conf1 = "",
             Envs = envs([{"EMQX_FOO__BAR", "1"}]),
             Throw1 = test_array_override(Sc, richmap, Envs, Conf1),
-            ?assertMatch([{validation_error, #{expected_data_type := array, got := 1}}], Throw1),
+            ?assertMatch(
+                [#{kind := validation_error, expected_data_type := array, got := 1}], Throw1
+            ),
             Conf2 = "foo : {bar : [0, 2, 0]}",
             Throw2 = test_array_override(Sc, richmap, Envs, Conf2),
             ?assertEqual(Throw1, Throw2),
@@ -1611,7 +1615,7 @@ non_primitive_value_validation_test() ->
         hocon_tconf:check_plain(Sc(2), #{<<"foo">> => [1, 2]}, #{atom_key => true})
     ),
     ?assertThrow(
-        {_, [{validation_error, #{reason := returned_false}}]},
+        {_, [#{kind := validation_error, reason := returned_false}]},
         hocon_tconf:check_plain(Sc(3), #{<<"foo">> => [1, 2]}, #{atom_key => true})
     ),
     ok.
@@ -1726,7 +1730,7 @@ redundant_field_test() ->
     Conf3 = "foo = {id = \"a:c\", type = a, backend = b}",
     {ok, Conf3Map} = hocon:binary(Conf3, #{}),
     ?assertThrow(
-        {_, [{validation_error, #{reason := {invalid_id, <<"a:c">>}}}]},
+        {_, [#{reason := {invalid_id, <<"a:c">>}}]},
         hocon_tconf:check(Sc, Conf3Map, Opts)
     ),
     ok.

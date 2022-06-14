@@ -444,7 +444,7 @@ get_cache_schema(#{tab := Tab, file := File}) ->
 
 readable_type(T) ->
     case fmt_type(undefined, T) of
-        #{kind := struct, name := Name} -> Name;
+        #{name := Name} -> Name;
         #{kind := Kind} -> Kind
     end.
 
