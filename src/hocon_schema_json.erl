@@ -88,16 +88,29 @@ fmt_fields(Ns, [{Name, FieldSchema} | Fields], Opts) ->
     end.
 
 fmt_field(Ns, Name, FieldSchema, Opts) ->
+    Default = hocon_schema:field_schema(FieldSchema, default),
     L = [
         {name, bin(Name)},
         {type, fmt_type(Ns, hocon_schema:field_schema(FieldSchema, type))},
-        {default, fmt_default(hocon_schema:field_schema(FieldSchema, default))},
-        {examples, hocon_schema:field_schema(FieldSchema, examples)},
+        {default, fmt_default(Default)},
+        {raw_default, Default},
+        {examples, examples(FieldSchema)},
         {desc, fmt_desc(hocon_schema:field_schema(FieldSchema, desc), Opts)},
         {extra, hocon_schema:field_schema(FieldSchema, extra)},
         {mapping, bin(hocon_schema:field_schema(FieldSchema, mapping))}
     ],
     maps:from_list([{K, V} || {K, V} <- L, V =/= undefined]).
+
+examples(FieldSchema) ->
+    case hocon_schema:field_schema(FieldSchema, examples) of
+        undefined ->
+            case hocon_schema:field_schema(FieldSchema, example) of
+                undefined -> undefined;
+                Example -> [Example]
+            end;
+        Examples ->
+            Examples
+    end.
 
 fmt_default(undefined) ->
     undefined;
