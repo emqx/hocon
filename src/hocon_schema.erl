@@ -35,7 +35,10 @@
     root_names/1,
     field_schema/2,
     assert_fields/2,
-    path/1
+    path/1,
+    readable_type/1,
+    fmt_type/2,
+    fmt_ref/2
 ]).
 
 -export([
@@ -438,3 +441,63 @@ get_cache_schema(#{tab := undefined}) ->
 get_cache_schema(#{tab := Tab, file := File}) ->
     [{_, Schema}] = ets:lookup(Tab, File),
     Schema.
+
+readable_type(T) ->
+    case fmt_type(undefined, T) of
+        #{kind := struct, name := Name} -> Name;
+        #{kind := Kind} -> Kind
+    end.
+
+fmt_type(_Ns, A) when is_atom(A) ->
+    #{
+        kind => singleton,
+        name => bin(A)
+    };
+fmt_type(Ns, Ref) when is_list(Ref) ->
+    fmt_type(Ns, ?REF(Ref));
+fmt_type(Ns, ?REF(Ref)) ->
+    #{
+        kind => struct,
+        name => bin(fmt_ref(Ns, Ref))
+    };
+fmt_type(_Ns, ?R_REF(Module, Ref)) ->
+    fmt_type(hocon_schema:namespace(Module), ?REF(Ref));
+fmt_type(Ns, ?ARRAY(T)) ->
+    #{
+        kind => array,
+        elements => fmt_type(Ns, T)
+    };
+fmt_type(Ns, ?UNION(Ts)) ->
+    #{
+        kind => union,
+        members => [fmt_type(Ns, T) || T <- Ts]
+    };
+fmt_type(_Ns, ?ENUM(Symbols)) ->
+    #{
+        kind => enum,
+        symbols => [bin(S) || S <- Symbols]
+    };
+fmt_type(Ns, ?LAZY(T)) ->
+    fmt_type(Ns, T);
+fmt_type(Ns, ?MAP(Name, T)) ->
+    #{
+        kind => map,
+        name => bin(Name),
+        values => fmt_type(Ns, T)
+    };
+fmt_type(_Ns, Type) when ?IS_TYPEREFL(Type) ->
+    #{
+        kind => primitive,
+        name => bin(typerefl:name(Type))
+    }.
+
+fmt_ref(undefined, Name) ->
+    Name;
+fmt_ref(Ns, Name) ->
+    %% when namespace is the same as reference name
+    %% we do not prepend the reference link with namespace
+    %% because the root name is already unique enough
+    case bin(Ns) =:= bin(Name) of
+        true -> Name;
+        false -> <<(bin(Ns))/binary, ":", (bin(Name))/binary>>
+    end.

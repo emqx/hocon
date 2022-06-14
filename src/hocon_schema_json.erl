@@ -66,7 +66,7 @@ gen_struct(_RootNs, Ns, Name, #{fields := Fields} = Meta, Opts) ->
             _ -> []
         end,
     S0 = #{
-        full_name => bin(fmt_ref(Ns, Name)),
+        full_name => bin(hocon_schema:fmt_ref(Ns, Name)),
         paths => [bin(P) || P <- Paths],
         fields => fmt_fields(Ns, Fields, Opts)
     },
@@ -120,59 +120,8 @@ fmt_default(Value) ->
         Lines -> #{oneliner => false, hocon => bin([[L, "\n"] || L <- Lines])}
     end.
 
-fmt_type(_Ns, A) when is_atom(A) ->
-    #{
-        kind => singleton,
-        name => bin(A)
-    };
-fmt_type(Ns, Ref) when is_list(Ref) ->
-    fmt_type(Ns, ?REF(Ref));
-fmt_type(Ns, ?REF(Ref)) ->
-    #{
-        kind => struct,
-        name => bin(fmt_ref(Ns, Ref))
-    };
-fmt_type(_Ns, ?R_REF(Module, Ref)) ->
-    fmt_type(hocon_schema:namespace(Module), ?REF(Ref));
-fmt_type(Ns, ?ARRAY(T)) ->
-    #{
-        kind => array,
-        elements => fmt_type(Ns, T)
-    };
-fmt_type(Ns, ?UNION(Ts)) ->
-    #{
-        kind => union,
-        members => [fmt_type(Ns, T) || T <- Ts]
-    };
-fmt_type(_Ns, ?ENUM(Symbols)) ->
-    #{
-        kind => enum,
-        symbols => [bin(S) || S <- Symbols]
-    };
-fmt_type(Ns, ?LAZY(T)) ->
-    fmt_type(Ns, T);
-fmt_type(Ns, ?MAP(Name, T)) ->
-    #{
-        kind => map,
-        name => bin(Name),
-        values => fmt_type(Ns, T)
-    };
-fmt_type(_Ns, Type) when ?IS_TYPEREFL(Type) ->
-    #{
-        kind => primitive,
-        name => bin(typerefl:name(Type))
-    }.
-
-fmt_ref(undefined, Name) ->
-    Name;
-fmt_ref(Ns, Name) ->
-    %% when namespace is the same as reference name
-    %% we do not prepend the reference link with namespace
-    %% because the root name is already unique enough
-    case bin(Ns) =:= bin(Name) of
-        true -> Ns;
-        false -> <<(bin(Ns))/binary, ":", (bin(Name))/binary>>
-    end.
+fmt_type(Ns, T) ->
+    hocon_schema:fmt_type(Ns, T).
 
 fmt_desc(Struct, Opts = #{cache := Cache}) ->
     Desc = hocon_schema:resolve_schema(Struct, Cache),

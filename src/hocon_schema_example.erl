@@ -30,7 +30,6 @@
 -define(PATH, "@path ").
 -define(LINK, "@link ").
 -define(DEFAULT, "@default ").
--define(BIND, " = ").
 
 gen(Schema, undefined) ->
     gen(Schema, "# HOCON Example");
@@ -40,7 +39,13 @@ gen(Schema, #{title := Title, body := Body} = Opts) ->
     File = maps:get(desc_file, Opts, undefined),
     Lang = maps:get(lang, Opts, "en"),
     [Roots | Fields] = hocon_schema_json:gen(Schema, #{desc_file => File, lang => Lang}),
-    FmtOpts = #{tid => new_cache(), indent => "", comment => false, hidden_meta => false},
+    FmtOpts = #{
+        tid => new_cache(),
+        indent => "",
+        comment => false,
+        bind_symbol => bind_symbol(Opts),
+        hidden_meta => false
+    },
     lists:foreach(
         fun(F = #{full_name := Name}) -> insert(FmtOpts, {{full_name, Name}, F}) end, Fields
     ),
@@ -119,7 +124,7 @@ fmt_field(#{type := #{kind := singleton, name := SingleTon}} = Field, Path, Opts
     Name = str(maps:get(name, Field)),
     #{indent := Indent, comment := Comment} = Opts,
     Fix = fmt_fix_header(Field, "singleton", [Name | Path], Opts),
-    [Fix, fmt(Indent, Comment, Name, SingleTon)];
+    [Fix, fmt(Indent, Comment, Name, SingleTon, Opts)];
 fmt_field(#{type := #{kind := enum, symbols := Symbols}} = Field, Path, Opts) ->
     TypeName = ["enum: ", lists:join(" | ", Symbols)],
     Name = str(maps:get(name, Field)),
@@ -149,7 +154,18 @@ fmt_field(#{type := #{kind := map, name := MapName} = Type} = Field, Path0, Opts
             Indent1 = Indent ++ ?INDENT,
             Opts1 = Opts#{indent => Indent1, comment => true},
             ValFields = fmt_sub_fields(Opts1, Field, Path),
-            [Fix1, Indent1, ?COMMENT, Name, ".", str(MapName), ?BIND, ?NL, ValFields, ?NL];
+            [
+                Fix1,
+                Indent1,
+                ?COMMENT,
+                Name,
+                ".",
+                str(MapName),
+                bind_symbol(Opts),
+                ?NL,
+                ValFields,
+                ?NL
+            ];
         false ->
             [Fix1, ?NL]
     end;
@@ -164,8 +180,8 @@ fmt_field(#{type := #{kind := array} = Type} = Field, Path0, Opts) ->
     Opts1 = Opts#{indent => Indent1},
     fallback_to_example(Field, Fix1, Indent1, Name, Opts1, Indent, "[]").
 
-fmt(Indent, Comment, Name, Value) ->
-    [Indent, comment(Comment), Name, ?BIND, Value, ?NL].
+fmt(Indent, Comment, Name, Value, Opts) ->
+    [Indent, comment(Comment), Name, bind_symbol(Opts), Value, ?NL].
 
 fallback_to_example(Field, Fix1, Indent1, Name, Opts, Indent, Default) ->
     #{comment := Comment} = Opts,
@@ -177,13 +193,13 @@ fallback_to_example(Field, Fix1, Indent1, Name, Opts, Indent, Default) ->
                     Indent,
                     comment(Comment),
                     Name,
-                    ?BIND,
+                    bind_symbol(Opts),
                     fmt_example(First, Opts),
                     ?NL
                 ]
                 | lists:map(
                     fun(E) ->
-                        [Indent1, ?COMMENT, Name, ?BIND, fmt_example(E, Opts), ?NL]
+                        [Indent1, ?COMMENT, Name, bind_symbol(Opts), fmt_example(E, Opts), ?NL]
                     end,
                     Examples
                 )
@@ -195,8 +211,8 @@ fallback_to_example(Field, Fix1, Indent1, Name, Opts, Indent, Default) ->
                     Default1 -> Default1
                 end,
             case Default2 of
-                "" -> [Fix1, Indent, ?COMMENT, Name, ?BIND, Default2, ?NL];
-                _ -> [Fix1, Indent, comment(Comment), Name, ?BIND, Default2, ?NL]
+                "" -> [Fix1, Indent, ?COMMENT, Name, bind_symbol(Opts), Default2, ?NL];
+                _ -> [Fix1, Indent, comment(Comment), Name, bind_symbol(Opts), Default2, ?NL]
             end
     end.
 
@@ -365,16 +381,16 @@ fmt_examples(Name, #{examples := Examples}, Opts) ->
     lists:map(
         fun(E) ->
             case fmt_example(E, Opts) of
-                [""] -> [Indent, ?COMMENT, Name, ?BIND, ?NL];
-                E1 -> [Indent, comment(Comment), Name, ?BIND, E1, ?NL]
+                [""] -> [Indent, ?COMMENT, Name, bind_symbol(Opts), ?NL];
+                E1 -> [Indent, comment(Comment), Name, bind_symbol(Opts), E1, ?NL]
             end
         end,
         ensure_list(Examples)
     );
 fmt_examples(Name, Field, Opts = #{indent := Indent, comment := Comment}) ->
     case get_default(Field, Opts) of
-        undefined -> [Indent, ?COMMENT, Name, ?BIND, ?NL];
-        Default -> fmt(Indent, Comment, Name, Default)
+        undefined -> [Indent, ?COMMENT, Name, bind_symbol(Opts), ?NL];
+        Default -> fmt(Indent, Comment, Name, Default, Opts)
     end.
 
 ensure_list(L) when is_list(L) -> L;
@@ -454,3 +470,6 @@ insert(#{tid := Tid}, Item) ->
 
 resolve_name({N1, N2}) -> {N1, N2};
 resolve_name(N) -> {N, N}.
+
+bind_symbol(Opts) ->
+    [$\s, maps:get(bind_symbol, Opts, $=), $\s].
