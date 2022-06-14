@@ -17,6 +17,8 @@
 -module(hocon_schema_example).
 -include_lib("hocon/include/hoconsc.hrl").
 
+-elvis([{elvis_style, dont_repeat_yourself, disable}]).
+
 -export([gen/2]).
 
 -define(COMMENT, "#  ").
@@ -28,7 +30,7 @@
 -define(PATH, "@path ").
 -define(LINK, "@link ").
 -define(DEFAULT, "@default ").
--define(BIND, ": ").
+-define(BIND, " = ").
 
 gen(Schema, undefined) ->
     gen(Schema, "# HOCON Example");
@@ -37,16 +39,18 @@ gen(Schema, Title) when is_list(Title) orelse is_binary(Title) ->
 gen(Schema, #{title := Title, body := Body} = Opts) ->
     File = maps:get(desc_file, Opts, undefined),
     Lang = maps:get(lang, Opts, "en"),
-    [Roots | Fields0] = hocon_schema_json:gen(Schema, #{desc_file => File, lang => Lang}),
-    Fields = lists:foldl(fun(F = #{full_name := Name}, Acc) -> Acc#{Name => F} end, #{}, Fields0),
+    [Roots | Fields] = hocon_schema_json:gen(Schema, #{desc_file => File, lang => Lang}),
+    FmtOpts = #{tid => new_cache(), indent => "", comment => false, hidden_meta => false},
+    lists:foreach(
+        fun(F = #{full_name := Name}) -> insert(FmtOpts, {{full_name, Name}, F}) end, Fields
+    ),
     #{fields := RootKeys} = Roots,
-    FmtOpts = #{tid => new_link_cache(), indent => "", comment => false},
     try
         Structs = lists:map(
             fun(Root) ->
                 [
                     fmt_desc(Root, ""),
-                    fmt_field(Root, Fields, "", FmtOpts)
+                    fmt_field(Root, "", FmtOpts)
                 ]
             end,
             RootKeys
@@ -63,146 +67,126 @@ gen(Schema, #{title := Title, body := Body} = Opts) ->
             Structs
         ]
     after
-        delete_link_cache(FmtOpts)
+        delete_cache(FmtOpts)
     end.
 
-fmt_field(#{type := #{kind := struct, name := SubName}, name := Name} = Field, All, Path0, Opts) ->
-    case maps:find(SubName, All) of
-        {ok, #{fields := SubFields}} ->
-            #{indent := Indent, comment := Comment} = Opts,
-            Opts1 = Opts#{indent => Indent ++ ?INDENT},
-            {PathName, ValName} = resolve_name(Name),
-            Path = [str(PathName) | Path0],
-            SubStructs =
-                case maps:get(examples, Field, #{}) of
-                    #{} = Example ->
-                        fmt_field_with_example(Path, SubFields, Example, All, Opts1);
-                    {union, UnionExamples} ->
-                        Examples1 = filter_union_example(UnionExamples, SubFields),
-                        fmt_field_with_example(Path, SubFields, Examples1, All, Opts1);
-                    {array, ArrayExamples} ->
-                        lists:flatmap(
-                            fun(SubExample) ->
-                                fmt_field_with_example(Path, SubFields, SubExample, All, Opts1)
-                            end,
-                            ArrayExamples
-                        )
-                end,
-            [
-                Indent,
-                comment(Comment),
-                ValName,
-                " {",
-                ?NL,
-                lists:join(?NL, SubStructs),
-                Indent,
-                comment(Comment),
-                " }",
-                ?NL
-            ];
-        Unknown ->
-            throw({error, {Path0, SubName, Unknown}})
-    end;
-fmt_field(#{type := #{kind := primitive, name := TypeName}} = Field, _All, Path, Opts) ->
+fmt_field(
+    #{type := #{kind := struct, name := SubName} = Type, name := Name} = Field,
+    Path0,
+    Opts0
+) ->
+    {PathName, ValName} = resolve_name(Name),
+    Path = [str(PathName) | Path0],
+    {Link, Opts1} = fmt_struct_link(Type, Path, Opts0),
+    {ok, #{fields := SubFields}} = find_struct_sub_fields(SubName, Opts1),
+    #{indent := Indent, comment := Comment} = Opts0,
+    Opts2 = Opts1#{indent => Indent ++ ?INDENT},
+
+    SubStructs =
+        case maps:get(examples, Field, #{}) of
+            #{} = Example ->
+                fmt_field_with_example(Path, SubFields, Example, Opts2);
+            {union, UnionExamples} ->
+                Examples1 = filter_union_example(UnionExamples, SubFields),
+                fmt_field_with_example(Path, SubFields, Examples1, Opts2);
+            {array, ArrayExamples} ->
+                lists:flatmap(
+                    fun(SubExample) ->
+                        fmt_field_with_example(Path, SubFields, SubExample, Opts2)
+                    end,
+                    ArrayExamples
+                )
+        end,
+    [
+        fmt_path(Path, Indent),
+        Link,
+        Indent,
+        comment(Comment),
+        ValName,
+        " {",
+        ?NL,
+        lists:join(?NL, SubStructs),
+        Indent,
+        comment(Comment),
+        " }",
+        ?NL
+    ];
+fmt_field(#{type := #{kind := primitive, name := TypeName}} = Field, Path, Opts) ->
     Name = str(maps:get(name, Field)),
     Fix = fmt_fix_header(Field, TypeName, [Name | Path], Opts),
     [Fix, fmt_examples(Name, Field, Opts)];
-fmt_field(#{type := #{kind := singleton, name := SingleTon}} = Field, _All, Path, Opts) ->
+fmt_field(#{type := #{kind := singleton, name := SingleTon}} = Field, Path, Opts) ->
     Name = str(maps:get(name, Field)),
     #{indent := Indent, comment := Comment} = Opts,
     Fix = fmt_fix_header(Field, "singleton", [Name | Path], Opts),
     [Fix, fmt(Indent, Comment, Name, SingleTon)];
-fmt_field(#{type := #{kind := enum, symbols := Symbols}} = Field, _All, Path, Opts) ->
+fmt_field(#{type := #{kind := enum, symbols := Symbols}} = Field, Path, Opts) ->
     TypeName = ["enum: ", lists:join(" | ", Symbols)],
     Name = str(maps:get(name, Field)),
     Fix = fmt_fix_header(Field, TypeName, [str(Name) | Path], Opts),
     [Fix, fmt_examples(Name, Field, Opts)];
-fmt_field(#{type := #{kind := union, members := Members0} = Type} = Field, All, Path0, Opts) ->
+fmt_field(#{type := #{kind := union, members := Members0} = Type} = Field, Path0, Opts0) ->
     Name = str(maps:get(name, Field)),
     Names = lists:map(fun(#{name := N}) -> N end, Members0),
     Path = [Name | Path0],
     TypeStr = ["union() ", lists:join(" | ", Names)],
-    Fix = fmt_fix_header(Field, TypeStr, Path, Opts),
-    Link = fmt_union_link(Type, Path, Opts),
-    Fix1 = [Fix, Link],
-    case Link =:= "" andalso need_comment_example(union, Opts, Type, Path) of
-        true ->
-            #{indent := Indent} = Opts,
-            Indent1 = Indent ++ ?INDENT,
-            Opts1 = Opts#{indent => Indent1},
-            case fmt_sub_fields(Opts1, Field, All, Path0) of
-                [] -> fallback_to_example(Field, Fix1, Indent1, Name, Opts1, Indent, "");
-                ValFields -> [Fix1, ValFields, ?NL]
-            end;
-        false ->
-            [Fix1, ?NL]
-    end;
-fmt_field(#{type := #{kind := map, name := MapName} = Type} = Field, All, Path0, Opts) ->
+    Fix = fmt_fix_header(Field, TypeStr, Path, Opts0),
+    {Link, Opts1} = fmt_union_link(Type, Path, Opts0),
+    #{indent := Indent} = Opts1,
+    Indent1 = Indent ++ ?INDENT,
+    Opts2 = Opts1#{indent => Indent1},
+    fallback_to_example(Field, [Fix, Link], Indent1, Name, Opts2, Indent, "");
+fmt_field(#{type := #{kind := map, name := MapName} = Type} = Field, Path0, Opts) ->
     Name = str(maps:get(name, Field)),
     #{indent := Indent} = Opts,
     Path = [Name | Path0],
     Path1 = ["$" ++ str(MapName) | Path],
     Fix = fmt_fix_header(Field, "map_struct()", Path, Opts),
-    Link = fmt_map_link(Path1, Type, All, Opts),
+    Link = fmt_map_link(Path1, Type, Opts),
     Fix1 = [Fix, Link],
     case Link =:= "" andalso need_comment_example(map, Opts, Path1) of
         true ->
             Indent1 = Indent ++ ?INDENT,
-            Opts1 = Opts#{indent => Indent1},
-            ValFields = fmt_sub_fields(Opts1, Field, All, Path),
-            [Fix1, Indent1, ?COMMENT, Name, ?BIND, ?NL, ValFields, ?NL];
+            Opts1 = Opts#{indent => Indent1, comment => true},
+            ValFields = fmt_sub_fields(Opts1, Field, Path),
+            [Fix1, Indent1, ?COMMENT, Name, ".", str(MapName), ?BIND, ?NL, ValFields, ?NL];
         false ->
             [Fix1, ?NL]
     end;
-fmt_field(#{type := #{kind := array} = Type} = Field, All, Path0, Opts) ->
-    #{indent := Indent, comment := Comment} = Opts,
+fmt_field(#{type := #{kind := array} = Type} = Field, Path0, Opts) ->
+    #{indent := Indent} = Opts,
     Name = str(maps:get(name, Field)),
     Path = [Name | Path0],
     Fix = fmt_fix_header(Field, "array()", Path, Opts),
     Link = fmt_array_link(Type, Path, Opts),
     Fix1 = [Fix, Link],
-    case Link =:= "" andalso need_comment_example(array, Opts, Type, Path) of
-        true ->
-            Indent1 = Indent ++ ?INDENT,
-            Opts1 = Opts#{indent => Indent1},
-            case fmt_sub_fields(Opts1, Field, All, Path) of
-                [] ->
-                    fallback_to_example(Field, Fix1, Indent1, Name, Opts1, Indent, "[]");
-                ValFields ->
-                    [
-                        Fix1,
-                        Indent1,
-                        comment(Comment),
-                        Name,
-                        ?BIND,
-                        "[",
-                        ?NL,
-                        ValFields,
-                        ?NL,
-                        Indent1,
-                        comment(Comment),
-                        "]",
-                        ?NL
-                    ]
-            end;
-        false ->
-            [Fix1, ?NL]
-    end.
+    Indent1 = Indent ++ ?INDENT,
+    Opts1 = Opts#{indent => Indent1},
+    fallback_to_example(Field, Fix1, Indent1, Name, Opts1, Indent, "[]").
 
 fmt(Indent, Comment, Name, Value) ->
     [Indent, comment(Comment), Name, ?BIND, Value, ?NL].
 
 fallback_to_example(Field, Fix1, Indent1, Name, Opts, Indent, Default) ->
+    #{comment := Comment} = Opts,
     case Field of
-        #{examples := Examples} ->
+        #{examples := [First | Examples]} ->
             [
-                Fix1,
-                Indent1,
-                ?COMMENT,
-                Name,
-                ?BIND,
-                fmt_example(Examples, Opts#{comment => true}),
-                ?NL
+                [
+                    Fix1,
+                    Indent,
+                    comment(Comment),
+                    Name,
+                    ?BIND,
+                    fmt_example(First, Opts),
+                    ?NL
+                ]
+                | lists:map(
+                    fun(E) ->
+                        [Indent1, ?COMMENT, Name, ?BIND, fmt_example(E, Opts), ?NL]
+                    end,
+                    Examples
+                )
             ];
         _ ->
             Default2 =
@@ -210,81 +194,36 @@ fallback_to_example(Field, Fix1, Indent1, Name, Opts, Indent, Default) ->
                     undefined -> Default;
                     Default1 -> Default1
                 end,
-            [Fix1, Indent, ?COMMENT, Name, ?BIND, Default2, ?NL]
+            case Default2 of
+                "" -> [Fix1, Indent, ?COMMENT, Name, ?BIND, Default2, ?NL];
+                _ -> [Fix1, Indent, comment(Comment), Name, ?BIND, Default2, ?NL]
+            end
     end.
 
-fmt_field_with_example(Path, SubFields, Examples, All, Opts1) ->
+fmt_field_with_example(Path, SubFields, Examples, Opts1) ->
     lists:map(
         fun(F) ->
             #{name := N} = F,
             case maps:find(N, Examples) of
                 {ok, SubExample} ->
-                    fmt_field(F#{examples => SubExample}, All, Path, Opts1);
+                    fmt_field(F#{examples => SubExample}, Path, Opts1);
                 error ->
-                    fmt_field(F, All, Path, Opts1)
+                    fmt_field(F, Path, Opts1)
             end
         end,
         SubFields
     ).
 
-fmt_sub_fields(Opts, Field, All, Path) ->
-    Opts1 = Opts#{comment => true},
-    SubFields = get_sub_fields(Field),
-    [fmt_field(F, All, Path, Opts1) || F <- SubFields].
+find_struct_sub_fields(Name, Opts) ->
+    find(Opts, {full_name, Name}).
 
-get_sub_fields(#{type := #{kind := array, elements := ElemT}, name := Name} = Field) ->
-    case is_simple_type(ElemT) of
-        true ->
-            [];
-        false ->
-            Examples =
-                case get_examples(Name, Field) of
-                    undefined -> [];
-                    Example0 -> Example0
-                end,
-            [
-                #{
-                    name => {"$INDEX", str(Name) ++ ".$INDEX"},
-                    type => ElemT,
-                    examples => {array, Examples}
-                }
-            ]
-    end;
-get_sub_fields(#{type := #{kind := union, members := Members}, name := Name} = Field) ->
-    case is_simple_type(Members) of
-        true ->
-            [];
-        false ->
-            Example =
-                case get_examples(Name, Field) of
-                    undefined ->
-                        [];
-                    [Example0] when is_map(Example0) ->
-                        [Value || #{value := Value} <- maps:values(Example0)];
-                    %% TODO array
-                    _ ->
-                        []
-                end,
-            lists:map(
-                fun(M) -> #{name => Name, type => M, examples => {union, Example}} end, Members
-            )
-    end;
-get_sub_fields(#{type := #{kind := map, values := ValT, name := MapName0}} = Field) ->
+fmt_sub_fields(Opts, Field, Path) ->
+    {SubFields, Opts1} = get_sub_fields(Field, Opts),
+    [fmt_field(F, Path, Opts1) || F <- SubFields].
+
+get_sub_fields(#{type := #{kind := map, values := ValT, name := MapName0}} = _Field, Opts) ->
     MapName = "$" ++ str(MapName0),
-    case get_examples(MapName0, Field) of
-        undefined ->
-            [#{name => MapName, type => ValT}];
-        [] ->
-            [#{name => MapName, type => ValT}];
-        Examples ->
-            lists:map(
-                fun(Example) ->
-                    [{SubName, SubValue}] = maps:to_list(Example),
-                    #{name => {MapName, SubName}, type => ValT, examples => SubValue}
-                end,
-                Examples
-            )
-    end.
+    {[#{name => {MapName, ""}, type => ValT}], Opts}.
 
 filter_union_example(Examples0, SubFields) ->
     TargetKeys = lists:sort([binary_to_atom(Name) || #{name := Name} <- SubFields]),
@@ -304,7 +243,7 @@ filter_union_example(Examples0, SubFields) ->
         Other -> throw({error, {find_union_example_failed, Examples, SubFields, Other}})
     end.
 
-ensure_bin_key(Map) ->
+ensure_bin_key(Map) when is_map(Map) ->
     maps:fold(
         fun
             (K0, V0 = #{}, Acc) -> Acc#{bin(K0) => ensure_bin_key(V0)};
@@ -312,12 +251,15 @@ ensure_bin_key(Map) ->
         end,
         #{},
         Map
-    ).
+    );
+ensure_bin_key(List) when is_list(List) -> [ensure_bin_key(Map) || Map <- List];
+ensure_bin_key(Term) ->
+    Term.
 
 fmt_desc(#{desc := Desc0}, Indent) ->
     Target = iolist_to_binary([?NL, Indent, ?COMMENT2]),
     Desc = string:trim(Desc0, both),
-    replace_nl(Indent, true, Desc, Target);
+    [Indent, ?COMMENT2, ?DOC, binary:replace(Desc, [<<"\n">>], Target, [global]), ?NL];
 fmt_desc(_, _) ->
     <<"">>.
 
@@ -334,58 +276,67 @@ fmt_fix_header(Field, Type, Path, #{indent := Indent}) ->
         fmt_default(Field, Indent)
     ].
 
-fmt_map_link(Path0, Type, All, Opts) ->
+fmt_map_link(Path0, Type, Opts) ->
     case Type of
         #{values := #{name := ValueName}} ->
-            fmt_map_link2(Path0, ValueName, All, Opts);
+            fmt_map_link2(Path0, ValueName, Opts);
         #{values := #{members := Members}} ->
-            lists:map(fun(M) -> fmt_map_link(Path0, M, All, Opts) end, Members);
+            lists:map(fun(M) -> fmt_map_link(Path0, M, Opts) end, Members);
         _ ->
             []
     end.
 
-fmt_map_link2(Path0, ValueName, All, Opts) ->
-    Paths =
-        case maps:find(ValueName, All) of
-            {ok, #{paths := SubPaths}} -> SubPaths;
-            _ -> []
-        end,
+fmt_map_link2(Path0, ValueName, Opts) ->
     PathStr = hocon_schema:path(Path0),
     Path = bin(PathStr),
     #{indent := Indent} = Opts,
-    case find_link(Opts, {map, PathStr}) of
+    case find(Opts, {map, PathStr}) of
         {ok, Link} ->
             [Indent, ?COMMENT2, ?LINK, Link, ?NL];
         {error, not_found} ->
+            Paths =
+                case find_struct_sub_fields(ValueName, Opts) of
+                    {ok, #{paths := SubPaths}} -> SubPaths;
+                    _ -> []
+                end,
             case lists:member(Path, Paths) of
                 true ->
-                    insert_link(Opts, [{{map, binary_to_list(P)}, Path} || P <- Paths, P =/= Path]);
+                    insert(Opts, [{{map, binary_to_list(P)}, Path} || P <- Paths, P =/= Path]);
                 false ->
                     ok
             end,
             ""
     end.
 
-fmt_union_link(Type = #{members := Members}, Path, Opts = #{indent := Indent}) ->
-    case find_link(Opts, {union, Type}) of
+fmt_struct_link(Type, Path, Opts = #{indent := Indent}) ->
+    case find(Opts, {struct, Type}) of
         {ok, Link} ->
-            link(Link, Indent);
+            {link(Link, Indent), Opts#{link => true}};
+        {error, not_found} ->
+            insert(Opts, {{struct, Type}, Path}),
+            {"", Opts}
+    end.
+
+fmt_union_link(Type = #{members := Members}, Path, Opts = #{indent := Indent}) ->
+    case find(Opts, {union, Type}) of
+        {ok, Link} ->
+            {link(Link, Indent), Opts};
         {error, not_found} ->
             case is_simple_type(Members) of
                 true -> ok;
-                false -> insert_link(Opts, {{union, Type}, Path})
+                false -> insert(Opts, {{union, Type}, Path})
             end,
-            ""
+            {"", Opts}
     end.
 
 fmt_array_link(Type = #{elements := ElemT}, Path, Opts = #{indent := Indent}) ->
-    case find_link(Opts, {array, Type}) of
+    case find(Opts, {array, Type}) of
         {ok, Link} ->
             link(Link, Indent);
         {error, not_found} ->
             case is_simple_type(ElemT) of
                 true -> ok;
-                false -> insert_link(Opts, {{array, Type}, Path})
+                false -> insert(Opts, {{array, Type}, Path})
             end,
             ""
     end.
@@ -404,35 +355,19 @@ is_simple_type(Type) ->
     is_simple_type([Type]).
 
 need_comment_example(map, Opts, Path) ->
-    case find_link(Opts, {map, hocon_schema:path(Path)}) of
+    case find(Opts, {map, hocon_schema:path(Path)}) of
         {ok, _} -> false;
         {error, not_found} -> true
     end.
 
-need_comment_example(Type, Opts, Key, Link) when Type =:= union; Type =:= array ->
-    case find_link(Opts, {union, Key}) of
-        {ok, Link} -> true;
-        {error, not_found} -> true;
-        {ok, _} -> false
-    end.
-
-get_examples(_MapName, #{examples := Examples}) ->
-    ensure_list(Examples);
-get_examples(MapName, #{default := #{hocon := Hocon}}) ->
-    case hocon:binary(Hocon) of
-        {ok, Default} -> [#{MapName => Default}];
-        {error, _} -> [#{MapName => Hocon}]
-    end;
-get_examples(_, _) ->
-    undefined.
-
-fmt_examples(Name, #{examples := {union, Examples}}, Opts) ->
-    fmt_examples(Name, #{examples => Examples}, Opts);
 fmt_examples(Name, #{examples := Examples}, Opts) ->
     #{indent := Indent, comment := Comment} = Opts,
     lists:map(
         fun(E) ->
-            [Indent, comment(Comment), Name, ?BIND, fmt_example(E, Opts), ?NL]
+            case fmt_example(E, Opts) of
+                [""] -> [Indent, ?COMMENT, Name, ?BIND, ?NL];
+                E1 -> [Indent, comment(Comment), Name, ?BIND, E1, ?NL]
+            end
         end,
         ensure_list(Examples)
     );
@@ -445,8 +380,12 @@ fmt_examples(Name, Field, Opts = #{indent := Indent, comment := Comment}) ->
 ensure_list(L) when is_list(L) -> L;
 ensure_list(T) -> [T].
 
+fmt_example({union, Value}, Opts) ->
+    fmt_example(Value, Opts);
 fmt_example(Value, #{indent := Indent0, comment := Comment}) ->
-    case hocon_pp:do(Value, #{newline => "", embedded => true}) of
+    case hocon_pp:do(ensure_bin_key(Value), #{newline => "", embedded => true}) of
+        [] ->
+            [?NL, Indent0, ?COMMENT, ?NL];
         [OneLine] ->
             [try_to_remove_quote(OneLine)];
         Lines ->
@@ -467,31 +406,12 @@ fmt_default(Field, Indent) ->
         Default -> [Indent, ?COMMENT2, ?DEFAULT, Default, ?NL]
     end.
 
-get_default(#{default := Default}, Opts) when is_map(Opts) ->
-    #{indent := Indent, comment := Comment} = Opts,
-    get_default(Default, Indent, Comment);
+get_default(#{raw_default := Default}, Opts) when is_map(Opts) ->
+    fmt_example(Default, Opts);
 get_default(_, _Opts) ->
     undefined.
 
 -define(RE, <<"^[A-Za-z0-9\"]+$">>).
-
-get_default(#{oneliner := true, hocon := Content}, _Indent, _Comment) ->
-    try_to_remove_quote(Content);
-get_default(#{oneliner := false, hocon := Content}, Indent0, Comment) ->
-    Target = iolist_to_binary([?NL, Indent0, comment2(Comment), ?INDENT]),
-    replace_nl(Indent0, Comment, Content, Target);
-get_default(Bin, _Indent, _Comment) ->
-    Bin.
-
-replace_nl(Indent0, Comment, Content, Target) ->
-    [
-        ?NL,
-        Indent0,
-        comment2(Comment),
-        ?INDENT,
-        binary:replace(Content, [<<"\n">>], Target, [global]),
-        ?NL
-    ].
 
 try_to_remove_quote(Content) ->
     case re:run(Content, ?RE) of
@@ -517,22 +437,19 @@ str({KeyName, _ValName}) -> str(KeyName).
 comment(true) -> ?COMMENT;
 comment(false) -> "".
 
-comment2(true) -> ?COMMENT2;
-comment2(false) -> "".
-
-new_link_cache() ->
+new_cache() ->
     ets:new(?MODULE, [private, set, {keypos, 1}]).
 
-delete_link_cache(#{tid := Tid}) ->
+delete_cache(#{tid := Tid}) ->
     ets:delete(Tid).
 
-find_link(#{tid := Tid}, Key) ->
+find(#{tid := Tid}, Key) ->
     case ets:lookup(Tid, Key) of
         [{_, Value}] -> {ok, Value};
         [] -> {error, not_found}
     end.
 
-insert_link(#{tid := Tid}, Item) ->
+insert(#{tid := Tid}, Item) ->
     ets:insert(Tid, Item).
 
 resolve_name({N1, N2}) -> {N1, N2};
