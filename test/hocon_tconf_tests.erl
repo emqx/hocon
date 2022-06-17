@@ -1431,12 +1431,44 @@ test_array_env_override_t2(Sc, Format) ->
         ]
     ).
 
-ref_required_test() ->
+undefined_atom_test() ->
     Sc = #{
         roots => [
             {k, #{
                 type => hoconsc:ref(sub),
                 required => {false, recursively}
+            }}
+        ],
+        fields => #{sub => [{b, typerefl:atom()}]}
+    },
+    Opts = #{return_plain => true,required => false,format => map},
+    OkMap = #{<<"k">> => #{<<"b">> => <<"wow">>}},
+    BadMap = #{<<"k">> => #{<<"b">> => <<"undefined">>}},
+    ?assertEqual(
+        {[], #{<<"k">> => #{<<"b">> => wow}}},
+        hocon_tconf:map_translate(Sc, OkMap, Opts)
+    ),
+    ?assertEqual(
+        {[], #{<<"k">> => #{<<"b">> => undefined}}},
+        hocon_tconf:map_translate(Sc, BadMap, Opts)
+    ).
+
+undefined_test() ->
+    Sc = #{roots => [{f3, hoconsc:mk(typerefl:atom(), #{required => false})}]},
+    BadMap = #{<<"f3">> => <<"undefined">>},
+    Opts = #{return_plain => true,required => false,format => map},
+    ?assertEqual(
+        #{<<"f3">> => undefined},
+        hocon_tconf:map_translate(Sc, BadMap, Opts)
+    ),
+    ok.
+
+primitive_null_test() ->
+    Sc = #{
+        roots => [
+            {k, #{
+                type => atom(),
+                required => false
             }},
             {x, string()}
         ],
@@ -1450,11 +1482,13 @@ ref_required_test() ->
     ),
     {ok, Map} = hocon:binary("k = null, x = y", #{format => map}),
     ?assertEqual(#{<<"x">> => "y"}, hocon_tconf:check_plain(Sc, Map)),
+    {ok, Map2} = hocon:binary("k = a, x = y", #{format => map}),
+    ?assertEqual(#{<<"x">> => "y", <<"k">> => a}, hocon_tconf:check_plain(Sc, Map2)),
     with_envs(
         fun() ->
             Opts = #{apply_override_envs => true},
-            {ok, Map2} = hocon:binary("k = {a: a, b: b}, x = y", #{format => map}),
-            ?assertEqual(#{<<"x">> => "y"}, hocon_tconf:check_plain(Sc, Map2, Opts))
+            {ok, Map3} = hocon:binary("k = a, x = y", #{format => map}),
+            ?assertEqual(#{<<"x">> => "y"}, hocon_tconf:check_plain(Sc, Map3, Opts))
         end,
         [
             {"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"},
