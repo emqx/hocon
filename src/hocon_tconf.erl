@@ -903,27 +903,30 @@ apply_env(Ns, [{VarName, V} | More], RootName, Conf, Opts) ->
         case Path0 =/= [] andalso bin(RootName) =:= bin(hd(Path0)) of
             true ->
                 Path = lists:flatten(string:join(Path0, ".")),
-                %% It lacks schema info here, so we need to tag the value '$FROM_ENV_VAR'
-                %% and the value will be logged later when checking against schema
-                %% so we know if the value is sensitive or not.
-                %% NOTE: never translate to atom key here
-                Value =
-                    case only_fill_defaults(Opts) of
-                        true -> V;
-                        false -> ?FROM_ENV_VAR(VarName, V)
-                    end,
-                try
-                    put_value(Opts#{atom_key => false}, Path, Value, Conf)
-                catch
-                    throw:{bad_array_index, Reason} ->
-                        Msg = ["bad_array_index from ", VarName, ", ", Reason],
-                        log(Opts, error, unicode:characters_to_binary(Msg, utf8)),
-                        error({bad_array_index, VarName})
-                end;
+                do_apply_env(VarName, V, Path, Conf, Opts);
             false ->
                 Conf
         end,
     apply_env(Ns, More, RootName, NewConf, Opts).
+
+do_apply_env(VarName, VarValue, Path, Conf, Opts) ->
+    %% It lacks schema info here, so we need to tag the value '$FROM_ENV_VAR'
+    %% and the value will be logged later when checking against schema
+    %% so we know if the value is sensitive or not.
+    %% NOTE: never translate to atom key here
+    Value =
+        case only_fill_defaults(Opts) of
+            true -> VarValue;
+            false -> ?FROM_ENV_VAR(VarName, VarValue)
+        end,
+    try
+        put_value(Opts#{atom_key => false}, Path, Value, Conf)
+    catch
+        throw:{bad_array_index, Reason} ->
+            Msg = ["bad_array_index from ", VarName, ", ", Reason],
+            log(Opts, error, unicode:characters_to_binary(Msg, utf8)),
+            error({bad_array_index, VarName})
+    end.
 
 env_override_for_log(Schema, Var, K, V0) ->
     V = obfuscate(Schema, V0),
