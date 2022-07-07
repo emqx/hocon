@@ -412,7 +412,17 @@ new_desc_cache(File) ->
     case hocon:load(File) of
         {ok, Schema} ->
             Tab = ets:new(?MODULE, [set]),
-            ets:insert(Tab, {File, Schema}),
+            maps:map(
+                fun(Mod, ModMap) ->
+                    maps:map(
+                        fun(Id, SubMap) ->
+                            ets:insert(Tab, {{Mod, Id}, SubMap})
+                        end,
+                        ModMap
+                    )
+                end,
+                Schema
+            ),
             #{tab => Tab, file => File};
         {error, Reason} ->
             error(#{reason => Reason, file => File})
@@ -422,25 +432,20 @@ delete_desc_cache(#{tab := undefined}) -> ok;
 delete_desc_cache(#{tab := Tab}) -> ets:delete(Tab).
 
 resolve_schema(?DESC(Mod, Id), State) ->
-    Desc =
-        case get_cache_schema(State) of
-            undefined -> undefined;
-            Cache -> hocon_maps:get([str(Mod), str(Id)], Cache)
-        end,
-    case Desc of
+    case get_cache_desc(State, bin(Mod), bin(Id)) of
         undefined -> error(#{reason => no_desc_for_id, key => {Mod, Id}, state => State});
-        _ -> Desc
+        Desc -> Desc
     end;
 resolve_schema(Any, _State) ->
     Any.
 
--spec get_cache_schema(#{tab := undefined | ets:tab(), file := undefined | file:name_all()}) ->
-    undefined | hocon:config().
-get_cache_schema(#{tab := undefined}) ->
+get_cache_desc(#{tab := undefined}, _, _) ->
     undefined;
-get_cache_schema(#{tab := Tab, file := File}) ->
-    [{_, Schema}] = ets:lookup(Tab, File),
-    Schema.
+get_cache_desc(#{tab := Tab}, Mod, Id) ->
+    case ets:lookup(Tab, {Mod, Id}) of
+        [{_, Desc}] -> Desc;
+        [] -> undefined
+    end.
 
 readable_type(T) ->
     case fmt_type(undefined, T) of
