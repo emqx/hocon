@@ -68,6 +68,7 @@ print_help() ->
     ?STDOUT("          get: get value of a given key", []),
     ?STDOUT("          multi_get: get values for given list of keys", []),
     ?STDOUT("          docgen: generate doc for a given schema module", []),
+    ?STDOUT("          check_schema: check a schema but do not generate files", []),
     ?STDOUT("", []),
     getopt:usage(cli_options(), "hocon generate"),
     stop_deactivate().
@@ -135,6 +136,8 @@ main(Args) ->
             multi_get(ParsedArgs, Extra);
         generate ->
             generate(ParsedArgs);
+        check_schema ->
+            check_schema(ParsedArgs);
         now_time ->
             now_time();
         docgen ->
@@ -336,10 +339,27 @@ generate(ParsedArgs) ->
             end
     catch
         throw:{Schema, Errors} ->
-            log(error, "failed_to_check_schema: ~0p", [Schema]),
-            lists:foreach(fun(E) -> log(error, "~0p", [E]) end, Errors),
-            stop_deactivate()
+            handle_schema_errors(Schema, Errors)
     end.
+
+-spec check_schema([proplists:property()]) -> ok.
+check_schema(ParsedArgs) ->
+    Schema = load_schema(ParsedArgs),
+    Conf = load_conf(ParsedArgs, fun log/3),
+    LogFun = fun(_, _) -> ok end,
+    Opts = #{logger => LogFun, apply_override_envs => true},
+    try hocon_tconf:generate(Schema, Conf, Opts) of
+        _NewConfig ->
+            ok
+    catch
+        throw:{Schema, Errors} ->
+            handle_schema_errors(Schema, Errors)
+    end.
+
+handle_schema_errors(Schema, Errors) ->
+    log(error, "failed_to_check_schema: ~0p", [Schema]),
+    lists:foreach(fun(E) -> log(error, "~0p", [E]) end, Errors),
+    stop_deactivate().
 
 -spec prune(file:name_all(), non_neg_integer()) -> ok.
 prune(Filename, MaxHistory) ->
