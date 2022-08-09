@@ -38,7 +38,8 @@
     path/1,
     readable_type/1,
     fmt_type/2,
-    fmt_ref/2
+    fmt_ref/2,
+    is_deprecated/1
 ]).
 
 -export([
@@ -119,6 +120,11 @@
         desc => desc(),
         %% hide it from doc generation
         hidden => boolean(),
+        %% Set to {since, Version} to mark field as deprecated.
+        %% deprecated field can not be removed due to compatibility reasons.
+        %% The value will be dropped,
+        %% Deprecated fields are treated as required => {false, recursively}
+        deprecated => {since, binary()} | false,
         %% transparent metadata
         extra => map()
     }.
@@ -506,3 +512,9 @@ fmt_ref(Ns, Name) ->
         true -> Name;
         false -> <<(bin(Ns))/binary, ":", (bin(Name))/binary>>
     end.
+
+%% @doc Return 'true' if the field is marked as deprecated.
+-spec is_deprecated(field_schema()) -> boolean().
+is_deprecated(Schema) ->
+    IsDeprecated = field_schema(Schema, deprecated),
+    IsDeprecated =/= undefined andalso IsDeprecated =/= false.

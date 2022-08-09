@@ -88,17 +88,28 @@ fmt_fields(Ns, [{Name, FieldSchema} | Fields], Opts) ->
     end.
 
 fmt_field(Ns, Name, FieldSchema, Opts) ->
-    Default = hocon_schema:field_schema(FieldSchema, default),
-    L = [
-        {name, bin(Name)},
-        {type, fmt_type(Ns, hocon_schema:field_schema(FieldSchema, type))},
-        {default, fmt_default(Default)},
-        {raw_default, Default},
-        {examples, examples(FieldSchema)},
-        {desc, fmt_desc(hocon_schema:field_schema(FieldSchema, desc), Opts)},
-        {extra, hocon_schema:field_schema(FieldSchema, extra)},
-        {mapping, bin(hocon_schema:field_schema(FieldSchema, mapping))}
-    ],
+    L =
+        case hocon_schema:is_deprecated(FieldSchema) of
+            true ->
+                {since, Vsn} = hocon_schema:field_schema(FieldSchema, deprecated),
+                [
+                    {name, bin(Name)},
+                    {type, fmt_type(Ns, hocon_schema:field_schema(FieldSchema, type))},
+                    {desc, bin(["Deprecated since ", Vsn, "."])}
+                ];
+            false ->
+                Default = hocon_schema:field_schema(FieldSchema, default),
+                [
+                    {name, bin(Name)},
+                    {type, fmt_type(Ns, hocon_schema:field_schema(FieldSchema, type))},
+                    {default, fmt_default(Default)},
+                    {raw_default, Default},
+                    {examples, examples(FieldSchema)},
+                    {desc, fmt_desc(hocon_schema:field_schema(FieldSchema, desc), Opts)},
+                    {extra, hocon_schema:field_schema(FieldSchema, extra)},
+                    {mapping, bin(hocon_schema:field_schema(FieldSchema, mapping))}
+                ]
+        end,
     maps:from_list([{K, V} || {K, V} <- L, V =/= undefined]).
 
 examples(FieldSchema) ->

@@ -441,6 +441,15 @@ do_map2(Fields, Value0, Opts) ->
 map_fields([], Conf, Mapped, _Opts) ->
     {Mapped, Conf};
 map_fields([{FieldName, FieldSchema} | Fields], Conf0, Acc, Opts) ->
+    case hocon_schema:is_deprecated(FieldSchema) of
+        true ->
+            Conf = del_value(Opts, bin(FieldName), Conf0),
+            map_fields(Fields, Conf, Acc, Opts);
+        false ->
+            map_fields_cont([{FieldName, FieldSchema} | Fields], Conf0, Acc, Opts)
+    end.
+
+map_fields_cont([{FieldName, FieldSchema} | Fields], Conf0, Acc, Opts) ->
     FieldType = field_schema(FieldSchema, type),
     FieldValue = get_field(Opts, FieldName, Conf0),
     NewOpts = push_stack(Opts, FieldName),
@@ -698,9 +707,15 @@ match_field_name(Name, ExpectedNames) ->
     lists:partition(fun(N) -> bin(N) =:= bin(Name) end, ExpectedNames).
 
 is_required(Opts, Schema) ->
-    case field_schema(Schema, required) of
-        undefined -> maps:get(required, Opts, ?DEFAULT_REQUIRED);
-        Maybe -> Maybe
+    case hocon_schema:is_deprecated(Schema) of
+        true ->
+            %% a deprecated field is never required
+            {false, recursively};
+        false ->
+            case field_schema(Schema, required) of
+                undefined -> maps:get(required, Opts, ?DEFAULT_REQUIRED);
+                Maybe -> Maybe
+            end
     end.
 
 field_schema(Sc, Key) ->
@@ -1004,6 +1019,9 @@ put_value(#{format := richmap} = Opts, Path, V, Conf) ->
     hocon_maps:deep_put(Path, V, Conf, Opts);
 put_value(#{format := map} = Opts, Path, V, Conf) ->
     plain_put(Opts, split(Path), V, Conf).
+
+del_value(Opts, Field, Conf) ->
+    boxit(Opts, maps:without([Field], unbox(Opts, Conf)), Conf).
 
 split(Path) -> hocon_util:split_path(Path).
 
