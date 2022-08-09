@@ -720,8 +720,40 @@ required_test() ->
         #{<<"f2">> => "string", <<"f3">> => 0},
         hocon_tconf:check_plain(ScRequired, #{<<"f2">> => <<"string">>}, #{required => true})
     ),
-
     ok.
+
+deprection_test() ->
+    Sc = #{
+        roots => [
+            {f1, hoconsc:mk(integer())},
+            {f2, hoconsc:mk(string())},
+            {f3, hoconsc:mk(integer(), #{deprecated => {since, "0.1.1"}})}
+        ]
+    },
+    ?assertEqual(
+        #{<<"f2">> => "string"},
+        hocon_tconf:check_plain(
+            Sc,
+            #{<<"f2">> => <<"string">>},
+            #{required => false}
+        )
+    ),
+    ?assertEqual(
+        #{<<"f1">> => 1, <<"f2">> => "string"},
+        hocon_tconf:check_plain(
+            Sc,
+            #{<<"f1">> => 1, <<"f2">> => <<"string">>},
+            #{required => true}
+        )
+    ),
+    ?assertEqual(
+        #{<<"f2">> => "string"},
+        hocon_tconf:check_plain(
+            Sc,
+            #{<<"f2">> => <<"string">>, <<"f3">> => "whatever"},
+            #{required => false}
+        )
+    ).
 
 bad_root_test() ->
     Sc = #{
