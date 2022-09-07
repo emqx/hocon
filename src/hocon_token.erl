@@ -58,7 +58,12 @@ read(Filename) ->
 
 -spec scan(binary() | string(), hocon:ctx()) -> list().
 scan(Input, Ctx) when is_binary(Input) ->
-    scan(unicode_list(Input), Ctx);
+    case unicode_list(Input) of
+        {error, _Ok, Invalid} ->
+            throw({scan_invalid_utf8, Invalid, Ctx});
+        InputList ->
+            scan(InputList, Ctx)
+    end;
 scan(Input, Ctx) when is_list(Input) ->
     case hocon_scanner:string(Input) of
         {ok, Tokens, _EndLine} ->

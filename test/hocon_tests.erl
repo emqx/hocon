@@ -881,3 +881,22 @@ unescape_test() ->
         },
         Conf
     ).
+
+unicode_utf8_test() ->
+    {ok, Conf} = hocon:load("./test/data/unicode-utf8.conf"),
+    ?assertEqual(
+        #{
+            <<"test">> =>
+                #{
+                    <<"body">> => <<"<!-- Edited by XML-XXX® --><note>\n</note>"/utf8>>,
+                    <<"text">> => <<"你我他"/utf8>>
+                }
+        },
+        Conf
+    ).
+
+invalid_utf8_test() ->
+    ?assertMatch(
+        {error, {scan_invalid_utf8, _, _}},
+        hocon:load("./test/data/invalid-utf8.conf")
+    ).
