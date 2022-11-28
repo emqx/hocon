@@ -323,6 +323,8 @@ remove_env_meta(Map) when is_map(Map) ->
     remove_env_meta(maps:iterator(Map), #{});
 remove_env_meta(Array) when is_list(Array) ->
     [remove_env_meta(R) || R <- Array];
+remove_env_meta(?FROM_ENV_VAR(_Env, Val)) ->
+    Val;
 remove_env_meta(Value) ->
     Value.
 
