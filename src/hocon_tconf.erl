@@ -418,7 +418,7 @@ do_map(Fields, Value, Opts, ParentSchema) ->
         undefined ->
             case is_required(Opts, ParentSchema) of
                 true ->
-                    {validation_errs(Opts, mandatory_required_field, undefined), undefined};
+                    {validation_errs(Opts, required_field, undefined), undefined};
                 false ->
                     do_map2(Fields, boxit(Opts, undefined, undefined), Opts);
                 {false, recursively} ->
@@ -1068,7 +1068,7 @@ validate(_Opts, _Schema, undefined, false, _Validators) ->
     % do not validate if no value is set
     [];
 validate(Opts, _Schema, undefined, true, _Validators) ->
-    validation_errs(Opts, mandatory_required_field, undefined);
+    validation_errs(Opts, required_field, undefined);
 validate(Opts, Schema, Value, _IsRequired, Validators) ->
     do_validate(Opts, Schema, Value, Validators).
 
