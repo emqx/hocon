@@ -992,6 +992,8 @@ boxit(#{format := richmap}, Value, Box) -> boxit(Value, Box).
 boxit(Value, Box) -> Box#{?HOCON_V => Value}.
 
 %% nested boxing
+maybe_mkrich(_, undefined, _Box) ->
+    undefined;
 maybe_mkrich(#{format := map}, Value, _Box) ->
     Value;
 maybe_mkrich(#{format := richmap}, Value, Box) ->

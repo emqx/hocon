@@ -925,6 +925,36 @@ converter_test() ->
         hocon_tconf:check_plain(Sc, BadIn)
     ).
 
+converter_input_undefined_test() ->
+    Sc = #{
+        roots => [
+            {f1,
+                hoconsc:mk(
+                    integer(),
+                    #{converter => fun(V) -> V end, required => false}
+                )}
+        ]
+    },
+    Input = #{<<"f1">> => undefined},
+    ?assertEqual(#{<<"f1">> => undefined}, hocon_tconf:check_plain(Sc, Input)).
+
+converter_return_undefined_test() ->
+    Sc = #{
+        roots => [
+            {f1,
+                hoconsc:mk(
+                    integer(),
+                    #{converter => fun(_V) -> undefined end, required => false}
+                )}
+        ]
+    },
+    Input = #{<<"f1">> => <<"1">>},
+    %% assert that converter ruturning 'undefined' has no effect
+    %% this is a limitation of current version:
+    %% there is no way to 'remove' a config value by converting values to 'undefined'
+    %% use 'deprecated' instead
+    ?assertEqual(#{<<"f1">> => <<"1">>}, hocon_tconf:check_plain(Sc, Input)).
+
 no_dot_in_root_name_test() ->
     Sc = #{
         roots => ["a.b"],
