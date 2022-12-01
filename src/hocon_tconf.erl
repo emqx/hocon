@@ -129,7 +129,7 @@ translate(Schema, Conf, Mapped) ->
                 )
              || N <- Namespaces
             ]),
-            ok = assert_no_error(Schema, Res),
+            ok = assert(Schema, Res),
             %% rm field if translation returns undefined
             [{K, V} || {K, V} <- lists:ukeymerge(1, Res, Mapped), V =/= undefined]
     end.
@@ -170,7 +170,7 @@ assert_integrity(Schema, Conf0, #{format := Format}) ->
         end,
     Names = hocon_schema:validations(Schema),
     Errors = assert_integrity(Schema, Names, Conf, []),
-    ok = assert_no_error(Schema, Errors).
+    ok = assert(Schema, Errors).
 
 assert_integrity(_Schema, [], _Conf, Result) ->
     lists:reverse(Result);
@@ -292,7 +292,7 @@ map(Schema, Conf0, Roots0, Opts0) ->
     Conf2 = filter_by_roots(Opts, Conf1, Roots),
     Conf = apply_envs(Schema, Conf2, Opts, Roots),
     {Mapped0, NewConf} = do_map(Roots, Conf, Opts, ?MAGIC_SCHEMA),
-    ok = assert_no_error(Schema, Mapped0),
+    ok = assert(Schema, Mapped0),
     ok = assert_integrity(Schema, NewConf, Opts),
     Mapped = log_and_drop_env_overrides(Opts, Mapped0),
     {Mapped, maybe_convert_to_plain_map(NewConf, Opts)}.
@@ -418,7 +418,7 @@ do_map(Fields, Value, Opts, ParentSchema) ->
         undefined ->
             case is_required(Opts, ParentSchema) of
                 true ->
-                    {validation_errs(Opts, mandatory_required_field, undefined), undefined};
+                    {validation_errs(Opts, required_field, undefined), undefined};
                 false ->
                     do_map2(Fields, boxit(Opts, undefined, undefined), Opts);
                 {false, recursively} ->
@@ -1068,7 +1068,7 @@ validate(_Opts, _Schema, undefined, false, _Validators) ->
     % do not validate if no value is set
     [];
 validate(Opts, _Schema, undefined, true, _Validators) ->
-    validation_errs(Opts, mandatory_required_field, undefined);
+    validation_errs(Opts, required_field, undefined);
 validate(Opts, Schema, Value, _IsRequired, Validators) ->
     do_validate(Opts, Schema, Value, Validators).
 
@@ -1137,7 +1137,7 @@ drop_nulls(Opts, Map) when is_map(Map) ->
         Map
     ).
 
-assert_no_error(Schema, List) ->
+assert(Schema, List) ->
     case find_errors(List) of
         ok ->
             ok;

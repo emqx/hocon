@@ -691,7 +691,7 @@ required_test() ->
         )
     ),
     ?VALIDATION_ERR(
-        #{reason := mandatory_required_field, path := "f1"},
+        #{reason := required_field, path := "f1"},
         hocon_tconf:check_plain(
             Sc,
             #{<<"f2">> => <<"string">>},
@@ -707,12 +707,12 @@ required_test() ->
         ]
     },
     ?VALIDATION_ERR(
-        #{reason := mandatory_required_field, path := "f2"},
+        #{reason := required_field, path := "f2"},
         hocon_tconf:check_plain(ScRequired, #{}, #{required => false})
     ),
 
     ?VALIDATION_ERR(
-        #{reason := mandatory_required_field, path := "f2"},
+        #{reason := required_field, path := "f2"},
         hocon_tconf:check_plain(ScRequired, #{}, #{})
     ),
 
@@ -852,7 +852,7 @@ validation_error_if_not_required_test() ->
     },
     Data = #{},
     ?VALIDATION_ERR(
-        #{reason := mandatory_required_field},
+        #{reason := required_field},
         hocon_tconf:check_plain(Sc, Data, #{required => true})
     ).
 
@@ -883,7 +883,7 @@ expected_fields_not_matched_test_() ->
 required_field_test() ->
     Sc = #{roots => [{f1, hoconsc:mk(integer(), #{required => true})}]},
     ?VALIDATION_ERR(
-        #{reason := mandatory_required_field, path := "f1"},
+        #{reason := required_field, path := "f1"},
         hocon_tconf:check_plain(Sc, #{})
     ),
     ok.
