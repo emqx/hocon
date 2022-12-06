@@ -33,12 +33,15 @@
                 bytesize/0, percent/0, file/0,
                 comma_separated_list/0, bar_separated_list/0, ip_port/0]).
 
--export([roots/0, fields/1, translations/0, translation/1]).
+-export([roots/0, fields/1, translations/0, translation/1, tags/0]).
 -export([t/1, t/3, ref/1]).
 -export([conf_get/2, conf_get/3, keys/2, filter/1]).
 -export([ssl/2, tr_ssl/2, tr_password_hash/2]).
 
 namespace() -> "emqx".
+
+tags() ->
+    [<<"EMQX">>].
 
 roots() -> ["cluster", "node", "rpc", "log", "lager",
              "acl", "mqtt",

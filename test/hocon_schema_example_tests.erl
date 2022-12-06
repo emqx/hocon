@@ -24,11 +24,13 @@
 -export([
     roots/0,
     fields/1,
+    tags/0,
     namespace/0
 ]).
 
 namespace() -> example.
 roots() -> ["example"].
+tags() -> [<<"tag1">>, <<"another tag">>].
 
 fields("example") ->
     Element = #{

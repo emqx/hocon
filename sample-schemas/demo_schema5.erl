@@ -14,7 +14,7 @@
 %% limitations under the License.
 %%--------------------------------------------------------------------
 
--module(demo_schema3).
+-module(demo_schema5).
 -include_lib("typerefl/include/types.hrl").
 -behaviour(hocon_schema).
 
@@ -22,25 +22,13 @@
 
 namespace() -> ?MODULE.
 
-tags() ->
-    [<<"tag1">>, <<"another tag">>].
-
 roots() ->
-    [ {foo, hoconsc:array(hoconsc:ref(foo))}
-    , {bar, hoconsc:ref(parent)}
+    [ "config"
     ].
 
-fields(foo) ->
-    [ {bar, hoconsc:ref(bar)}
-    ];
-fields(bar) ->
-    Sc = hoconsc:union([hoconsc:ref(foo), null]), %% cyclic refs
-    [{"baz", Sc}];
-%% below fields are to cover the test where identical paths for the same name
-%% i.e. bar.f1.subf.baz can be reached from both "sub1" and "sub2"
-fields(parent) ->
-    [{"f1", hoconsc:union([hoconsc:ref("sub1"), hoconsc:ref("sub2")])}];
-fields("sub1") ->
-    [{"sub_f", hoconsc:ref(bar)}]; %% both sub1 and sub2 refs to bar
-fields("sub2") ->
-    [{"sub_f", hoconsc:ref(bar)}]. %% both sub1 and sub2 refs to bar
+tags() ->
+    [<<"tag from demo_schema5">>].
+
+fields("config") ->
+    [ {bool, boolean()}
+    ].

@@ -16,7 +16,7 @@
 
 -module(hocon_schema_md).
 
--export([gen/2]).
+-export([gen/2, gen_from_structs/2]).
 
 -include("hoconsc.hrl").
 -include("hocon_private.hrl").
@@ -25,11 +25,14 @@ gen(Schema, undefined) ->
     gen(Schema, "# HOCON Document");
 gen(Schema, Title) when is_list(Title) orelse is_binary(Title) ->
     gen(Schema, #{title => Title, body => <<>>});
-gen(Schema, #{title := Title, body := Body} = Opts0) ->
+gen(Schema, Opts0) ->
     Opts = ensure_env_prefix_opt(Opts0),
     File = maps:get(desc_file, Opts, undefined),
     Lang = maps:get(lang, Opts, "en"),
     Structs = hocon_schema_json:gen(Schema, #{desc_file => File, lang => Lang}),
+    gen_from_structs(Structs, Opts).
+
+gen_from_structs(Structs, #{title := Title, body := Body} = Opts) ->
     [
         Title,
         "\n",
@@ -129,6 +132,8 @@ fmt_mapping(Str) -> ["`", Str, "`"].
 
 fmt_type(T) -> hocon_md:code(do_type(T)).
 
+do_type(#{kind := <<Kind/binary>>} = Type) ->
+    do_type(Type#{kind := binary_to_atom(Kind)});
 do_type(#{kind := primitive, name := Name}) ->
     Name;
 do_type(#{kind := singleton, name := Name}) ->
