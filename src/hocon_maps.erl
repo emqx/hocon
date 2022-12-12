@@ -63,6 +63,8 @@ put_rich(Opts, [Name | Path], Value, Box) ->
     V = do_put(V0, Name, GoDeep, Opts),
     boxit(V, Box).
 
+do_put(?FROM_ENV_VAR(VarName, V), Name, GoDeep, Opts) ->
+    ?FROM_ENV_VAR(VarName, do_put(V, Name, GoDeep, Opts));
 do_put(V, Name, GoDeep, Opts) ->
     case maybe_array(V) andalso hocon_util:is_array_index(Name) of
         {true, Index} -> update_array_element(V, Index, GoDeep);
@@ -70,9 +72,12 @@ do_put(V, Name, GoDeep, Opts) ->
         false -> update_map_field(Opts, #{}, Name, GoDeep)
     end.
 
+maybe_array(#{?HOCON_V := V}) -> maybe_array(V);
 maybe_array(V) when is_list(V) -> true;
 maybe_array(V) -> V =:= ?EMPTY_MAP.
 
+update_array_element(#{?HOCON_V := V} = Box, Index, GoDeep) ->
+    boxit(update_array_element(V, Index, GoDeep), Box);
 update_array_element(?EMPTY_MAP, Index, GoDeep) ->
     update_array_element([], Index, GoDeep);
 update_array_element(List, Index, GoDeep) when is_list(List) ->

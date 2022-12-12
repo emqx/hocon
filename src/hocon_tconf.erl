@@ -324,7 +324,7 @@ remove_env_meta(Map) when is_map(Map) ->
 remove_env_meta(Array) when is_list(Array) ->
     [remove_env_meta(R) || R <- Array];
 remove_env_meta(?FROM_ENV_VAR(_Env, Val)) ->
-    Val;
+    remove_env_meta(Val);
 remove_env_meta(Value) ->
     Value.
 
@@ -771,10 +771,7 @@ do_map_array(F, [Elem | Rest], Res, Index, Acc) ->
 resolve_field_value(Schema, FieldValue, Opts) ->
     case unbox(Opts, FieldValue) of
         ?FROM_ENV_VAR(EnvName, EnvValue) ->
-            {
-                [env_override_for_log(Schema, EnvName, path(Opts), EnvValue)],
-                maybe_mkrich(Opts, EnvValue, ?META_BOX(from_env, EnvName))
-            };
+            {[env_override_for_log(Schema, EnvName, path(Opts), EnvValue)], EnvValue};
         _ ->
             {[], maybe_use_default(field_schema(Schema, default), FieldValue, Opts)}
     end.
@@ -931,10 +928,11 @@ do_apply_env(VarName, VarValue, Path, Conf, Opts) ->
     %% and the value will be logged later when checking against schema
     %% so we know if the value is sensitive or not.
     %% NOTE: never translate to atom key here
+    Value1 = maybe_mkrich(Opts, VarValue, ?META_BOX(from_env, VarName)),
     Value =
         case only_fill_defaults(Opts) of
-            true -> VarValue;
-            false -> ?FROM_ENV_VAR(VarName, VarValue)
+            true -> Value1;
+            false -> ?FROM_ENV_VAR(VarName, Value1)
         end,
     try
         put_value(Opts#{atom_key => false}, Path, Value, Conf)
@@ -946,7 +944,7 @@ do_apply_env(VarName, VarValue, Path, Conf, Opts) ->
     end.
 
 env_override_for_log(Schema, Var, K, V0) ->
-    V = obfuscate(Schema, V0),
+    V = obfuscate(Schema, ensure_plain(V0)),
     #{hocon_env_var_name => Var, path => K, value => V}.
 
 ensure_obfuscate_sensitive(Opts, Schema, Val) ->
