@@ -450,6 +450,31 @@ env_array_val_test() ->
         )
     ).
 
+env_array_element_override_test_() ->
+    Sc = #{roots => [{"val", hoconsc:array(string())}]},
+    Conf = "val = [a,b]",
+    {ok, RichMap} = hocon:binary(Conf, #{format => richmap}),
+    {ok, Map} = hocon:binary(Conf, #{format => map}),
+    RC = fun() -> hocon_tconf:check(Sc, RichMap, #{apply_override_envs => true}) end,
+    PC = fun() -> hocon_tconf:check_plain(Sc, Map, #{apply_override_envs => true}) end,
+    F = fun(Check) ->
+        with_envs(
+            fun() ->
+                hocon_maps:ensure_plain(hocon_tconf:remove_env_meta(Check()))
+            end,
+            [],
+            envs([
+                {"EMQX_VAL", "[c, d]"},
+                {"EMQX_VAL__1", "x"},
+                {"EMQX_VAL__2", "y"}
+            ])
+        )
+    end,
+    [
+        ?_assertEqual(#{<<"val">> => ["x", "y"]}, F(RC)),
+        ?_assertEqual(#{<<"val">> => ["x", "y"]}, F(PC))
+    ].
+
 env_map_val_test() ->
     Sc = #{roots => [{"val", hoconsc:map(key, string())}]},
     Conf = "val = {key = value}",
