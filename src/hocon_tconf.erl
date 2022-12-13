@@ -60,8 +60,12 @@
     format => map | richmap,
     stack => [name()],
     schema => schema(),
-    check_lazy => boolean()
+    check_lazy => boolean(),
+    %% Remove the '$FROM_ENV_VAR' wrapping for values from environment variables
+    %% default is 'true'
+    remove_env_meta => boolean()
 }.
+
 -type name() :: hocon_schema:name().
 -type schema() :: hocon_schema:schema().
 
@@ -290,12 +294,14 @@ map(Schema, Conf0, Roots0, Opts0) ->
         Roots
     ),
     Conf2 = filter_by_roots(Opts, Conf1, Roots),
-    Conf = apply_envs(Schema, Conf2, Opts, Roots),
-    {Mapped0, NewConf} = do_map(Roots, Conf, Opts, ?MAGIC_SCHEMA),
+    Conf3 = apply_envs(Schema, Conf2, Opts, Roots),
+    {Mapped0, Conf4} = do_map(Roots, Conf3, Opts, ?MAGIC_SCHEMA),
     ok = assert(Schema, Mapped0),
-    ok = assert_integrity(Schema, NewConf, Opts),
+    ok = assert_integrity(Schema, Conf4, Opts),
     Mapped = log_and_drop_env_overrides(Opts, Mapped0),
-    {Mapped, maybe_convert_to_plain_map(NewConf, Opts)}.
+    Conf5 = maybe_convert_to_plain_map(Conf4, Opts),
+    Conf = maybe_remove_env_meta(Conf5, Opts),
+    {Mapped, Conf}.
 
 %% ensure the input map is as desired in options.
 %% convert richmap to map if 'map' is wanted
@@ -317,6 +323,11 @@ merge_env_overrides(Schema, Conf0, Roots0, Opts0) ->
     Roots = resolve_root_types(hocon_schema:roots(Schema), Roots0),
     Conf = filter_by_roots(Opts, Conf0, Roots),
     apply_envs(Schema, Conf, Opts, Roots).
+
+maybe_remove_env_meta(Map, #{remove_env_meta := true}) ->
+    remove_env_meta(Map);
+maybe_remove_env_meta(Map, _Opts) ->
+    Map.
 
 %% @doc remove FROM_ENV_VAR from value
 remove_env_meta(Map) when is_map(Map) ->
@@ -354,9 +365,10 @@ log_and_drop_env_overrides(Opts, [H | T]) ->
 %% Merge environment overrides into HOCON value before checking it against the schema.
 apply_envs(_Schema, Conf, #{apply_override_envs := false}, _Roots) ->
     Conf;
-apply_envs(Schema, Conf, Opts, Roots) ->
+apply_envs(Schema, Conf0, Opts, Roots) ->
     {EnvNamespace, Envs} = collect_envs(Schema, Opts, Roots),
-    do_apply_envs(EnvNamespace, Envs, Opts, Roots, Conf).
+    Conf = do_apply_envs(EnvNamespace, Envs, Opts, Roots, Conf0),
+    maybe_remove_env_meta(Conf, Opts).
 
 do_apply_envs(_EnvNamespace, _Envs, _Opts, [], Conf) ->
     Conf;
