@@ -395,7 +395,7 @@ env_test_() ->
         {Mapped, _} = with_envs(
             fun hocon_tconf:map/4,
             [demo_schema, M, all, Opts],
-            Envs ++ [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"}]
+            envs(Envs)
         ),
         Mapped
     end,
@@ -430,10 +430,7 @@ env_object_val_test() ->
         with_envs(
             fun hocon_tconf:check_plain/3,
             [Sc, PlainMap, #{apply_override_envs => true}],
-            [
-                {"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"},
-                {"EMQX_ROOT__VAL", "{f1:42}"}
-            ]
+            envs([{"EMQX_ROOT__VAL", "{f1:42}"}])
         )
     ).
 
@@ -497,10 +494,7 @@ env_ip_port_test() ->
         with_envs(
             fun hocon_tconf:check_plain/3,
             [Sc, PlainMap, #{apply_override_envs => true}],
-            [
-                {"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"},
-                {"EMQX_VAL", "192.168.0.1:1991"}
-            ]
+            envs([{"EMQX_VAL", "192.168.0.1:1991"}])
         )
     ).
 
@@ -1344,11 +1338,7 @@ test_array_env_override(Format) ->
                 richmap_to_map(hocon_tconf:check(Sc, Parsed, Opts))
             )
         end,
-        [
-            {"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"},
-            {"EMQX_FOO__1__KLING", "111"},
-            {"EMQX_FOO__2__KLANG", "222"}
-        ]
+        envs([{"EMQX_FOO__1__KLING", "111"}, {"EMQX_FOO__2__KLANG", "222"}])
     ).
 
 array_env_override_ignore_test() ->
@@ -1510,12 +1500,7 @@ test_array_env_override_t2(Sc, Format) ->
                 richmap_to_map(hocon_tconf:check(Sc, Parsed, Opts))
             )
         end,
-        [
-            {"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"},
-            {"EMQX_FOO__bar__1", "2"},
-            {"EMQX_FOO__bar__2", "1"},
-            {"EMQX_FOO__quu__1", "quu"}
-        ]
+        envs([{"EMQX_FOO__bar__1", "2"}, {"EMQX_FOO__bar__2", "1"}, {"EMQX_FOO__quu__1", "quu"}])
     ).
 
 ref_required_test() ->
@@ -1543,10 +1528,7 @@ ref_required_test() ->
             {ok, Map2} = hocon:binary("k = {a: a, b: b}, x = y", #{format => map}),
             ?assertEqual(#{<<"x">> => "y"}, hocon_tconf:check_plain(Sc, Map2, Opts))
         end,
-        [
-            {"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"},
-            {"EMQX_K", "null"}
-        ]
+        envs([{"EMQX_K", "null"}])
     ).
 
 lazy_test() ->
@@ -1609,11 +1591,7 @@ lazy_root_env_override_test() ->
                 hocon_tconf:check(Sc, PlainMap, Opts#{check_lazy => true})
             )
         end,
-        [
-            {"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"},
-            {"EMQX_FOO__KLING", "111"},
-            {"EMQX_FOO__KLANG", "222"}
-        ]
+        envs([{"EMQX_FOO__KLING", "111"}, {"EMQX_FOO__KLANG", "222"}])
     ).
 
 duplicated_root_names_test() ->
@@ -1732,10 +1710,7 @@ override_env_with_include_test() ->
                 hocon_tconf:check(Sc, PlainMap, Opts#{check_lazy => true})
             )
         end,
-        [
-            {"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"},
-            {"EMQX_FOO", "{include \"etc/klingklang.conf\"}"}
-        ]
+        envs([{"EMQX_FOO", "{include \"etc/klingklang.conf\"}"}])
     ).
 
 override_env_with_include_abs_path_test() ->
@@ -1769,10 +1744,7 @@ override_env_with_include_abs_path_test() ->
                 })
             )
         end,
-        [
-            {"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"},
-            {"EMQX_FOO", "{include \"" ++ Include ++ "\"}"}
-        ]
+        envs([{"EMQX_FOO", "{include \"" ++ Include ++ "\"}"}])
     ).
 
 redundant_id_converter(#{<<"type">> := Type, <<"backend">> := Backend} = Conf) ->
