@@ -148,11 +148,17 @@ obfuscate_sensitive_fill_default_test() ->
     ),
     ok.
 
-env_override_test() ->
+env_override_test_() ->
+    [
+        {"remove_env_meta=true", fun() -> env_override_t(#{remove_env_meta => true}) end},
+        {"remove_env_meta=false", fun() -> env_override_t(#{remove_env_meta => false}) end}
+    ].
+
+env_override_t(Opts0) ->
     with_envs(
         fun() ->
             Conf = "{\"bar.field1\": \"foo\"}",
-            Opts = #{format => richmap},
+            Opts = Opts0#{format => richmap},
             Res = check(Conf, Opts#{apply_override_envs => true}),
             ?assertEqual(
                 Res,
