@@ -747,6 +747,23 @@ required_test() ->
     ),
     ok.
 
+recursive_deprection_test() ->
+    Sc = #{
+        roots => [
+            {f1, hoconsc:mk(integer())},
+            {f2, hoconsc:mk(hoconsc:ref(sub), #{deprecated => {since, "0.1.2"}, reqired => true})}
+        ],
+        fields => #{sub => [{a, string()}, {b, string()}]}
+    },
+    ?assertEqual(
+        #{<<"f1">> => 1},
+        hocon_tconf:check_plain(
+            Sc,
+            #{<<"f1">> => 1},
+            #{required => true}
+        )
+    ).
+
 deprection_test() ->
     Sc = #{
         roots => [

@@ -721,15 +721,9 @@ match_field_name(Name, ExpectedNames) ->
     lists:partition(fun(N) -> bin(N) =:= bin(Name) end, ExpectedNames).
 
 is_required(Opts, Schema) ->
-    case hocon_schema:is_deprecated(Schema) of
-        true ->
-            %% a deprecated field is never required
-            {false, recursively};
-        false ->
-            case field_schema(Schema, required) of
-                undefined -> maps:get(required, Opts, ?DEFAULT_REQUIRED);
-                Maybe -> Maybe
-            end
+    case field_schema(Schema, required) of
+        undefined -> maps:get(required, Opts, ?DEFAULT_REQUIRED);
+        Maybe -> Maybe
     end.
 
 field_schema(Sc, Key) ->
