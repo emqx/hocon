@@ -694,7 +694,15 @@ not_empty(_) -> ok.
 validator_crash_test() ->
     Sc = #{roots => [{f1, hoconsc:mk(integer(), #{validator => [fun(_) -> error(always) end]})}]},
     ?VALIDATION_ERR(
-        #{reason := #{exception := {error, always}}},
+        #{reason := #{exception := {error, always}, stacktrace := _}},
+        hocon_tconf:check_plain(Sc, #{<<"f1">> => 11})
+    ),
+    ok.
+
+validator_throw_test() ->
+    Sc = #{roots => [{f1, hoconsc:mk(integer(), #{validator => [fun(_) -> throw(foo) end]})}]},
+    ?VALIDATION_ERR(
+        #{reason := foo},
         hocon_tconf:check_plain(Sc, #{<<"f1">> => 11})
     ),
     ok.
