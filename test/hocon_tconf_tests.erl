@@ -126,17 +126,17 @@ obfuscate_sensitive_fill_default_test() ->
         "foo.min=1,foo.max=2",
         #{format => richmap}
     ),
-    Opts1 = #{obfuscate_sensitive_values => true, only_fill_defaults => true},
+    Opts1 = #{obfuscate_sensitive_values => true, make_serializable => true},
     Conf1 = map_translate_conf(Hocon, Opts1),
     ?assertMatch(
         #{<<"foo">> := #{<<"max">> := 2, <<"min">> := 1, <<"setting">> := <<"******">>}},
         richmap_to_map(Conf1)
     ),
 
-    Opts2 = #{only_fill_defaults => true},
+    Opts2 = #{make_serializable => true},
     Conf2 = map_translate_conf(Hocon, Opts2),
     ?assertMatch(
-        #{<<"foo">> := #{<<"max">> := 2, <<"min">> := 1, <<"setting">> := "default"}},
+        #{<<"foo">> := #{<<"max">> := 2, <<"min">> := 1, <<"setting">> := <<"default">>}},
         richmap_to_map(Conf2)
     ),
 
@@ -747,11 +747,11 @@ required_test() ->
     ),
     ok.
 
-recursive_deprection_test() ->
+recursive_deprecation_test() ->
     Sc = #{
         roots => [
             {f1, hoconsc:mk(integer())},
-            {f2, hoconsc:mk(hoconsc:ref(sub), #{deprecated => {since, "0.1.2"}, reqired => true})}
+            {f2, hoconsc:mk(hoconsc:ref(sub), #{deprecated => {since, "0.1.2"}, required => true})}
         ],
         fields => #{sub => [{a, string()}, {b, string()}]}
     },
@@ -764,7 +764,7 @@ recursive_deprection_test() ->
         )
     ).
 
-deprection_test() ->
+deprecation_test() ->
     Sc = #{
         roots => [
             {f1, hoconsc:mk(integer())},
@@ -955,16 +955,49 @@ converter_test() ->
             {f1,
                 hoconsc:mk(
                     integer(),
-                    #{converter => fun(<<"one">>) -> 1 end}
+                    #{
+                        converter => fun
+                            (<<"one">>, _) -> 1;
+                            (1, #{make_serializable := true}) -> "one"
+                        end
+                    }
                 )}
         ]
     },
     Input = #{<<"f1">> => <<"one">>},
     BadIn = #{<<"f1">> => <<"two">>},
-    ?assertEqual(#{<<"f1">> => 1}, hocon_tconf:check_plain(Sc, Input)),
+    Converted = hocon_tconf:check_plain(Sc, Input),
+    ?assertEqual(#{<<"f1">> => 1}, Converted),
+    ?assertEqual(
+        #{<<"f1">> => <<"one">>},
+        hocon_tconf:make_serializable(Sc, Converted, #{})
+    ),
     ?VALIDATION_ERR(
         #{reason := converter_crashed},
         hocon_tconf:check_plain(Sc, BadIn)
+    ).
+
+converter_non_primitive_test() ->
+    Sc = #{
+        roots => [
+            {f1,
+                hoconsc:mk(
+                    integer(),
+                    #{
+                        converter => fun
+                            ([#{<<"one">> := true}], _) -> 1;
+                            (1, _) -> [#{<<"one">> => true}]
+                        end
+                    }
+                )}
+        ]
+    },
+    Input = #{<<"f1">> => [#{<<"one">> => true}]},
+    Converted = hocon_tconf:check_plain(Sc, Input),
+    ?assertEqual(#{<<"f1">> => 1}, Converted),
+    ?assertEqual(
+        #{<<"f1">> => [#{<<"one">> => true}]},
+        hocon_tconf:make_serializable(Sc, Converted, #{})
     ).
 
 converter_input_undefined_test() ->
@@ -1250,7 +1283,7 @@ fill_primitive_defaults_test() ->
     ),
     ?assertMatch(
         #{<<"a">> := #{<<"b">> := 888, <<"c">> := <<"15s">>, <<"d">> := <<"16">>}},
-        hocon_tconf:check_plain(Sc, #{}, #{required => false, only_fill_defaults => true})
+        hocon_tconf:make_serializable(Sc, #{}, #{})
     ),
     ok.
 
@@ -1274,7 +1307,7 @@ fill_complex_defaults_test() ->
     %% ensure integer array is not converted to a string
     ?assertMatch(
         #{<<"a">> := #{<<"c">> := 2, <<"d">> := [90, 91, 92]}},
-        hocon_tconf:check_plain(Sc, #{}, #{only_fill_defaults => true})
+        hocon_tconf:make_serializable(Sc, #{}, #{})
     ),
     ok.
 
@@ -1409,7 +1442,7 @@ fill_defaults_with_env_override_test() ->
             Conf0 = "foo={bar=121}",
             {ok, Conf} = hocon:binary(Conf0),
             Res = hocon_tconf:check_plain(Sc, Conf, #{
-                only_fill_defaults => true,
+                make_serializable => true,
                 apply_override_envs => true
             }),
             ?assertEqual(#{<<"foo">> => #{<<"bar">> => 122}}, Res)

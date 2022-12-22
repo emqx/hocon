@@ -25,6 +25,7 @@
 -export([check/2, check/3, check_plain/2, check_plain/3, check_plain/4]).
 -export([merge_env_overrides/4, remove_env_meta/1]).
 -export([nest/1]).
+-export([make_serializable/3]).
 
 -include("hoconsc.hrl").
 -include("hocon_private.hrl").
@@ -35,10 +36,6 @@
 %% Config map/check options.
 -type opts() :: #{
     logger => loggerfunc(),
-    %% only_fill_defaults is to only to fill default values for the input
-    %% config to be checked, only primitive value type check (validation)
-    %% but not complex value validation and mapping
-    only_fill_defaults => boolean(),
     obfuscate_sensitive_values => boolean(),
     atom_key => boolean(),
     return_plain => boolean(),
@@ -57,6 +54,10 @@
     required => boolean(),
 
     %% below options are generated internally and should not be passed in by callers
+    %%
+    %% format converted values back to HOCON or JSON serializable map
+    %% (with default value filled)
+    make_serializable => boolean(),
     format => map | richmap,
     stack => [name()],
     schema => schema(),
@@ -250,6 +251,16 @@ check_plain(Schema, Conf, Opts0) ->
 check_plain(Schema, Conf, Opts0, RootNames) ->
     Opts = merge_opts(#{format => map}, Opts0),
     do_check(Schema, Conf, Opts, RootNames).
+
+%% @doc Format a parsed (by converter) value back to HOCON or JSON
+%% serializable map.
+make_serializable(Schema, Conf, Opts) ->
+    check_plain(Schema, Conf, Opts#{
+        make_serializable => true,
+        required => false,
+        atom_key => false,
+        apply_override_envs => false
+    }).
 
 do_check(Schema, Conf, Opts0, RootNames) ->
     Opts = merge_opts(#{required => true}, Opts0),
@@ -504,31 +515,31 @@ map_fields_cont([{FieldName, FieldSchema} | Fields], Conf0, Acc, Opts) ->
 
 map_one_field(FieldType, FieldSchema, FieldValue0, Opts) ->
     {MaybeLog, FieldValue} = resolve_field_value(FieldSchema, FieldValue0, Opts),
-    Converter = field_schema(FieldSchema, converter),
+    Converter = upgrade_converter(field_schema(FieldSchema, converter)),
     {Acc0, NewValue} = map_field_maybe_convert(FieldType, FieldSchema, FieldValue, Opts, Converter),
     Acc = MaybeLog ++ Acc0,
-    NoConversion = only_fill_defaults(Opts),
     Validators =
-        case is_primitive_type(FieldType) of
+        case is_make_serializable(Opts) orelse is_primitive_type(FieldType) of
             true ->
+                %% we do not validate serializable maps (assuming it's typechecked already)
                 %% primitive values are already validated
                 [];
             false ->
                 %% otherwise validate using the schema defined callbacks
-                validators(field_schema(FieldSchema, validator))
+                user_defined_validators(FieldSchema)
         end,
     case find_errors(Acc) of
-        ok when NoConversion ->
-            %% when only_fill_defaults, we are only filling default values (recursively)
-            %% for the input FieldValue.
-            %% i.e. no config mapping, value validation (because it's unconverted)
-            {Acc, NewValue};
         ok ->
             Pv = ensure_plain(NewValue),
             ValidationResult = validate(Opts, FieldSchema, Pv, Validators),
+            Mapping =
+                case is_make_serializable(Opts) of
+                    true -> undefined;
+                    false -> field_schema(FieldSchema, mapping)
+                end,
             case ValidationResult of
                 [] ->
-                    Mapped = maybe_mapping(field_schema(FieldSchema, mapping), Pv),
+                    Mapped = maybe_mapping(Mapping, Pv),
                     {Acc ++ Mapped, NewValue};
                 Errors ->
                     {Acc ++ Errors, NewValue}
@@ -541,16 +552,11 @@ map_field_maybe_convert(Type, Schema, Value0, Opts, undefined) ->
     map_field(Type, Schema, Value0, Opts);
 map_field_maybe_convert(Type, Schema, Value0, Opts, Converter) ->
     Value1 = ensure_plain(Value0),
-    try Converter(Value1) of
+    try Converter(Value1, Opts) of
         Value2 ->
             Value3 = maybe_mkrich(Opts, Value2, Value0),
             {Mapped, Value4} = map_field(Type, Schema, Value3, Opts),
-            Value5 =
-                case only_fill_defaults(Opts) of
-                    true -> ensure_bin_str(Value0);
-                    false -> Value4
-                end,
-            {Mapped, ensure_obfuscate_sensitive(Opts, Schema, Value5)}
+            {Mapped, ensure_obfuscate_sensitive(Opts, Schema, Value4)}
     catch
         throw:Reason ->
             {validation_errs(Opts, #{reason => Reason}), Value0};
@@ -657,15 +663,27 @@ map_field(Type, Schema, Value0, Opts) ->
     %% primitive type
     Value = unbox(Opts, Value0),
     PlainValue = ensure_plain(Value),
-    ConvertedValue = hocon_schema_builtin:convert(PlainValue, Type),
-    Validators = validators(field_schema(Schema, validator)) ++ builtin_validators(Type),
+    ConvertedValue = eval_builtin_converter(PlainValue, Type, Opts),
+    Validators = get_validators(Schema, Type, Opts),
     ValidationResult = validate(Opts, Schema, ConvertedValue, Validators),
-    Value1 =
-        case only_fill_defaults(Opts) of
-            true -> ensure_bin_str(Value0);
-            false -> boxit(Opts, ConvertedValue, Value0)
-        end,
+    Value1 = boxit(Opts, ConvertedValue, Value0),
     {ValidationResult, ensure_obfuscate_sensitive(Opts, Schema, Value1)}.
+
+eval_builtin_converter(PlainValue, Type, Opts) ->
+    case is_make_serializable(Opts) of
+        true ->
+            ensure_bin_str(PlainValue);
+        false ->
+            hocon_schema_builtin:convert(PlainValue, Type)
+    end.
+
+get_validators(Schema, Type, Opts) ->
+    case is_make_serializable(Opts) of
+        true ->
+            [];
+        false ->
+            user_defined_validators(Schema) ++ builtin_validators(Type)
+    end.
 
 is_primitive_type(Type) when ?IS_TYPEREFL(Type) -> true;
 is_primitive_type(Atom) when is_atom(Atom) -> true;
@@ -936,7 +954,7 @@ do_apply_env(VarName, VarValue, Path, Conf, Opts) ->
     %% NOTE: never translate to atom key here
     Value1 = maybe_mkrich(Opts, VarValue, ?META_BOX(from_env, VarName)),
     Value =
-        case only_fill_defaults(Opts) of
+        case is_make_serializable(Opts) of
             true -> Value1;
             false -> ?FROM_ENV_VAR(VarName, Value1)
         end,
@@ -1041,6 +1059,9 @@ validators(Validators) when is_list(Validators) ->
     %% assert
     true = lists:all(fun(F) -> is_function(F, 1) end, Validators),
     Validators.
+
+user_defined_validators(Schema) ->
+    validators(field_schema(Schema, validator)).
 
 builtin_validators(?ENUM(Symbols)) ->
     [fun(Value) -> check_enum_sybol(Value, Symbols) end];
@@ -1164,8 +1185,26 @@ do_find_error([{error, E} | More], Errors) ->
 do_find_error([_ | More], Errors) ->
     do_find_error(More, Errors).
 
-only_fill_defaults(#{only_fill_defaults := true}) -> true;
-only_fill_defaults(_) -> false.
+is_make_serializable(#{make_serializable := true}) -> true;
+is_make_serializable(_) -> false.
+
+upgrade_converter(undefined) ->
+    undefined;
+upgrade_converter(F) ->
+    case erlang:fun_info(F, arity) of
+        {_, 1} -> fun(V, Opts) -> eval_arity1_converter(F, V, Opts) end;
+        {_, 2} -> F
+    end.
+
+eval_arity1_converter(F, V, Opts) ->
+    case is_make_serializable(Opts) of
+        true ->
+            %% the old version convert is only one way
+            %% we can only hope V is serializable
+            V;
+        false ->
+            F(V)
+    end.
 
 obfuscate_sensitive_values(#{obfuscate_sensitive_values := true}) -> true;
 obfuscate_sensitive_values(_) -> false.
