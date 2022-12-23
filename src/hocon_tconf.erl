@@ -332,8 +332,9 @@ merge_env_overrides(Schema, Conf0, Roots0, Opts0) ->
     %% force
     Opts = Opts0#{apply_override_envs => true},
     Roots = resolve_root_types(hocon_schema:roots(Schema), Roots0),
-    Conf = filter_by_roots(Opts, Conf0, Roots),
-    apply_envs(Schema, Conf, Opts, Roots).
+    Conf1 = filter_by_roots(Opts, Conf0, Roots),
+    Conf = apply_envs(Schema, Conf1, Opts, Roots),
+    maybe_remove_env_meta(Conf, Opts).
 
 maybe_remove_env_meta(Map, #{remove_env_meta := true}) ->
     remove_env_meta(Map);
@@ -378,8 +379,7 @@ apply_envs(_Schema, Conf, #{apply_override_envs := false}, _Roots) ->
     Conf;
 apply_envs(Schema, Conf0, Opts, Roots) ->
     {EnvNamespace, Envs} = collect_envs(Schema, Opts, Roots),
-    Conf = do_apply_envs(EnvNamespace, Envs, Opts, Roots, Conf0),
-    maybe_remove_env_meta(Conf, Opts).
+    do_apply_envs(EnvNamespace, Envs, Opts, Roots, Conf0).
 
 do_apply_envs(_EnvNamespace, _Envs, _Opts, [], Conf) ->
     Conf;
