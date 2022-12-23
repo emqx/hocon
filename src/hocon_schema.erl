@@ -152,7 +152,9 @@
 
 -type translation() :: {name(), translationfunc()}.
 -type typefunc() :: fun((_) -> _).
--type translationfunc() :: fun((hocon:config()) -> hocon:config()).
+-type translationfunc() ::
+    fun((hocon:config()) -> hocon:config())
+    | fun((hocon:config(), map()) -> hocon:config()).
 -type validationfun() :: fun((hocon:config()) -> ok | boolean() | {error, term()}).
 -type bin_name() :: binary().
 
