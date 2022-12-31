@@ -268,9 +268,9 @@ do_check(Schema, Conf, Opts0, RootNames) ->
     {_DiscardMappings, NewConf} = map(Schema, Conf, RootNames, Opts),
     NewConf.
 
-maybe_convert_to_plain_map(Conf, #{format := richmap, return_plain := true}) ->
+return_plain(Conf, #{return_plain := true}) ->
     ensure_plain(Conf);
-maybe_convert_to_plain_map(Conf, _Opts) ->
+return_plain(Conf, _) ->
     Conf.
 
 -spec map(schema(), hocon:config()) -> {[proplists:property()], hocon:config()}.
@@ -310,7 +310,7 @@ map(Schema, Conf0, Roots0, Opts0) ->
     ok = assert(Schema, Mapped0),
     ok = assert_integrity(Schema, Conf4, Opts),
     Mapped = log_and_drop_env_overrides(Opts, Mapped0),
-    Conf5 = maybe_convert_to_plain_map(Conf4, Opts),
+    Conf5 = return_plain(Conf4, Opts),
     Conf = maybe_remove_env_meta(Conf5, Opts),
     {Mapped, Conf}.
 
@@ -607,17 +607,22 @@ map_field(?REF(Ref), FieldSchema, Value, #{schema := Schema} = Opts) ->
 map_field(Ref, FieldSchema, Value, #{schema := Schema} = Opts) when is_list(Ref) ->
     Fields = hocon_schema:fields(Schema, Ref),
     do_map(Fields, Value, Opts, FieldSchema);
-map_field(?UNION(Types), Schema0, Value, Opts) ->
-    %% union is not a boxed value
-    F = fun(Type) ->
-        %% go deep with union member's type, but all
-        %% other schema information should be inherited from the enclosing schema
-        Schema = sub_schema(Schema0, Type),
-        map_field(Type, Schema, Value, Opts)
-    end,
-    case do_map_union(Types, F, #{}, Opts) of
-        {ok, {Mapped, NewValue}} -> {Mapped, NewValue};
-        Errors -> {Errors, Value}
+map_field(?UNION(Types0), Schema0, Value, Opts) ->
+    try select_union_members(Types0, Value, Opts) of
+        Types ->
+            F = fun(Type) ->
+                %% go deep with union member's type, but all
+                %% other schema information should be inherited from the enclosing schema
+                Schema = sub_schema(Schema0, Type),
+                map_field(Type, Schema, Value, Opts)
+            end,
+            case do_map_union(Types, F, #{}, Opts) of
+                {ok, {Mapped, NewValue}} -> {Mapped, NewValue};
+                Errors -> {Errors, Value}
+            end
+    catch
+        throw:Reason ->
+            {validation_errs(Opts, Reason), Value}
     end;
 map_field(?LAZY(Type), Schema, Value, Opts) ->
     SubType = sub_type(Schema, Type),
@@ -764,11 +769,31 @@ path(#{stack := Stack}) ->
 path(Stack) when is_list(Stack) ->
     string:join(lists:reverse(lists:map(fun str/1, Stack)), ".").
 
+select_union_members(Types, _Value, _Opts) when is_list(Types) ->
+    Types;
+select_union_members(Types, Value, Opts) when is_function(Types) ->
+    try
+        %% assert non-empty list, otherwise it's a bug in schema provider module
+        [_ | _] = Types({value, ensure_plain2(Value, Opts)})
+    catch
+        error:Reason:St ->
+            %% only catch 'error' exceptions
+            %% the schema selector should 'throw' (preferrably a map())
+            %% if unexpected value is received
+            throw({select_union_members, Reason, St})
+    end.
+
 do_map_union([], _TypeCheck, PerTypeResult, Opts) ->
-    validation_errs(Opts, #{
-        reason => matched_no_union_member,
-        mismatches => PerTypeResult
-    });
+    case maps:size(PerTypeResult) of
+        1 ->
+            [{Type, Err}] = maps:to_list(PerTypeResult),
+            validation_errs(Opts, Err#{matched_type => Type});
+        _ ->
+            validation_errs(Opts, #{
+                reason => matched_no_union_member,
+                mismatches => PerTypeResult
+            })
+    end;
 do_map_union([Type | Types], TypeCheck, PerTypeResult, Opts) ->
     {Mapped, Value} = TypeCheck(Type),
     case find_errors(Mapped) of
@@ -885,7 +910,7 @@ is_path(Schema, ?ARRAY(Type), [Name | Path]) ->
         false -> false
     end;
 is_path(Schema, ?UNION(Types), Path) ->
-    lists:any(fun(T) -> is_path(Schema, T, Path) end, Types);
+    lists:any(fun(T) -> is_path(Schema, T, Path) end, hoconsc:union_members(Types));
 is_path(Schema, ?MAP(_, Type), [_ | Path]) ->
     is_path(Schema, Type, Path);
 is_path(_Schema, _Type, _Path) ->
@@ -1144,8 +1169,17 @@ plain_put(Opts, [Name | Path], Value, Conf0) ->
 type_hint(B) when is_binary(B) -> string;
 type_hint(X) -> X.
 
+%% smart unboxing, it checks the top level box, if it's boxed, unbox recursively.
+%% otherwise do nothing.
 ensure_plain(MaybeRichMap) ->
     hocon_maps:ensure_plain(MaybeRichMap).
+
+%% the top level value might be unboxed, so it needs the help from the format option.
+%% if the format is richmap, it perform the not-so-smart recursive unboxing
+ensure_plain2(Map, #{format := richmap}) ->
+    hocon_util:richmap_to_map(Map);
+ensure_plain2(Map, _) ->
+    Map.
 
 %% treat 'null' as absence
 drop_nulls(_Opts, undefined) ->
@@ -1268,7 +1302,8 @@ do_fmt_field_names([Name1, Name2 | _]) -> bin([do_fmt_field_names([Name1, Name2]
 maybe_hd([OnlyOne]) -> OnlyOne;
 maybe_hd(Other) -> Other.
 
-readable_type(T) -> hocon_schema:readable_type(T).
+readable_type(T) ->
+    hocon_schema:readable_type(T).
 
 -ifndef(TEST).
 assert_fields(_, _) -> ok.

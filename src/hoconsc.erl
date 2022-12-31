@@ -22,6 +22,7 @@
 -export([array/1, union/1, enum/1]).
 -export([lazy/1, map/2]).
 -export([is_schema/1]).
+-export([union_members/1]).
 
 -include("hoconsc.hrl").
 
@@ -44,7 +45,21 @@ ref(Module, Name) -> ?R_REF(Module, Name).
 array(OfType) -> ?ARRAY(OfType).
 
 %% @doc make a union type.
-union(OfTypes) when is_list(OfTypes) -> ?UNION(OfTypes).
+%% A union is either a list of types
+%% or an anonymous function which is able to return all members
+%% as well as select a member depending on the prvoided value input.
+%% For example, in case all members share the same `kind' field in the struct
+%% and the type of each kind depends on the field value:
+%% when `kind' is `foo', it's a `ref(foo)' type.
+%% we can design the selector as below.
+%% 1. we need a way to retrieve all types for schema dump
+%%    and document generation, so we need:
+%%    `fun(all_union_members) -> [ref(foo), ref(bar)];'
+%% 2. select possible type(s) depending on the `kind' field.
+%%    `({value, #{<<"kind">> := <<"foo">>}) -> [ref(foo)];'
+%%    `({value, #{<<"kind">> := <<"bar">>}} -> [ref(bar)].'
+-spec union(hocon_schema:union_members()) -> ?UNION(hocon_schema:union_members()).
+union(OfTypes) when is_list(OfTypes) orelse is_function(OfTypes, 1) -> ?UNION(OfTypes).
 
 %% @doc make a enum type.
 enum(OfSymbols) when is_list(OfSymbols) -> ?ENUM(OfSymbols).
@@ -56,7 +71,7 @@ lazy(HintType) -> ?LAZY(HintType).
 map(Name, Type) -> ?MAP(Name, Type).
 
 %% @doc Check Type is a hocon type.
-is_schema(?UNION(Members)) -> lists:all(fun is_schema/1, Members);
+is_schema(?UNION(Members)) -> lists:all(fun is_schema/1, union_members(Members));
 is_schema(?ARRAY(ElemT)) -> is_schema(ElemT);
 is_schema(?LAZY(HintT)) -> is_schema(HintT);
 is_schema(?REF(_)) -> true;
@@ -72,7 +87,7 @@ assert_type(S) when is_function(S) -> error({expecting_type_but_got_schema, S});
 assert_type(#{type := _} = S) ->
     error({expecting_type_but_got_schema, S});
 assert_type(?UNION(Members)) ->
-    lists:foreach(fun assert_type/1, Members);
+    lists:foreach(fun assert_type/1, union_members(Members));
 assert_type(?ENUM(Symbols)) ->
     lists:foreach(
         fun(S) ->
@@ -89,3 +104,8 @@ assert_type(?LAZY(HintT)) ->
     assert_type(HintT);
 assert_type(_) ->
     ok.
+
+union_members(Members) when is_list(Members) ->
+    Members;
+union_members(Members) when is_function(Members, 1) ->
+    union_members(Members(all_union_members)).
