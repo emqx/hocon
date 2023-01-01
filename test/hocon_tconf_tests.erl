@@ -149,17 +149,11 @@ obfuscate_sensitive_fill_default_test() ->
     ),
     ok.
 
-env_override_test_() ->
-    [
-        {"remove_env_meta=true", fun() -> env_override_t(#{remove_env_meta => true}) end},
-        {"remove_env_meta=false", fun() -> env_override_t(#{remove_env_meta => false}) end}
-    ].
-
-env_override_t(Opts0) ->
+env_override_test() ->
     with_envs(
         fun() ->
             Conf = "{\"bar.field1\": \"foo\"}",
-            Opts = Opts0#{format => richmap},
+            Opts = #{format => richmap},
             Res = check(Conf, Opts#{apply_override_envs => true}),
             ?assertEqual(
                 Res,
@@ -464,7 +458,7 @@ env_array_element_override_test_() ->
     F = fun(Check) ->
         with_envs(
             fun() ->
-                hocon_maps:ensure_plain(hocon_tconf:remove_env_meta(Check()))
+                hocon_maps:ensure_plain(Check())
             end,
             [],
             envs([
@@ -1095,11 +1089,12 @@ resolve_struct_name_test() ->
 sensitive_data_obfuscation_test() ->
     Sc = #{roots => [{secret, hoconsc:mk(string(), #{sensitive => true})}]},
     Self = self(),
+    {ok, RichConf} = hocon:binary("secret = aaa", #{format => richmap}),
     with_envs(
         fun() ->
-            hocon_tconf:check_plain(
+            hocon_tconf:check(
                 Sc,
-                #{<<"secret">> => "aaa"},
+                RichConf,
                 #{
                     logger => fun(_Level, Msg) -> Self ! Msg end,
                     apply_override_envs => true
@@ -1859,49 +1854,6 @@ redundant_field_test() ->
     ),
     ok.
 
-make_keys_test() ->
-    Seq = [
-        {
-            #{<<"k1">> => <<"v1">>},
-            #{<<"k1">> => <<"v1">>}
-        },
-        {
-            #{<<"k1">> => ?FROM_ENV_VAR("V1", <<"v1">>)},
-            #{<<"k1">> => <<"v1">>}
-        },
-        {
-            #{<<"k1">> => [?FROM_ENV_VAR("V1", <<"v1">>)]},
-            #{<<"k1">> => [<<"v1">>]}
-        },
-        {
-            #{<<"k1">> => #{<<"k2">> => <<"v1">>}},
-            #{<<"k1">> => #{<<"k2">> => <<"v1">>}}
-        },
-        {
-            #{<<"k1">> => #{<<"k2">> => ?FROM_ENV_VAR("V1", <<"v1">>)}},
-            #{<<"k1">> => #{<<"k2">> => <<"v1">>}}
-        },
-        {
-            #{<<"k1">> => #{<<"k2">> => ?FROM_ENV_VAR("V1", <<"v1">>), <<"k3">> => <<"v3">>}},
-            #{<<"k1">> => #{<<"k2">> => <<"v1">>, <<"k3">> => <<"v3">>}}
-        },
-        {
-            #{<<"k1">> => #{<<"k2">> => 1024}},
-            #{<<"k1">> => #{<<"k2">> => 1024}}
-        },
-        {
-            #{<<"k1">> => #{<<"k2">> => ?FROM_ENV_VAR("V1", 1024)}},
-            #{<<"k1">> => #{<<"k2">> => 1024}}
-        }
-    ],
-    lists:foreach(
-        fun({Data, Expect}) ->
-            ?assertEqual(Expect, hocon_tconf:remove_env_meta(Data))
-        end,
-        Seq
-    ),
-    ok.
-
 %% Make a union type schema which has a member foo and a member bar  (both are structs)
 %% each union struct has a "type" field which can be used to select type with a given map() value.
 %% e.g. if "type = foo" is in the value, then the 'foo' type struct is to be selected
@@ -1947,7 +1899,7 @@ select_union_members_check_test_() ->
             ?assertEqual(Res, hocon_tconf:make_serializable(Sc, Conf, #{})),
             Res
         catch
-            {_, Errors} ->
+            throw:{_, Errors} ->
                 throw({check_error, hd(Errors)})
         end
     end,
@@ -1958,7 +1910,7 @@ select_union_members_check_test_() ->
             Res = hocon_tconf:check(Sc, Conf, Opts),
             hocon_maps:ensure_plain(Res)
         catch
-            {_, Errors} ->
+            throw:{_, Errors} ->
                 throw({check_error, hd(Errors)})
         end
     end,

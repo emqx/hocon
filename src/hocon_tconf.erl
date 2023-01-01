@@ -23,7 +23,7 @@
 -export([translate/3]).
 -export([generate/2, generate/3, map_translate/3]).
 -export([check/2, check/3, check_plain/2, check_plain/3, check_plain/4]).
--export([merge_env_overrides/4, remove_env_meta/1]).
+-export([merge_env_overrides/4]).
 -export([nest/1]).
 -export([make_serializable/3]).
 
@@ -61,10 +61,7 @@
     format => map | richmap,
     stack => [name()],
     schema => schema(),
-    check_lazy => boolean(),
-    %% Remove the '$FROM_ENV_VAR' wrapping for values from environment variables
-    %% default is 'true'
-    remove_env_meta => boolean()
+    check_lazy => boolean()
 }.
 
 -type name() :: hocon_schema:name().
@@ -307,11 +304,10 @@ map(Schema, Conf0, Roots0, Opts0) ->
     Conf2 = filter_by_roots(Opts, Conf1, Roots),
     Conf3 = apply_envs(Schema, Conf2, Opts, Roots),
     {Mapped0, Conf4} = do_map(Roots, Conf3, Opts, ?MAGIC_SCHEMA),
-    ok = assert(Schema, Mapped0),
-    ok = assert_integrity(Schema, Conf4, Opts),
     Mapped = log_and_drop_env_overrides(Opts, Mapped0),
-    Conf5 = return_plain(Conf4, Opts),
-    Conf = maybe_remove_env_meta(Conf5, Opts),
+    ok = assert(Schema, Mapped),
+    ok = assert_integrity(Schema, Conf4, Opts),
+    Conf = return_plain(Conf4, Opts),
     {Mapped, Conf}.
 
 %% ensure the input map is as desired in options.
@@ -333,35 +329,7 @@ merge_env_overrides(Schema, Conf0, Roots0, Opts0) ->
     Opts = Opts0#{apply_override_envs => true},
     Roots = resolve_root_types(hocon_schema:roots(Schema), Roots0),
     Conf1 = filter_by_roots(Opts, Conf0, Roots),
-    Conf = apply_envs(Schema, Conf1, Opts, Roots),
-    maybe_remove_env_meta(Conf, Opts).
-
-maybe_remove_env_meta(Map, #{remove_env_meta := true}) ->
-    remove_env_meta(Map);
-maybe_remove_env_meta(Map, _Opts) ->
-    Map.
-
-%% @doc remove FROM_ENV_VAR from value
-remove_env_meta(Map) when is_map(Map) ->
-    remove_env_meta(maps:iterator(Map), #{});
-remove_env_meta(Array) when is_list(Array) ->
-    [remove_env_meta(R) || R <- Array];
-remove_env_meta(?FROM_ENV_VAR(_Env, Val)) ->
-    remove_env_meta(Val);
-remove_env_meta(Value) ->
-    Value.
-
-remove_env_meta(Iter, Map) ->
-    case maps:next(Iter) of
-        {K, ?FROM_ENV_VAR(_Env, Val), I} ->
-            remove_env_meta(I, Map#{K => Val});
-        {K, V, I} when is_binary(V) ->
-            remove_env_meta(I, Map#{K => V});
-        {K, V, I} ->
-            remove_env_meta(I, Map#{K => remove_env_meta(V)});
-        none ->
-            Map
-    end.
+    apply_envs(Schema, Conf1, Opts, Roots).
 
 %% the config 'map' call returns env overrides in mapping
 %% resutls, this function helps to drop them from  the list
@@ -818,9 +786,13 @@ do_map_array(F, [Elem | Rest], Res, Index, Acc) ->
     end.
 
 resolve_field_value(Schema, FieldValue, Opts) ->
-    case unbox(Opts, FieldValue) of
-        ?FROM_ENV_VAR(EnvName, EnvValue) ->
-            {[env_override_for_log(Schema, EnvName, path(Opts), EnvValue)], EnvValue};
+    Meta = meta(FieldValue),
+    case Meta of
+        #{from_env := EnvName} ->
+            {
+                [env_override_for_log(Schema, EnvName, path(Opts), ensure_plain(FieldValue))],
+                FieldValue
+            };
         _ ->
             {[], maybe_use_default(field_schema(Schema, default), FieldValue, Opts)}
     end.
@@ -973,16 +945,11 @@ apply_env(Ns, [{VarName, V} | More], RootName, Conf, Opts) ->
     apply_env(Ns, More, RootName, NewConf, Opts).
 
 do_apply_env(VarName, VarValue, Path, Conf, Opts) ->
-    %% It lacks schema info here, so we need to tag the value '$FROM_ENV_VAR'
+    %% It lacks schema info here, so we need to tag the value with 'from_env' meta data
     %% and the value will be logged later when checking against schema
     %% so we know if the value is sensitive or not.
     %% NOTE: never translate to atom key here
-    Value1 = maybe_mkrich(Opts, VarValue, ?META_BOX(from_env, VarName)),
-    Value =
-        case is_make_serializable(Opts) of
-            true -> Value1;
-            false -> ?FROM_ENV_VAR(VarName, Value1)
-        end,
+    Value = maybe_mkrich(Opts, VarValue, ?META_BOX(from_env, VarName)),
     try
         put_value(Opts#{atom_key => false}, Path, Value, Conf)
     catch
@@ -1189,7 +1156,6 @@ drop_nulls(Opts, Map) when is_map(Map) ->
         fun(_Key, Value) ->
             case unbox(Opts, Value) of
                 null -> false;
-                {'$FROM_ENV_VAR', _, null} -> false;
                 _ -> true
             end
         end,
