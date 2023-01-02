@@ -23,7 +23,7 @@
 -export([translate/3]).
 -export([generate/2, generate/3, map_translate/3]).
 -export([check/2, check/3, check_plain/2, check_plain/3, check_plain/4]).
--export([merge_env_overrides/4, remove_env_meta/1]).
+-export([merge_env_overrides/4]).
 -export([nest/1]).
 -export([make_serializable/3]).
 
@@ -61,10 +61,7 @@
     format => map | richmap,
     stack => [name()],
     schema => schema(),
-    check_lazy => boolean(),
-    %% Remove the '$FROM_ENV_VAR' wrapping for values from environment variables
-    %% default is 'true'
-    remove_env_meta => boolean()
+    check_lazy => boolean()
 }.
 
 -type name() :: hocon_schema:name().
@@ -268,9 +265,9 @@ do_check(Schema, Conf, Opts0, RootNames) ->
     {_DiscardMappings, NewConf} = map(Schema, Conf, RootNames, Opts),
     NewConf.
 
-maybe_convert_to_plain_map(Conf, #{format := richmap, return_plain := true}) ->
+return_plain(Conf, #{return_plain := true}) ->
     ensure_plain(Conf);
-maybe_convert_to_plain_map(Conf, _Opts) ->
+return_plain(Conf, _) ->
     Conf.
 
 -spec map(schema(), hocon:config()) -> {[proplists:property()], hocon:config()}.
@@ -307,11 +304,10 @@ map(Schema, Conf0, Roots0, Opts0) ->
     Conf2 = filter_by_roots(Opts, Conf1, Roots),
     Conf3 = apply_envs(Schema, Conf2, Opts, Roots),
     {Mapped0, Conf4} = do_map(Roots, Conf3, Opts, ?MAGIC_SCHEMA),
-    ok = assert(Schema, Mapped0),
-    ok = assert_integrity(Schema, Conf4, Opts),
     Mapped = log_and_drop_env_overrides(Opts, Mapped0),
-    Conf5 = maybe_convert_to_plain_map(Conf4, Opts),
-    Conf = maybe_remove_env_meta(Conf5, Opts),
+    ok = assert(Schema, Mapped),
+    ok = assert_integrity(Schema, Conf4, Opts),
+    Conf = return_plain(Conf4, Opts),
     {Mapped, Conf}.
 
 %% ensure the input map is as desired in options.
@@ -333,35 +329,7 @@ merge_env_overrides(Schema, Conf0, Roots0, Opts0) ->
     Opts = Opts0#{apply_override_envs => true},
     Roots = resolve_root_types(hocon_schema:roots(Schema), Roots0),
     Conf1 = filter_by_roots(Opts, Conf0, Roots),
-    Conf = apply_envs(Schema, Conf1, Opts, Roots),
-    maybe_remove_env_meta(Conf, Opts).
-
-maybe_remove_env_meta(Map, #{remove_env_meta := true}) ->
-    remove_env_meta(Map);
-maybe_remove_env_meta(Map, _Opts) ->
-    Map.
-
-%% @doc remove FROM_ENV_VAR from value
-remove_env_meta(Map) when is_map(Map) ->
-    remove_env_meta(maps:iterator(Map), #{});
-remove_env_meta(Array) when is_list(Array) ->
-    [remove_env_meta(R) || R <- Array];
-remove_env_meta(?FROM_ENV_VAR(_Env, Val)) ->
-    remove_env_meta(Val);
-remove_env_meta(Value) ->
-    Value.
-
-remove_env_meta(Iter, Map) ->
-    case maps:next(Iter) of
-        {K, ?FROM_ENV_VAR(_Env, Val), I} ->
-            remove_env_meta(I, Map#{K => Val});
-        {K, V, I} when is_binary(V) ->
-            remove_env_meta(I, Map#{K => V});
-        {K, V, I} ->
-            remove_env_meta(I, Map#{K => remove_env_meta(V)});
-        none ->
-            Map
-    end.
+    apply_envs(Schema, Conf1, Opts, Roots).
 
 %% the config 'map' call returns env overrides in mapping
 %% resutls, this function helps to drop them from  the list
@@ -607,17 +575,22 @@ map_field(?REF(Ref), FieldSchema, Value, #{schema := Schema} = Opts) ->
 map_field(Ref, FieldSchema, Value, #{schema := Schema} = Opts) when is_list(Ref) ->
     Fields = hocon_schema:fields(Schema, Ref),
     do_map(Fields, Value, Opts, FieldSchema);
-map_field(?UNION(Types), Schema0, Value, Opts) ->
-    %% union is not a boxed value
-    F = fun(Type) ->
-        %% go deep with union member's type, but all
-        %% other schema information should be inherited from the enclosing schema
-        Schema = sub_schema(Schema0, Type),
-        map_field(Type, Schema, Value, Opts)
-    end,
-    case do_map_union(Types, F, #{}, Opts) of
-        {ok, {Mapped, NewValue}} -> {Mapped, NewValue};
-        Errors -> {Errors, Value}
+map_field(?UNION(Types0), Schema0, Value, Opts) ->
+    try select_union_members(Types0, Value, Opts) of
+        Types ->
+            F = fun(Type) ->
+                %% go deep with union member's type, but all
+                %% other schema information should be inherited from the enclosing schema
+                Schema = sub_schema(Schema0, Type),
+                map_field(Type, Schema, Value, Opts)
+            end,
+            case do_map_union(Types, F, #{}, Opts) of
+                {ok, {Mapped, NewValue}} -> {Mapped, NewValue};
+                Errors -> {Errors, Value}
+            end
+    catch
+        throw:Reason ->
+            {validation_errs(Opts, Reason), Value}
     end;
 map_field(?LAZY(Type), Schema, Value, Opts) ->
     SubType = sub_type(Schema, Type),
@@ -764,11 +737,31 @@ path(#{stack := Stack}) ->
 path(Stack) when is_list(Stack) ->
     string:join(lists:reverse(lists:map(fun str/1, Stack)), ".").
 
+select_union_members(Types, _Value, _Opts) when is_list(Types) ->
+    Types;
+select_union_members(Types, Value, Opts) when is_function(Types) ->
+    try
+        %% assert non-empty list, otherwise it's a bug in schema provider module
+        [_ | _] = Types({value, ensure_plain2(Value, Opts)})
+    catch
+        error:Reason:St ->
+            %% only catch 'error' exceptions
+            %% the schema selector should 'throw' (preferrably a map())
+            %% if unexpected value is received
+            throw({select_union_members, Reason, St})
+    end.
+
 do_map_union([], _TypeCheck, PerTypeResult, Opts) ->
-    validation_errs(Opts, #{
-        reason => matched_no_union_member,
-        mismatches => PerTypeResult
-    });
+    case maps:size(PerTypeResult) of
+        1 ->
+            [{Type, Err}] = maps:to_list(PerTypeResult),
+            validation_errs(Opts, Err#{matched_type => Type});
+        _ ->
+            validation_errs(Opts, #{
+                reason => matched_no_union_member,
+                mismatches => PerTypeResult
+            })
+    end;
 do_map_union([Type | Types], TypeCheck, PerTypeResult, Opts) ->
     {Mapped, Value} = TypeCheck(Type),
     case find_errors(Mapped) of
@@ -793,9 +786,13 @@ do_map_array(F, [Elem | Rest], Res, Index, Acc) ->
     end.
 
 resolve_field_value(Schema, FieldValue, Opts) ->
-    case unbox(Opts, FieldValue) of
-        ?FROM_ENV_VAR(EnvName, EnvValue) ->
-            {[env_override_for_log(Schema, EnvName, path(Opts), EnvValue)], EnvValue};
+    Meta = meta(FieldValue),
+    case Meta of
+        #{from_env := EnvName} ->
+            {
+                [env_override_for_log(Schema, EnvName, path(Opts), ensure_plain(FieldValue))],
+                FieldValue
+            };
         _ ->
             {[], maybe_use_default(field_schema(Schema, default), FieldValue, Opts)}
     end.
@@ -885,7 +882,7 @@ is_path(Schema, ?ARRAY(Type), [Name | Path]) ->
         false -> false
     end;
 is_path(Schema, ?UNION(Types), Path) ->
-    lists:any(fun(T) -> is_path(Schema, T, Path) end, Types);
+    lists:any(fun(T) -> is_path(Schema, T, Path) end, hoconsc:union_members(Types));
 is_path(Schema, ?MAP(_, Type), [_ | Path]) ->
     is_path(Schema, Type, Path);
 is_path(_Schema, _Type, _Path) ->
@@ -948,16 +945,11 @@ apply_env(Ns, [{VarName, V} | More], RootName, Conf, Opts) ->
     apply_env(Ns, More, RootName, NewConf, Opts).
 
 do_apply_env(VarName, VarValue, Path, Conf, Opts) ->
-    %% It lacks schema info here, so we need to tag the value '$FROM_ENV_VAR'
+    %% It lacks schema info here, so we need to tag the value with 'from_env' meta data
     %% and the value will be logged later when checking against schema
     %% so we know if the value is sensitive or not.
     %% NOTE: never translate to atom key here
-    Value1 = maybe_mkrich(Opts, VarValue, ?META_BOX(from_env, VarName)),
-    Value =
-        case is_make_serializable(Opts) of
-            true -> Value1;
-            false -> ?FROM_ENV_VAR(VarName, Value1)
-        end,
+    Value = maybe_mkrich(Opts, VarValue, ?META_BOX(from_env, VarName)),
     try
         put_value(Opts#{atom_key => false}, Path, Value, Conf)
     catch
@@ -1144,8 +1136,17 @@ plain_put(Opts, [Name | Path], Value, Conf0) ->
 type_hint(B) when is_binary(B) -> string;
 type_hint(X) -> X.
 
+%% smart unboxing, it checks the top level box, if it's boxed, unbox recursively.
+%% otherwise do nothing.
 ensure_plain(MaybeRichMap) ->
     hocon_maps:ensure_plain(MaybeRichMap).
+
+%% the top level value might be unboxed, so it needs the help from the format option.
+%% if the format is richmap, it perform the not-so-smart recursive unboxing
+ensure_plain2(Map, #{format := richmap}) ->
+    hocon_util:richmap_to_map(Map);
+ensure_plain2(Map, _) ->
+    Map.
 
 %% treat 'null' as absence
 drop_nulls(_Opts, undefined) ->
@@ -1155,7 +1156,6 @@ drop_nulls(Opts, Map) when is_map(Map) ->
         fun(_Key, Value) ->
             case unbox(Opts, Value) of
                 null -> false;
-                {'$FROM_ENV_VAR', _, null} -> false;
                 _ -> true
             end
         end,
@@ -1258,17 +1258,18 @@ get_invalid_name(Names) ->
     ).
 
 fmt_field_names(Names) ->
-    do_fmt_field_names(lists:sort(lists:map(fun bin/1, Names))).
+    do_fmt_field_names(lists:sort(lists:map(fun str/1, Names))).
 
 do_fmt_field_names([]) -> none;
 do_fmt_field_names([Name1]) -> Name1;
-do_fmt_field_names([Name1, Name2]) -> bin([Name1, ",", Name2]);
-do_fmt_field_names([Name1, Name2 | _]) -> bin([do_fmt_field_names([Name1, Name2]), "..."]).
+do_fmt_field_names([Name1, Name2]) -> Name1 ++ "," ++ Name2;
+do_fmt_field_names([Name1, Name2 | _]) -> do_fmt_field_names([Name1, Name2]) ++ ",...".
 
 maybe_hd([OnlyOne]) -> OnlyOne;
 maybe_hd(Other) -> Other.
 
-readable_type(T) -> hocon_schema:readable_type(T).
+readable_type(T) ->
+    str(hocon_schema:readable_type(T)).
 
 -ifndef(TEST).
 assert_fields(_, _) -> ok.

@@ -18,6 +18,7 @@
 -include_lib("typerefl/include/types.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include("hocon_private.hrl").
+-include("hoconsc.hrl").
 
 -export([roots/0, fields/1, validations/0, desc/1]).
 
@@ -68,7 +69,7 @@ field1(sensitive) -> true;
 field1(_) -> undefined.
 
 union_with_default(type) ->
-    {union, [dummy, "priv.bool", "priv.int"]};
+    ?UNION([dummy, "priv.bool", "priv.int"]);
 union_with_default(default) ->
     dummy;
 union_with_default(_) ->
@@ -148,17 +149,11 @@ obfuscate_sensitive_fill_default_test() ->
     ),
     ok.
 
-env_override_test_() ->
-    [
-        {"remove_env_meta=true", fun() -> env_override_t(#{remove_env_meta => true}) end},
-        {"remove_env_meta=false", fun() -> env_override_t(#{remove_env_meta => false}) end}
-    ].
-
-env_override_t(Opts0) ->
+env_override_test() ->
     with_envs(
         fun() ->
             Conf = "{\"bar.field1\": \"foo\"}",
-            Opts = Opts0#{format => richmap},
+            Opts = #{format => richmap},
             Res = check(Conf, Opts#{apply_override_envs => true}),
             ?assertEqual(
                 Res,
@@ -463,7 +458,7 @@ env_array_element_override_test_() ->
     F = fun(Check) ->
         with_envs(
             fun() ->
-                hocon_maps:ensure_plain(hocon_tconf:remove_env_meta(Check()))
+                hocon_maps:ensure_plain(Check())
             end,
             [],
             envs([
@@ -913,7 +908,7 @@ unknown_fields_test_() ->
         #{
             reason := unknown_fields,
             unmatched := none,
-            unknown := <<"name">>
+            unknown := "name"
         },
         hocon_tconf:map(demo_schema, M, all)
     ).
@@ -924,8 +919,8 @@ expected_fields_not_matched_test_() ->
     ?GEN_VALIDATION_ERR(
         #{
             reason := unknown_fields,
-            unmatched := <<"id">>,
-            unknown := <<"key,name...">>
+            unmatched := "id",
+            unknown := "key,name,..."
         },
         hocon_tconf:map(demo_schema, M, all)
     ).
@@ -1094,11 +1089,12 @@ resolve_struct_name_test() ->
 sensitive_data_obfuscation_test() ->
     Sc = #{roots => [{secret, hoconsc:mk(string(), #{sensitive => true})}]},
     Self = self(),
+    {ok, RichConf} = hocon:binary("secret = aaa", #{format => richmap}),
     with_envs(
         fun() ->
-            hocon_tconf:check_plain(
+            hocon_tconf:check(
                 Sc,
-                #{<<"secret">> => "aaa"},
+                RichConf,
                 #{
                     logger => fun(_Level, Msg) -> Self ! Msg end,
                     apply_override_envs => true
@@ -1672,7 +1668,7 @@ union_converter_test() ->
             #{
                 foo => [
                     {bar, #{
-                        type => {union, [string(), {array, string()}]},
+                        type => ?UNION([string(), {array, string()}]),
                         default => <<"2,3">>,
                         converter => fun
                             (B) when is_binary(B) ->
@@ -1858,48 +1854,123 @@ redundant_field_test() ->
     ),
     ok.
 
-make_keys_test() ->
-    Seq = [
-        {
-            #{<<"k1">> => <<"v1">>},
-            #{<<"k1">> => <<"v1">>}
+%% Make a union type schema which has a member foo and a member bar  (both are structs)
+%% each union struct has a "type" field which can be used to select type with a given map() value.
+%% e.g. if "type = foo" is in the value, then the 'foo' type struct is to be selected
+%% if "type = bar" is found in the value, then the 'bar' type struct is to be selected
+foo_bar_union_sc() ->
+    UnionMembers =
+        #{
+            <<"foo">> => hoconsc:ref(foo),
+            <<"bar">> => hoconsc:ref(bar)
         },
-        {
-            #{<<"k1">> => ?FROM_ENV_VAR("V1", <<"v1">>)},
-            #{<<"k1">> => <<"v1">>}
-        },
-        {
-            #{<<"k1">> => [?FROM_ENV_VAR("V1", <<"v1">>)]},
-            #{<<"k1">> => [<<"v1">>]}
-        },
-        {
-            #{<<"k1">> => #{<<"k2">> => <<"v1">>}},
-            #{<<"k1">> => #{<<"k2">> => <<"v1">>}}
-        },
-        {
-            #{<<"k1">> => #{<<"k2">> => ?FROM_ENV_VAR("V1", <<"v1">>)}},
-            #{<<"k1">> => #{<<"k2">> => <<"v1">>}}
-        },
-        {
-            #{<<"k1">> => #{<<"k2">> => ?FROM_ENV_VAR("V1", <<"v1">>), <<"k3">> => <<"v3">>}},
-            #{<<"k1">> => #{<<"k2">> => <<"v1">>, <<"k3">> => <<"v3">>}}
-        },
-        {
-            #{<<"k1">> => #{<<"k2">> => 1024}},
-            #{<<"k1">> => #{<<"k2">> => 1024}}
-        },
-        {
-            #{<<"k1">> => #{<<"k2">> => ?FROM_ENV_VAR("V1", 1024)}},
-            #{<<"k1">> => #{<<"k2">> => 1024}}
-        }
-    ],
-    lists:foreach(
-        fun({Data, Expect}) ->
-            ?assertEqual(Expect, hocon_tconf:remove_env_meta(Data))
+    UnionMemberSelector =
+        fun
+            (all_union_members) ->
+                maps:values(UnionMembers);
+            ({value, #{<<"type">> := Type}}) ->
+                [maps:get(Type, UnionMembers)]
         end,
-        Seq
-    ),
-    ok.
+    Fields = fun(Which) ->
+        [
+            {type, binary()},
+            {Which ++ "_bool", boolean()},
+            {backend, hoconsc:mk(binary(), #{default => Which ++ "_backend"})}
+        ]
+    end,
+    #{
+        roots => [
+            {"foo_or_bar", hoconsc:union(UnionMemberSelector)}
+        ],
+        fields => fun
+            (foo) -> Fields("foo");
+            (bar) -> Fields("bar")
+        end
+    }.
+
+select_union_members_check_test_() ->
+    Sc = foo_bar_union_sc(),
+    CheckPlain = fun(Txt) ->
+        Opts = #{format => map},
+        {ok, Conf} = hocon:binary(Txt, Opts),
+        try
+            Res = hocon_tconf:check_plain(Sc, Conf),
+            %% assert that make_serializable should populate default values too
+            ?assertEqual(Res, hocon_tconf:make_serializable(Sc, Conf, #{})),
+            Res
+        catch
+            throw:{_, Errors} ->
+                throw({check_error, hd(Errors)})
+        end
+    end,
+    CheckRich = fun(Txt) ->
+        Opts = #{format => richmap},
+        {ok, Conf} = hocon:binary(Txt, Opts),
+        try
+            Res = hocon_tconf:check(Sc, Conf, Opts),
+            hocon_maps:ensure_plain(Res)
+        catch
+            throw:{_, Errors} ->
+                throw({check_error, hd(Errors)})
+        end
+    end,
+    Check = fun(Txt) ->
+        try
+            Res = CheckPlain(Txt),
+            ?assertEqual(Res, CheckRich(Txt)),
+            Res
+        catch
+            throw:{check_error, E} ->
+                ?assertThrow({check_error, E}, CheckRich(Txt)),
+                erlang:throw(E)
+        end
+    end,
+    [
+        {"match type foo", fun() ->
+            ?assertMatch(
+                #{
+                    <<"foo_or_bar">> :=
+                        #{
+                            <<"type">> := <<"foo">>,
+                            <<"foo_bool">> := true,
+                            <<"backend">> := <<"foo_backend">>
+                        }
+                },
+                Check("foo_or_bar = {type = foo, foo_bool = true}")
+            )
+        end},
+        {"match type bar", fun() ->
+            ?assertMatch(
+                #{
+                    <<"foo_or_bar">> :=
+                        #{
+                            <<"type">> := <<"bar">>,
+                            <<"bar_bool">> := true,
+                            <<"backend">> := <<"bar_backend">>
+                        }
+                },
+                Check("foo_or_bar = {type = bar, bar_bool = true}")
+            )
+        end},
+        {"match type bar but invalid", fun() ->
+            ?assertThrow(
+                #{
+                    matched_type := "bar",
+                    unknown := "foo_bool"
+                },
+                Check("foo_or_bar = {type = bar, foo_bool = true}")
+            )
+        end},
+        {"match type foo but invalid", fun() ->
+            ?assertThrow(
+                #{
+                    matched_type := "foo",
+                    unknown := "bar_bool"
+                },
+                Check("foo_or_bar = {type = foo, bar_bool = true}")
+            )
+        end}
+    ].
 
 richmap_to_map(Map) ->
     hocon_util:richmap_to_map(Map).

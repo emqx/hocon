@@ -56,15 +56,13 @@ deep_put(Path, Value, Conf, Opts) ->
     put_rich(Opts, hocon_util:split_path(Path), Value, Conf).
 
 put_rich(_Opts, [], Value, Box) ->
-    boxit(Value, Box);
+    maybe_boxit(Value, Box);
 put_rich(Opts, [Name | Path], Value, Box) ->
     V0 = safe_unbox(Box),
     GoDeep = fun(Elem) -> put_rich(Opts, Path, Value, Elem) end,
     V = do_put(V0, Name, GoDeep, Opts),
     boxit(V, Box).
 
-do_put(?FROM_ENV_VAR(VarName, V), Name, GoDeep, Opts) ->
-    ?FROM_ENV_VAR(VarName, do_put(V, Name, GoDeep, Opts));
 do_put(V, Name, GoDeep, Opts) ->
     case maybe_array(V) andalso hocon_util:is_array_index(Name) of
         {true, Index} -> update_array_element(V, Index, GoDeep);
@@ -104,6 +102,11 @@ safe_unbox(MaybeBox) ->
         undefined -> ?EMPTY_MAP;
         Value -> Value
     end.
+
+%% the provided boxed value may have its own metadata
+%% we try to keep the override information
+maybe_boxit(#{?HOCON_V := _} = V, _Box) -> V;
+maybe_boxit(V, Box) -> boxit(V, Box).
 
 boxit(Value, Box) -> Box#{?HOCON_V => Value}.
 

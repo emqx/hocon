@@ -126,7 +126,7 @@ do_type(Ns, Ref) when is_list(Ref) -> do_type(Ns, ?REF(Ref));
 do_type(Ns, ?REF(Ref)) -> local_struct_href(ref(Ns, Ref));
 do_type(_Ns, ?R_REF(Module, Ref)) -> do_type(hocon_schema:namespace(Module), ?REF(Ref));
 do_type(Ns, ?ARRAY(T)) -> io_lib:format("[~s]", [do_type(Ns, T)]);
-do_type(Ns, ?UNION(Ts)) -> lists:join(" | ", [do_type(Ns, T) || T <- Ts]);
+do_type(Ns, ?UNION(Ts)) -> lists:join(" | ", [do_type(Ns, T) || T <- hoconsc:union_members(Ts)]);
 do_type(_Ns, ?ENUM(Symbols)) -> lists:join(" | ", [bin(S) || S <- Symbols]);
 do_type(Ns, ?LAZY(T)) -> do_type(Ns, T);
 do_type(Ns, ?MAP(Name, T)) -> ["{$", bin(Name), " -> ", do_type(Ns, T), "}"];

@@ -54,7 +54,9 @@
     schema/0,
     typefunc/0,
     translationfunc/0,
-    desc/0
+    desc/0,
+    union_members/0,
+    union_selector/0
 ]).
 
 -callback namespace() -> name().
@@ -81,6 +83,8 @@
 -type name() :: atom() | string() | binary().
 -type desc_id() :: atom() | string() | binary().
 -type desc() :: iodata() | {desc, module(), desc_id()}.
+-type union_selector() :: fun((all_union_members | {value, _}) -> type() | [type()]).
+-type union_members() :: [type()] | union_selector().
 %% primitive (or complex, but terminal) type
 -type type() ::
     typerefl:type()
@@ -89,13 +93,13 @@
     %% array of
     | ?ARRAY(type())
     %% one-of
-    | ?UNION([type()])
+    | ?UNION(union_members())
     %% one-of atoms, data is allowed to be binary()
     | ?ENUM([atom()]).
 
 -type field_schema() ::
     typerefl:type()
-    | ?UNION([type()])
+    | ?UNION(union_members())
     | ?ARRAY(type())
     | ?ENUM(type())
     | field_schema_map()
@@ -300,7 +304,8 @@ find_structs_per_type(Schema, ?LAZY(Type), Acc, Stack, TStack) ->
     find_structs_per_type(Schema, Type, Acc, Stack, TStack);
 find_structs_per_type(Schema, ?ARRAY(Type), Acc, Stack, TStack) ->
     find_structs_per_type(Schema, Type, Acc, ["$INDEX" | Stack], TStack);
-find_structs_per_type(Schema, ?UNION(Types), Acc, Stack, TStack) ->
+find_structs_per_type(Schema, ?UNION(Types0), Acc, Stack, TStack) ->
+    Types = hoconsc:union_members(Types0),
     lists:foldl(
         fun(T, AccIn) ->
             find_structs_per_type(Schema, T, AccIn, Stack, TStack)
@@ -483,7 +488,7 @@ fmt_type(Ns, ?ARRAY(T)) ->
 fmt_type(Ns, ?UNION(Ts)) ->
     #{
         kind => union,
-        members => [fmt_type(Ns, T) || T <- Ts]
+        members => [fmt_type(Ns, T) || T <- hoconsc:union_members(Ts)]
     };
 fmt_type(_Ns, ?ENUM(Symbols)) ->
     #{
