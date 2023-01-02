@@ -1258,18 +1258,18 @@ get_invalid_name(Names) ->
     ).
 
 fmt_field_names(Names) ->
-    do_fmt_field_names(lists:sort(lists:map(fun bin/1, Names))).
+    do_fmt_field_names(lists:sort(lists:map(fun str/1, Names))).
 
 do_fmt_field_names([]) -> none;
 do_fmt_field_names([Name1]) -> Name1;
-do_fmt_field_names([Name1, Name2]) -> bin([Name1, ",", Name2]);
-do_fmt_field_names([Name1, Name2 | _]) -> bin([do_fmt_field_names([Name1, Name2]), "..."]).
+do_fmt_field_names([Name1, Name2]) -> Name1 ++ "," ++ Name2;
+do_fmt_field_names([Name1, Name2 | _]) -> do_fmt_field_names([Name1, Name2]) ++ ",...".
 
 maybe_hd([OnlyOne]) -> OnlyOne;
 maybe_hd(Other) -> Other.
 
 readable_type(T) ->
-    hocon_schema:readable_type(T).
+    str(hocon_schema:readable_type(T)).
 
 -ifndef(TEST).
 assert_fields(_, _) -> ok.

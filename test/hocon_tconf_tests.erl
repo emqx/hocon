@@ -908,7 +908,7 @@ unknown_fields_test_() ->
         #{
             reason := unknown_fields,
             unmatched := none,
-            unknown := <<"name">>
+            unknown := "name"
         },
         hocon_tconf:map(demo_schema, M, all)
     ).
@@ -919,8 +919,8 @@ expected_fields_not_matched_test_() ->
     ?GEN_VALIDATION_ERR(
         #{
             reason := unknown_fields,
-            unmatched := <<"id">>,
-            unknown := <<"key,name...">>
+            unmatched := "id",
+            unknown := "key,name,..."
         },
         hocon_tconf:map(demo_schema, M, all)
     ).
@@ -1955,8 +1955,8 @@ select_union_members_check_test_() ->
         {"match type bar but invalid", fun() ->
             ?assertThrow(
                 #{
-                    matched_type := <<"bar">>,
-                    unknown := <<"foo_bool">>
+                    matched_type := "bar",
+                    unknown := "foo_bool"
                 },
                 Check("foo_or_bar = {type = bar, foo_bool = true}")
             )
@@ -1964,8 +1964,8 @@ select_union_members_check_test_() ->
         {"match type foo but invalid", fun() ->
             ?assertThrow(
                 #{
-                    matched_type := <<"foo">>,
-                    unknown := <<"bar_bool">>
+                    matched_type := "foo",
+                    unknown := "bar_bool"
                 },
                 Check("foo_or_bar = {type = foo, bar_bool = true}")
             )
