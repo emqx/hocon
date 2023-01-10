@@ -68,6 +68,7 @@ gen_struct(_RootNs, Ns, Name, #{fields := Fields} = Meta, Opts) ->
     S0 = #{
         full_name => bin(hocon_schema:fmt_ref(Ns, Name)),
         paths => [bin(P) || P <- Paths],
+        tags => maps:get(tags, Meta, []),
         fields => fmt_fields(Ns, Fields, Opts)
     },
     case Meta of

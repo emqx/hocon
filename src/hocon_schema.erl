@@ -66,6 +66,7 @@
 -callback translation(name()) -> [translation()].
 -callback validations() -> [validation()].
 -callback desc(name()) -> iodata() | undefined.
+-callback tags() -> [tag()].
 
 -optional_callbacks([
     namespace/0,
@@ -74,7 +75,8 @@
     translations/0,
     translation/1,
     validations/0,
-    desc/1
+    desc/1,
+    tags/0
 ]).
 
 -include("hoconsc.hrl").
@@ -151,6 +153,7 @@
         translations => #{name() => [translation()]},
         %% for config integrity checks
         validations => [validation()],
+        tags => [tag()],
         namespace => atom()
     }.
 
@@ -161,6 +164,7 @@
     | fun((hocon:config(), map()) -> hocon:config()).
 -type validationfun() :: fun((hocon:config()) -> ok | boolean() | {error, term()}).
 -type bin_name() :: binary().
+-type tag() :: binary().
 
 %% @doc Get translation identified by `Name' from the given schema.
 -spec translation(schema(), name()) -> [translation()].
@@ -255,12 +259,14 @@ fields(Sc, Name) ->
 %% @doc Get fields and meta data of the struct for the given struct name.
 -spec fields_and_meta(schema(), name()) -> fields().
 fields_and_meta(Mod, Name) when is_atom(Mod) ->
-    case Mod:fields(Name) of
-        Fields when is_list(Fields) ->
-            maybe_add_desc(Mod, Name, #{fields => Fields});
-        Fields ->
-            ensure_struct_meta(Fields)
-    end;
+    Meta =
+        case Mod:fields(Name) of
+            Fields when is_list(Fields) ->
+                maybe_add_desc(Mod, Name, #{fields => Fields});
+            Fields ->
+                ensure_struct_meta(Fields)
+        end,
+    Meta#{tags => tags(Mod)};
 fields_and_meta(#{fields := Fields}, Name) when is_function(Fields) ->
     ensure_struct_meta(Fields(Name));
 fields_and_meta(#{fields := Fields}, Name) when is_map(Fields) ->
@@ -277,6 +283,14 @@ maybe_add_desc(Mod, Name, Meta) ->
             end;
         false ->
             Meta
+    end.
+
+tags(Mod) when is_atom(Mod) ->
+    case erlang:function_exported(Mod, tags, 0) of
+        true ->
+            Mod:tags();
+        false ->
+            []
     end.
 
 ensure_struct_meta(Fields) when is_list(Fields) -> #{fields => Fields};
