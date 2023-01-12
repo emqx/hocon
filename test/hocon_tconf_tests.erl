@@ -768,6 +768,26 @@ required_array_test() ->
     ),
     ok.
 
+%% for union of unions the type path is an important piece of information in the error context
+type_stack_test() ->
+    Sc = #{
+        roots => [
+            {f1, hoconsc:array(hoconsc:union([hoconsc:ref("s1")]))}
+        ],
+        fields => #{
+            "s1" => [{maybe, hoconsc:union([hoconsc:ref("s2")])}],
+            "s2" => [
+                {id, hoconsc:mk(integer(), #{required => true})},
+                {name, string()}
+            ]
+        }
+    },
+    ?VALIDATION_ERR(
+        #{reason := required_field, path := "f1.1.maybe.id", matched_type := "s1/s2"},
+        hocon_tconf:check_plain(Sc, #{<<"f1">> => [#{<<"maybe">> => #{<<"name">> => "foo"}}]}, #{})
+    ),
+    ok.
+
 recursive_deprecation_test() ->
     Sc = #{
         roots => [
