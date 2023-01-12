@@ -755,7 +755,7 @@ do_map_union([], _TypeCheck, PerTypeResult, Opts) ->
     case maps:size(PerTypeResult) of
         1 ->
             [{ReadableType, Err}] = maps:to_list(PerTypeResult),
-            validation_errs(Opts, Err#{matched_type => ReadableType});
+            validation_errs(Opts, ensure_type_path(Err, ReadableType));
         _ ->
             validation_errs(Opts, #{
                 reason => matched_no_union_member,
@@ -1277,6 +1277,14 @@ maybe_hd(Other) -> Other.
 
 readable_type(T) ->
     str(hocon_schema:readable_type(T)).
+
+ensure_type_path(ErrorContext, ReadableType) ->
+    case maps:get(matched_type, ErrorContext, "") of
+        "" ->
+            ErrorContext#{matched_type => ReadableType};
+        SubType ->
+            ErrorContext#{matched_type => ReadableType ++ "/" ++ SubType}
+    end.
 
 -ifndef(TEST).
 assert_fields(_, _) -> ok.
