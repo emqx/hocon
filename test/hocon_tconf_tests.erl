@@ -750,6 +750,24 @@ required_test() ->
     ),
     ok.
 
+required_array_test() ->
+    Sc = #{
+        roots => [
+            {f1, hoconsc:array(hoconsc:union([hoconsc:ref("s1")]))}
+        ],
+        fields => #{
+            "s1" => [
+                {id, hoconsc:mk(integer(), #{required => true})},
+                {name, string()}
+            ]
+        }
+    },
+    ?VALIDATION_ERR(
+        #{reason := required_field, path := "f1.1.id"},
+        hocon_tconf:check_plain(Sc, #{<<"f1">> => [#{<<"name">> => "foo"}]}, #{})
+    ),
+    ok.
+
 recursive_deprecation_test() ->
     Sc = #{
         roots => [
