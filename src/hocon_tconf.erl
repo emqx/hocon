@@ -409,7 +409,7 @@ do_map(Fields, Value, Opts, ParentSchema) ->
         undefined ->
             case is_required(Opts, ParentSchema) of
                 true ->
-                    {validation_errs(Opts, required_field, undefined), undefined};
+                    {required_field_errs(Opts), undefined};
                 false ->
                     do_map2(Fields, boxit(Opts, undefined, undefined), Opts);
                 {false, recursively} ->
@@ -754,8 +754,8 @@ select_union_members(Types, Value, Opts) when is_function(Types) ->
 do_map_union([], _TypeCheck, PerTypeResult, Opts) ->
     case maps:size(PerTypeResult) of
         1 ->
-            [{Type, Err}] = maps:to_list(PerTypeResult),
-            validation_errs(Opts, Err#{matched_type => Type});
+            [{ReadableType, Err}] = maps:to_list(PerTypeResult),
+            validation_errs(Opts, Err#{matched_type => ReadableType});
         _ ->
             validation_errs(Opts, #{
                 reason => matched_no_union_member,
@@ -1085,7 +1085,7 @@ validate(_Opts, _Schema, undefined, false, _Validators) ->
     % do not validate if no value is set
     [];
 validate(Opts, _Schema, undefined, true, _Validators) ->
-    validation_errs(Opts, required_field, undefined);
+    required_field_errs(Opts);
 validate(Opts, Schema, Value, _IsRequired, Validators) ->
     do_validate(Opts, Schema, Value, Validators).
 
@@ -1114,6 +1114,9 @@ do_validate(Opts, Schema, Value, [H | T]) ->
             )
     end.
 
+required_field_errs(Opts) ->
+    validation_errs(Opts, #{reason => required_field}).
+
 validation_errs(Opts, Reason, Value) ->
     Err =
         case meta(Value) of
@@ -1123,7 +1126,11 @@ validation_errs(Opts, Reason, Value) ->
     validation_errs(Opts, Err).
 
 validation_errs(Opts, Context) ->
-    [{error, ?VALIDATION_ERRS(Context#{path => path(Opts)})}].
+    ContextWithPath = ensure_path(Opts, Context),
+    [{error, ?VALIDATION_ERRS(ContextWithPath)}].
+
+ensure_path(_Opts, #{path := _} = Context) -> Context;
+ensure_path(Opts, Context) -> Context#{path => path(Opts)}.
 
 -spec plain_put(opts(), [binary()], term(), hocon:confing()) -> hocon:config().
 plain_put(_Opts, [], Value, _Old) ->
