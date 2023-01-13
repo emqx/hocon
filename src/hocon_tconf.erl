@@ -737,6 +737,12 @@ path(#{stack := Stack}) ->
 path(Stack) when is_list(Stack) ->
     string:join(lists:reverse(lists:map(fun str/1, Stack)), ".").
 
+select_union_members(Types, undefined, _Opts) ->
+    %% This means the enclosing schema does not have a default value
+    %% so the `undefined' is passed down as-is.
+    %% If the enclosing schema is nullable (required=false),
+    %% then the type check will pass against the very first union member
+    [hd(hoconsc:union_members(Types))];
 select_union_members(Types, _Value, _Opts) when is_list(Types) ->
     Types;
 select_union_members(Types, Value, Opts) when is_function(Types) ->
