@@ -2010,5 +2010,17 @@ select_union_members_check_test_() ->
         end}
     ].
 
+nullable_union_test() ->
+    Structs = #{foo => [{id, hoconsc:mk(integer(), #{default => 12})}]},
+    Union = hoconsc:union([hoconsc:ref(foo), bar]),
+    Sc = #{roots => [{"root", hoconsc:mk(Union, #{required => false})}],
+            fields => Structs
+          },
+    ?assertEqual(#{<<"root">> => bar},
+                 hocon_tconf:check_plain(Sc, #{<<"root">> => <<"bar">>})),
+    ?assertEqual(#{<<"root">> => #{<<"id">> => 12}},
+                 hocon_tconf:check_plain(Sc, #{})),
+    ok.
+
 richmap_to_map(Map) ->
     hocon_util:richmap_to_map(Map).
