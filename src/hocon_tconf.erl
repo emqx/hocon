@@ -522,7 +522,14 @@ map_field_maybe_convert(Type, Schema, Value0, Opts, Converter) ->
     Value1 = ensure_plain(Value0),
     try Converter(Value1, Opts) of
         Value2 ->
-            Value3 = maybe_mkrich(Opts, Value2, Value0),
+            Box =
+                case Value0 of
+                    undefined ->
+                        ?META_BOX(from_converter, Converter);
+                    _ ->
+                        Value0
+                end,
+            Value3 = maybe_mkrich(Opts, Value2, Box),
             {Mapped, Value4} = map_field(Type, Schema, Value3, Opts),
             {Mapped, ensure_obfuscate_sensitive(Opts, Schema, Value4)}
     catch
