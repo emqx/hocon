@@ -847,7 +847,7 @@ collect_envs(Schema, Ns, Opts, Roots) ->
             Msg = bin(io_lib:format("unknown_env_vars: ~p", [UnknownVars])),
             log(Opts, warning, Msg)
     end,
-    [{Name, read_hocon_val(Value, Opts)} || {keep, Name, Value} <- Envs].
+    [parse_env(Name, Value, Opts) || {keep, Name, Value} <- Envs].
 
 %% return keep | warn | ignore for the given environment variable
 check_env(Schema, Roots, Ns, EnvVarName) ->
@@ -917,29 +917,33 @@ env_name_to_path(Ns, VarName) ->
         Path -> Path
     end.
 
-read_hocon_val("", _Opts) ->
-    "";
-read_hocon_val(Value, Opts) ->
-    case hocon:binary(Value, #{}) of
-        {ok, HoconVal} -> HoconVal;
-        {error, _} -> read_informal_hocon_val(Value, Opts)
-    end.
-
-read_informal_hocon_val(Value, Opts) ->
+%% Try to parse HOCON values set in env vars like:
+%%  EMQX_FOO__BAR=12
+%%  EMQX_FOO__BAR="{a: b}"
+%%  EMQX_FOO__BAR="[a, b]"
+%%
+%% Complex values have to be properly escape-quoted HOCON literals,
+%%
+%% for example:
+%%
+%%  * export EMQX_FOO__BAR="{\"#1\" = 2}",
+%%    the struct field name has to be quoted
+%%
+%%  * export EMQX_FOO__BAR="[\"string\", \"array\", \"111\"]",
+%%    the string array element '111' has to be wrapped in quotes
+%%
+%% Plain values are returned as-is, either the type cast (typrefl)
+%% or converter should take care of them.
+parse_env(Name, "", _Opts) ->
+    {Name, ""};
+parse_env(Name, Value, Opts) ->
     BoxedVal = "fake_key=" ++ Value,
-    case hocon:binary(BoxedVal, #{}) of
-        {ok, HoconVal} ->
-            maps:get(<<"fake_key">>, HoconVal);
-        {error, Reason} ->
-            Msg = unicode:characters_to_binary(
-                io_lib:format(
-                    "invalid_hocon_string: ~p, reason: ~p",
-                    [Value, Reason]
-                ),
-                utf8
-            ),
-            log(Opts, debug, Msg),
-            Value
+    case hocon:binary(BoxedVal, #{format => map}) of
+        {ok, #{<<"fake_key">> := V}} ->
+            {Name, V};
+        {error, _Reason} ->
+            log(Opts, debug, [Name, " is not a valid hocon value"]),
+            {Name, Value}
     end.
 
 apply_env(_Ns, [], _RootName, Conf, _Opts) ->
