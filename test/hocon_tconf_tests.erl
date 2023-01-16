@@ -2029,3 +2029,24 @@ nullable_union_test() ->
 
 richmap_to_map(Map) ->
     hocon_util:richmap_to_map(Map).
+
+convert_undefined_test() ->
+    Sc = #{
+        roots => [
+            {"root",
+                hoconsc:mk(
+                    string(),
+                    #{
+                        required => false,
+                        converter => fun(undefined, _) ->
+                            <<"string">>
+                        end
+                    }
+                )}
+        ],
+        fields => #{}
+    },
+    {ok, RichMap} = hocon:binary("{}", #{format => richmap}),
+    Res = hocon_tconf:check(Sc, RichMap),
+    ?assertEqual(#{<<"root">> => "string"}, hocon_maps:ensure_plain(Res)),
+    ok.
