@@ -1295,13 +1295,15 @@ maybe_hd(Other) -> Other.
 readable_type(T) ->
     str(hocon_schema:readable_type(T)).
 
-ensure_type_path(ErrorContext, ReadableType) ->
-    case maps:get(matched_type, ErrorContext, "") of
-        "" ->
-            ErrorContext#{matched_type => ReadableType};
-        SubType ->
-            ErrorContext#{matched_type => ReadableType ++ "/" ++ SubType}
-    end.
+ensure_type_path(#{matched_type := SubType} = ErrorContext, ReadableType) ->
+    ErrorContext#{matched_type => ReadableType ++ "/" ++ SubType};
+ensure_type_path(ErrorContext, ReadableType) when is_map(ErrorContext) ->
+    ErrorContext#{matched_type => ReadableType};
+ensure_type_path(Errors, ReadableType) ->
+    #{
+        matched_type => ReadableType,
+        errors => Errors
+    }.
 
 -ifndef(TEST).
 assert_fields(_, _) -> ok.

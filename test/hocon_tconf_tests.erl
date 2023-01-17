@@ -788,6 +788,30 @@ type_stack_test() ->
     ),
     ok.
 
+%% for union of unions, when sub-union check failed
+type_stack_cannot_concatenate_test() ->
+    Sc = #{
+        roots => [
+            {f1, hoconsc:array(hoconsc:union([hoconsc:ref("s1")]))}
+        ],
+        fields => #{
+            "s1" => [{maybe, hoconsc:union([hoconsc:ref("s2")])}],
+            "s2" => [
+                {id, hoconsc:mk(integer(), #{required => true})},
+                {name, hoconsc:mk(string(), #{required => true})}
+            ]
+        }
+    },
+    ?VALIDATION_ERR(
+        #{
+            path := "f1.1.maybe",
+            matched_type := "s1/s2",
+            errors := [_ | _]
+        },
+        hocon_tconf:check_plain(Sc, #{<<"f1">> => [#{<<"maybe">> => #{}}]}, #{})
+    ),
+    ok.
+
 recursive_deprecation_test() ->
     Sc = #{
         roots => [
