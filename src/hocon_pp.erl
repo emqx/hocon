@@ -76,7 +76,7 @@ pp_source(undefined) ->
 
 pp(IoData, Opts) ->
     NewLine = maps:get(newline, Opts, "\n"),
-    infix(split(bin(IoData)), NewLine).
+    [[Line, NewLine] || Line <- split(bin(IoData))].
 
 gen([], _Opts) ->
     <<"[]">>;
