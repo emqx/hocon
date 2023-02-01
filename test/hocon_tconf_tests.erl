@@ -862,6 +862,23 @@ deprecation_test() ->
         )
     ).
 
+deprecation_sub_field_test() ->
+    Sc = #{
+        roots => [
+            {f1, hoconsc:mk(integer())},
+            {f2, hoconsc:ref("dep")}
+        ],
+        fields => #{"dep" => [{fdep, hoconsc:mk(integer(), #{deprecated => {since, "0.1"}})}]}
+    },
+    ?assertEqual(
+        #{<<"f1">> => 1},
+        hocon_tconf:check_plain(
+            Sc,
+            #{<<"f1">> => 1},
+            #{required => false}
+        )
+    ).
+
 bad_root_test() ->
     Sc = #{
         roots => ["ab"],

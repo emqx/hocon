@@ -1056,7 +1056,12 @@ put_value(#{format := map} = Opts, Path, V, Conf) ->
     plain_put(Opts, split(Path), V, Conf).
 
 del_value(Opts, Field, Conf) ->
-    boxit(Opts, maps:without([Field], unbox(Opts, Conf)), Conf).
+    case unbox(Opts, Conf) of
+        undefined ->
+            Conf;
+        V ->
+            boxit(Opts, maps:without([Field], V), Conf)
+    end.
 
 split(Path) -> hocon_util:split_path(Path).
 
