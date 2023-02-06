@@ -104,16 +104,11 @@ fmt_field(
     _Opts
 ) ->
     Default = fmt_default(maps:get(default, Field, undefined)),
-    Mapping = fmt_mapping(maps:get(mapping, Field, undefined)),
     Desc = maps:get(desc, Field, ""),
     [
         ["- ", Name, ": ", fmt_type(Type), "\n"],
         case Default =/= undefined of
             true -> [hocon_md:indent(2, ["* default: ", Default]), "\n"];
-            false -> []
-        end,
-        case Mapping =/= undefined of
-            true -> [hocon_md:indent(2, ["* mapping: ", Mapping]), "\n"];
             false -> []
         end,
         case Desc =/= undefined of
@@ -126,9 +121,6 @@ fmt_field(
 fmt_default(undefined) -> undefined;
 fmt_default(#{oneliner := true, hocon := Content}) -> ["`", Content, "`"];
 fmt_default(#{oneliner := false, hocon := Content}) -> ["\n```\n", Content, "```"].
-
-fmt_mapping(undefined) -> undefined;
-fmt_mapping(Str) -> ["`", Str, "`"].
 
 fmt_type(T) -> hocon_md:code(do_type(T)).
 
