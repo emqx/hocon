@@ -942,7 +942,7 @@ parse_env(Name, Value, Opts) ->
         {ok, #{<<"fake_key">> := V}} ->
             {Name, V};
         {error, _Reason} ->
-            log(Opts, debug, [Name, " is not a valid hocon value"]),
+            log(Opts, debug, [Name, " is not a valid hocon value, using it as string literal."]),
             {Name, Value}
     end.
 
