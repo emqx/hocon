@@ -46,5 +46,25 @@ tags_test_() ->
         end}
     ].
 
+duplicated_field_names_test() ->
+    Structs = #{
+        foo => [
+            {id, hoconsc:mk(integer(), #{default => 12})},
+            {id, hoconsc:mk(string(), #{default => 12})}
+        ]
+    },
+    Sc = #{
+        roots => [{"root", hoconsc:mk(hoconsc:ref(foo), #{required => false})}],
+        fields => Structs
+    },
+    ?assertThrow(
+        #{
+            duplicated := [<<"id">>],
+            path := <<"foo">>,
+            reason := duplicated_field_names
+        },
+        gen(Sc)
+    ).
+
 gen(Schema) ->
     hocon_schema_json:gen(Schema).
