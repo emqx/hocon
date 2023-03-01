@@ -486,11 +486,23 @@ map_one_field(FieldType, FieldSchema, FieldValue0, Opts) ->
     Converter = upgrade_converter(field_schema(FieldSchema, converter)),
     {Acc0, NewValue} = map_field_maybe_convert(FieldType, FieldSchema, FieldValue, Opts, Converter),
     Acc = MaybeLog ++ Acc0,
+    SkipValidation = lists:any(
+        fun(X) -> X end,
+        [
+            is_make_serializable(Opts),
+            is_primitive_type(FieldType),
+            is_hoconsc_map(FieldType)
+        ]
+    ),
     Validators =
-        case is_make_serializable(Opts) orelse is_primitive_type(FieldType) of
+        case SkipValidation of
             true ->
                 %% we do not validate serializable maps (assuming it's typechecked already)
-                %% primitive values are already validated
+                %% primitive values are already validated.
+                %% also, when validating `hoconsc:map's, the key type
+                %% is fixed and the validators are already called on
+                %% the individual field values, so we should not call
+                %% the validators on the whole map.
                 [];
             false ->
                 %% otherwise validate using the schema defined callbacks
@@ -669,6 +681,9 @@ is_primitive_type(Type) when ?IS_TYPEREFL(Type) -> true;
 is_primitive_type(Atom) when is_atom(Atom) -> true;
 is_primitive_type(?ENUM(_)) -> true;
 is_primitive_type(_) -> false.
+
+is_hoconsc_map(?MAP(_Name, _Type)) -> true;
+is_hoconsc_map(_) -> false.
 
 sub_schema(EnclosingSchema, MaybeType) ->
     fun

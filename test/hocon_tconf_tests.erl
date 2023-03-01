@@ -2091,3 +2091,37 @@ convert_undefined_test() ->
     Res = hocon_tconf:check(Sc, RichMap),
     ?assertEqual(#{<<"root">> => "string"}, hocon_maps:ensure_plain(Res)),
     ok.
+
+%% when calling a validator on a value for a `hoconsc:map' schema
+%% field, ensure that it's not called on the whole map.
+map_validator_test() ->
+    CountKey = {?FUNCTION_NAME, count},
+    ValKey = {?FUNCTION_NAME, called_with},
+    Validator =
+        fun(Val) ->
+            case get(CountKey) of
+                undefined -> put(CountKey, 1);
+                N -> put(CountKey, N + 1)
+            end,
+            case get(ValKey) of
+                undefined -> put(ValKey, [Val]);
+                Vals -> put(ValKey, [Val | Vals])
+            end,
+            ok
+        end,
+    Sc = #{
+        roots =>
+            [
+                {"root",
+                    hoconsc:mk(
+                        hoconsc:map(name, binary()),
+                        #{validator => Validator}
+                    )}
+            ]
+    },
+    {ok, Conf} = hocon:binary("root { key: value }", #{format => map}),
+    Res = hocon_tconf:check_plain(Sc, Conf),
+    ?assertEqual(Conf, Res),
+    ?assertEqual([<<"value">>], get(ValKey)),
+    ?assertEqual(1, get(CountKey)),
+    ok.
