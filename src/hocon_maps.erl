@@ -39,6 +39,7 @@
 -define(EMPTY_MAP, #{}).
 
 -type config() :: hocon:config().
+-type name() :: hocon_schema:name().
 
 %% this can be the opts() from hocon_tconf, but only `atom_key' is relevant
 -type opts() :: #{
@@ -113,7 +114,7 @@ boxit(Value, Box) -> Box#{?HOCON_V => Value}.
 %% @doc Get value from a plain or rich map.
 %% `undefined' is returned if no such value path.
 %% NOTE: always return plain-value.
--spec get([nonempty_string()] | nonempty_string(), config(), term()) -> term().
+-spec get([name()] | name(), config(), term()) -> term().
 get(Path, Config, Default) ->
     case get(Path, Config) of
         undefined -> Default;
@@ -123,13 +124,13 @@ get(Path, Config, Default) ->
 %% @doc get a child node from richmap, return value also a richmap.
 %% `undefined' is returned if no value path.
 %% Key (first arg) can be "foo.bar.baz" or ["foo.bar", "baz"] or ["foo", "bar", "baz"].
--spec deep_get(string() | [string()], config()) -> config() | undefined.
+-spec deep_get(name() | [name()], config()) -> config() | undefined.
 deep_get(Path, Conf) ->
     do_get(hocon_util:split_path(Path), Conf, richmap).
 
 %% @doc Get value from a maybe-rich map.
 %% always return plain-value.
--spec get([nonempty_string()] | nonempty_string(), config()) -> term().
+-spec get([name()] | name(), config()) -> term().
 get(Path, Map) ->
     case is_richmap(Map) of
         true ->
