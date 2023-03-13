@@ -34,7 +34,8 @@ roots() -> [bar].
 fields(bar) ->
     [
         {union_with_default, fun union_with_default/1},
-        {field1, fun field1/1}
+        {field1, fun field1/1},
+        {host, fun host/1}
     ];
 fields(parent) ->
     [{child, hoconsc:mk(hoconsc:ref(child))}];
@@ -67,6 +68,11 @@ field1(type) -> string();
 field1(desc) -> "field1 desc";
 field1(sensitive) -> true;
 field1(_) -> undefined.
+
+host(type) -> string();
+host(required) -> false;
+host(desc) -> "host desc";
+host(_) -> undefined.
 
 union_with_default(type) ->
     ?UNION([dummy, "priv.bool", "priv.int"]);
@@ -152,7 +158,7 @@ obfuscate_sensitive_fill_default_test() ->
 env_override_test() ->
     with_envs(
         fun() ->
-            Conf = "{\"bar.field1\": \"foo\"}",
+            Conf = "{\"bar.field1\": \"foo\", bar.host: \"127.0.0.1\"}",
             Opts = #{format => richmap},
             Res = check(Conf, Opts#{apply_override_envs => true}),
             ?assertEqual(
@@ -166,7 +172,8 @@ env_override_test() ->
                 #{
                     <<"bar">> => #{
                         <<"union_with_default">> => #{<<"val">> => 111},
-                        <<"field1">> => ""
+                        <<"field1">> => "",
+                        <<"host">> => "127.0.0.2"
                     }
                 },
                 Res
@@ -174,13 +181,25 @@ env_override_test() ->
 
             {ok, Conf1} = hocon:binary(Conf, Opts),
             Conf2 = hocon_tconf:merge_env_overrides(?MODULE, Conf1, all, Opts),
+            %% check env raw binary field1 and host is binary.
+            ?assertMatch(
+                #{
+                    <<"bar">> := #{
+                        <<"union_with_default">> := #{<<"val">> := 111},
+                        <<"field1">> := <<"">>,
+                        <<"host">> := <<"127.0.0.2">>
+                    }
+                },
+                richmap_to_map(Conf2)
+            ),
             Conf3 = hocon_tconf:check(?MODULE, Conf2, Opts#{apply_override_envs => false}),
             Conf4 = richmap_to_map(Conf3),
             ?assertEqual(Res, Conf4)
         end,
         envs([
             {"EMQX_BAR__UNION_WITH_DEFAULT__VAL", "111"},
-            {"EMQX_bar__field1", ""}
+            {"EMQX_bar__field1", ""},
+            {"EMQX_bar__host", "127.0.0.2"}
         ])
     ).
 
