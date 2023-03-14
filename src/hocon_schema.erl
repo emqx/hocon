@@ -133,9 +133,16 @@
         %% The value will be dropped,
         %% Deprecated fields are treated as required => {false, recursively}
         deprecated => {since, binary()} | false,
-        %% other names to reference this field
+        %% Other names to reference this field.
         %% this can be useful when we need to rename some filed names
-        %% while keeping backward compatibility
+        %% while keeping backward compatibility.
+        %% For one struct, no duplication is allowed in the collection of
+        %% all field names and aliases.
+        %% The no-duplication assertion is made when dumping the schema to JSON.
+        %% see `hocon_schema_json'.
+        %% When checking values against the schema, the look up is first
+        %% done with the current field name, if not found, try the aliases
+        %% in the defined order until one is found (i.e. first match wins).
         aliases => [name()],
         %% transparent metadata
         extra => map()

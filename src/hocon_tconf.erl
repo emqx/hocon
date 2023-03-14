@@ -14,6 +14,7 @@
 %% limitations under the License.
 %%--------------------------------------------------------------------
 
+%% tconf: typed-config
 -module(hocon_tconf).
 
 -elvis([{elvis_style, god_modules, disable}]).
@@ -458,6 +459,8 @@ map_fields_cont([{_, FieldSchema} = Field | Fields], Conf0, Acc, Opts) ->
         end,
     Conf1 = put_value(Opts, FieldName, unbox(Opts, FValue), Conf0),
     %% now drop all aliases
+    %% it is allowed to have both old and new names provided in the config
+    %% but the first match wins.
     Conf = maps:without(Aliases, Conf1),
     map_fields(Fields, Conf, FAcc ++ Acc, Opts).
 
