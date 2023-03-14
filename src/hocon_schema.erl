@@ -34,12 +34,14 @@
     resolve_struct_name/2,
     root_names/1,
     field_schema/2,
-    assert_fields/2,
     path/1,
     readable_type/1,
     fmt_type/2,
     fmt_ref/2,
-    is_deprecated/1
+    is_deprecated/1,
+    aliases/1,
+    name_and_aliases/1,
+    names_and_aliases/1
 ]).
 
 -export([
@@ -131,6 +133,17 @@
         %% The value will be dropped,
         %% Deprecated fields are treated as required => {false, recursively}
         deprecated => {since, binary()} | false,
+        %% Other names to reference this field.
+        %% this can be useful when we need to rename some filed names
+        %% while keeping backward compatibility.
+        %% For one struct, no duplication is allowed in the collection of
+        %% all field names and aliases.
+        %% The no-duplication assertion is made when dumping the schema to JSON.
+        %% see `hocon_schema_json'.
+        %% When checking values against the schema, the look up is first
+        %% done with the current field name, if not found, try the aliases
+        %% in the defined order until one is found (i.e. first match wins).
+        aliases => [name()],
         %% transparent metadata
         extra => map()
     }.
@@ -356,12 +369,16 @@ find_ref(Schema, Name, Acc, Stack, TStack) ->
     {RootNs :: name(), RootFields :: [field()], [{Namespace :: name(), Name :: name(), fields()}]}.
 find_structs(Schema) ->
     RootFields = unify_roots(Schema),
-    All = find_structs(Schema, RootFields),
+    ok = assert_no_dot_in_root_names(Schema, RootFields),
+    All = lists:keysort(1, maps:to_list(find_structs(Schema, RootFields))),
     RootNs = hocon_schema:namespace(Schema),
-    {RootNs, RootFields, [
-        {Ns, Name, Fields}
-     || {{Ns, _Schema, Name}, Fields} <- lists:keysort(1, maps:to_list(All))
-    ]}.
+    Unified = lists:map(
+        fun({{Ns, _Schema, Name}, Fields}) ->
+            {Ns, Name, Fields}
+        end,
+        All
+    ),
+    {RootNs, RootFields, Unified}.
 
 unify_roots(Schema) ->
     Roots = ?MODULE:roots(Schema),
@@ -406,32 +423,6 @@ field_schema(FieldSchema, SchemaKey) when is_function(FieldSchema, 1) ->
     FieldSchema(SchemaKey);
 field_schema(FieldSchema, SchemaKey) when is_map(FieldSchema) ->
     maps:get(SchemaKey, FieldSchema, undefined).
-
-%% @doc Assert fields schema sanity.
-assert_fields(EnclosingSchema, []) ->
-    error(#{reason => no_fields_defined, enclosing_schema => EnclosingSchema});
-assert_fields(EnclosingSchema, Fields) ->
-    case assert_unique_field_names(Fields) of
-        ok -> ok;
-        {error, Reason} -> error(Reason#{enclosing_schema => EnclosingSchema})
-    end.
-
-assert_unique_field_names(Fields) ->
-    assert_unique_field_names(Fields, []).
-
-assert_unique_field_names([], _) ->
-    ok;
-assert_unique_field_names([{Name, _} | Rest], Acc) ->
-    BinName = bin(Name),
-    case lists:member(BinName, Acc) of
-        true ->
-            {error, #{
-                reason => duplicated_field_name,
-                name => Name
-            }};
-        false ->
-            assert_unique_field_names(Rest, [BinName | Acc])
-    end.
 
 new_desc_cache(undefined) ->
     #{file => undefined, tab => undefined};
@@ -539,3 +530,52 @@ fmt_ref(Ns, Name) ->
 is_deprecated(Schema) ->
     IsDeprecated = field_schema(Schema, deprecated),
     IsDeprecated =/= undefined andalso IsDeprecated =/= false.
+
+%% @doc Return the aliases in a list.
+-spec aliases(field_schema()) -> [name()].
+aliases(Schema) ->
+    case field_schema(Schema, aliases) of
+        undefined ->
+            [];
+        Names ->
+            lists:map(fun bin/1, Names)
+    end.
+
+%% @doc Return the names and aliases in a list.
+%% The head of the list must be the current name.
+-spec name_and_aliases(field()) -> [name()].
+name_and_aliases({Name, Schema}) ->
+    [bin(Name) | aliases(Schema)].
+
+%% HOCON fields are allowed to have dots in the name,
+%% however we do not support it in the root names.
+%%
+%% This is because the dot will cause root name to be split,
+%% which in turn makes the implementation of hocon_tconf module complicated.
+%%
+%% e.g. if a root name is 'a.b.c', the schema is only defined
+%% for data below `c` level.
+%% `a` and `b` are implicitly single-field roots.
+%%
+%% In this case if a non map value is assigned, such as `a.b=1`,
+%% the check code will crash rather than reporting a useful error reason.
+assert_no_dot_in_root_names(Schema, Roots) ->
+    Names = names_and_aliases(Roots),
+    ok = lists:foreach(fun(Name) -> assert_no_dot(Schema, Name) end, Names).
+
+assert_no_dot(Schema, RootName) ->
+    case hocon_util:split_path(RootName) of
+        [_] ->
+            ok;
+        _ ->
+            error(#{
+                reason => bad_root_name,
+                root_name => RootName,
+                schema => Schema
+            })
+    end.
+
+%% @doc Return all fields' names and aliases in a list.
+-spec names_and_aliases([field()]) -> [name()].
+names_and_aliases(Fields) ->
+    lists:flatmap(fun hocon_schema:name_and_aliases/1, Fields).
