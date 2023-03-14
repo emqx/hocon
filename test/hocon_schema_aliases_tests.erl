@@ -90,6 +90,11 @@ check_env_test() ->
         end,
     with_envs(Fun, [], envs([{"EMQX_OLD_ROOT1__key1", "42"}, {"EMQX_ROOT2__OLD_KEY2", "43"}])).
 
+no_value_test() ->
+    ConfText = "{root3 = b, old_root3 = a}",
+    {ok, Conf} = hocon:binary(ConfText),
+    ?assertEqual(#{}, hocon_tconf:check_plain(?MODULE, Conf, #{required => false})).
+
 with_envs(Fun, Args, Envs) ->
     hocon_test_lib:with_envs(Fun, Args, Envs).
 
