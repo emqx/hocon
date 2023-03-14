@@ -65,15 +65,29 @@ gen_struct(_RootNs, Ns, Name, #{fields := Fields} = Meta, Opts) ->
             #{paths := Ps} -> lists:sort(maps:keys(Ps));
             _ -> []
         end,
+    FullName = bin(hocon_schema:fmt_ref(Ns, Name)),
     S0 = #{
-        full_name => bin(hocon_schema:fmt_ref(Ns, Name)),
+        full_name => FullName,
         paths => [bin(P) || P <- Paths],
         tags => maps:get(tags, Meta, []),
-        fields => fmt_fields(Ns, Fields, Opts)
+        fields => assert_unique_names(FullName, fmt_fields(Ns, Fields, Opts))
     },
     case Meta of
         #{desc := StructDoc} -> S0#{desc => fmt_desc(StructDoc, Opts)};
         _ -> S0
+    end.
+
+assert_unique_names(FullName, Fields) ->
+    Names = lists:map(fun(#{name := Name}) -> Name end, Fields),
+    case (Names -- lists:usort(Names)) of
+        [] ->
+            Fields;
+        Dups ->
+            throw(#{
+                reason => duplicated_field_names,
+                path => FullName,
+                duplicated => Dups
+            })
     end.
 
 fmt_fields(_Ns, [], _Opts) ->

@@ -332,7 +332,7 @@ merge_env_overrides(Schema, Conf0, Roots0, Opts0) ->
     apply_envs(Schema, Conf1, Opts, Roots).
 
 %% the config 'map' call returns env overrides in mapping
-%% resutls, this function helps to drop them from  the list
+%% results, this function helps to drop them from  the list
 %% and log the overrides
 log_and_drop_env_overrides(_Opts, []) ->
     [];
@@ -381,7 +381,7 @@ resolve_root_types(Roots, [Name | Rest]) ->
     end.
 
 %% Assert no dot in root struct name.
-%% This is because the dot will cause root name to be splited,
+%% This is because the dot will cause root name to be split,
 %% which in turn makes the implementation complicated.
 %%
 %% e.g. if a root name is 'a.b.c', the schema is only defined
@@ -935,15 +935,15 @@ env_name_to_path(Ns, VarName) ->
 %% Plain values are returned as-is, either the type cast (typrefl)
 %% or converter should take care of them.
 parse_env(Name, "", _Opts) ->
-    {Name, ""};
+    {Name, <<"">>};
 parse_env(Name, Value, Opts) ->
     BoxedVal = "fake_key=" ++ Value,
     case hocon:binary(BoxedVal, #{format => map}) of
         {ok, #{<<"fake_key">> := V}} ->
             {Name, V};
         {error, _Reason} ->
-            log(Opts, debug, [Name, " is not a valid hocon value, using it as string literal."]),
-            {Name, Value}
+            log(Opts, debug, [Name, " is not a valid hocon value, using it as binary."]),
+            {Name, list_to_binary(Value)}
     end.
 
 apply_env(_Ns, [], _RootName, Conf, _Opts) ->
