@@ -461,7 +461,13 @@ map_fields_cont([{_, FieldSchema} = Field | Fields], Conf0, Acc, Opts) ->
     %% now drop all aliases
     %% it is allowed to have both old and new names provided in the config
     %% but the first match wins.
-    Conf = maps:without(Aliases, Conf1),
+    Conf =
+        case Conf1 of
+            undefined ->
+                undefined;
+            _ ->
+                maps:without(Aliases, Conf1)
+        end,
     map_fields(Fields, Conf, FAcc ++ Acc, Opts).
 
 map_one_field(FieldType, FieldSchema, FieldValue0, Opts) ->
