@@ -1137,8 +1137,8 @@ no_dot_in_root_name_test() ->
         fields => [{f1, hoconsc:mk(integer())}]
     },
     ?assertError(
-        {bad_root_name, _, "a.b"},
-        hocon_tconf:check_plain(Sc, #{<<"whateverbi">> => 1})
+        #{reason := bad_root_name, root_name := <<"a.b">>},
+        hocon_schema:find_structs(Sc)
     ).
 
 union_of_roots_test() ->

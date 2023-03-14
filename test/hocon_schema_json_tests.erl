@@ -46,7 +46,7 @@ tags_test_() ->
         end}
     ].
 
-duplicated_field_names_test() ->
+unique_field_names_test() ->
     Structs = #{
         foo => [
             {id, hoconsc:mk(integer(), #{default => 12})},
@@ -61,7 +61,27 @@ duplicated_field_names_test() ->
         #{
             duplicated := [<<"id">>],
             path := <<"foo">>,
-            reason := duplicated_field_names
+            reason := duplicated_field_names_and_aliases
+        },
+        gen(Sc)
+    ).
+
+unique_field_name_with_aliases_test() ->
+    Structs = #{
+        foo => [
+            {id, hoconsc:mk(integer(), #{default => 12})},
+            {id2, hoconsc:mk(string(), #{default => 12, aliases => ["id"]})}
+        ]
+    },
+    Sc = #{
+        roots => [{"root", hoconsc:mk(hoconsc:ref(foo), #{required => false})}],
+        fields => Structs
+    },
+    ?assertThrow(
+        #{
+            duplicated := [<<"id">>],
+            path := <<"foo">>,
+            reason := duplicated_field_names_and_aliases
         },
         gen(Sc)
     ).

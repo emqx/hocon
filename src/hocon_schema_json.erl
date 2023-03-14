@@ -66,11 +66,12 @@ gen_struct(_RootNs, Ns, Name, #{fields := Fields} = Meta, Opts) ->
             _ -> []
         end,
     FullName = bin(hocon_schema:fmt_ref(Ns, Name)),
+    ok = assert_unique_names(FullName, Fields),
     S0 = #{
         full_name => FullName,
         paths => [bin(P) || P <- Paths],
         tags => maps:get(tags, Meta, []),
-        fields => assert_unique_names(FullName, fmt_fields(Ns, Fields, Opts))
+        fields => fmt_fields(Ns, Fields, Opts)
     },
     case Meta of
         #{desc := StructDoc} -> S0#{desc => fmt_desc(StructDoc, Opts)};
@@ -78,13 +79,13 @@ gen_struct(_RootNs, Ns, Name, #{fields := Fields} = Meta, Opts) ->
     end.
 
 assert_unique_names(FullName, Fields) ->
-    Names = lists:map(fun(#{name := Name}) -> Name end, Fields),
+    Names = hocon_schema:names_and_aliases(Fields),
     case (Names -- lists:usort(Names)) of
         [] ->
-            Fields;
+            ok;
         Dups ->
             throw(#{
-                reason => duplicated_field_names,
+                reason => duplicated_field_names_and_aliases,
                 path => FullName,
                 duplicated => Dups
             })
@@ -109,6 +110,7 @@ fmt_field(Ns, Name, FieldSchema, Opts) ->
                 {since, Vsn} = hocon_schema:field_schema(FieldSchema, deprecated),
                 [
                     {name, bin(Name)},
+                    {aliases, hocon_schema:aliases(FieldSchema)},
                     {type, fmt_type(Ns, hocon_schema:field_schema(FieldSchema, type))},
                     {desc, bin(["Deprecated since ", Vsn, "."])}
                 ];
@@ -116,6 +118,7 @@ fmt_field(Ns, Name, FieldSchema, Opts) ->
                 Default = hocon_schema:field_schema(FieldSchema, default),
                 [
                     {name, bin(Name)},
+                    {aliases, hocon_schema:aliases(FieldSchema)},
                     {type, fmt_type(Ns, hocon_schema:field_schema(FieldSchema, type))},
                     {default, fmt_default(Default)},
                     {raw_default, Default},

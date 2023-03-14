@@ -14,6 +14,7 @@
 %% limitations under the License.
 %%--------------------------------------------------------------------
 
+%% tconf: typed-config
 -module(hocon_tconf).
 
 -elvis([{elvis_style, god_modules, disable}]).
@@ -294,13 +295,6 @@ map(Schema, Conf0, Roots0, Opts0) ->
     ),
     Conf1 = ensure_format(Conf0, Opts),
     Roots = resolve_root_types(hocon_schema:roots(Schema), Roots0),
-    %% assert
-    lists:foreach(
-        fun({RootName, _RootSc}) ->
-            ok = assert_no_dot(Schema, RootName)
-        end,
-        Roots
-    ),
     Conf2 = filter_by_roots(Opts, Conf1, Roots),
     Conf3 = apply_envs(Schema, Conf2, Opts, Roots),
     {Mapped0, Conf4} = do_map(Roots, Conf3, Opts, ?MAGIC_SCHEMA),
@@ -351,22 +345,23 @@ apply_envs(Schema, Conf0, Opts, Roots) ->
 
 do_apply_envs(_EnvNamespace, _Envs, _Opts, [], Conf) ->
     Conf;
-do_apply_envs(EnvNamespace, Envs, Opts, [{RootName, RootSc} | Roots], Conf) ->
+do_apply_envs(EnvNamespace, Envs, Opts, [{_, RootSc} = Root | Roots], Conf) ->
     ShouldApply =
         case field_schema(RootSc, type) of
             ?LAZY(_) -> maps:get(check_lazy, Opts, false);
             _ -> true
         end,
+    RootNames = name_and_aliases(Root),
     NewConf =
         case ShouldApply of
-            true -> apply_env(EnvNamespace, Envs, RootName, Conf, Opts);
+            true -> apply_env(EnvNamespace, Envs, RootNames, Conf, Opts);
             false -> Conf
         end,
     do_apply_envs(EnvNamespace, Envs, Opts, Roots, NewConf).
 
 %% silently drop unknown data (root level only)
 filter_by_roots(Opts, Conf, Roots) ->
-    Names = lists:map(fun({N, _}) -> bin(N) end, Roots),
+    Names = names_and_aliases(Roots),
     boxit(Opts, maps:with(Names, unbox(Opts, Conf)), Conf).
 
 resolve_root_types(_Roots, []) ->
@@ -380,22 +375,6 @@ resolve_root_types(Roots, [Name | Rest]) ->
             [{Name, hoconsc:ref(Name)} | resolve_root_types(Roots, Rest)]
     end.
 
-%% Assert no dot in root struct name.
-%% This is because the dot will cause root name to be split,
-%% which in turn makes the implementation complicated.
-%%
-%% e.g. if a root name is 'a.b.c', the schema is only defined
-%% for data below `c` level.
-%% `a` and `b` are implicitly single-field roots.
-%%
-%% In this case if a non map value is assigned, such as `a.b=1`,
-%% the check code will crash rather than reporting a useful error reason.
-assert_no_dot(Schema, RootName) ->
-    case split(RootName) of
-        [_] -> ok;
-        _ -> error({bad_root_name, Schema, RootName})
-    end.
-
 str(A) when is_atom(A) -> str(atom_to_binary(A, utf8));
 str(B) when is_binary(B) -> unicode:characters_to_list(B, utf8);
 str(S) when is_list(S) -> S.
@@ -404,7 +383,6 @@ bin(A) when is_atom(A) -> atom_to_binary(A, utf8);
 bin(S) -> unicode:characters_to_binary(S, utf8).
 
 do_map(Fields, Value, Opts, ParentSchema) ->
-    ok = assert_fields(ParentSchema, Fields),
     case unbox(Opts, Value) of
         undefined ->
             case is_required(Opts, ParentSchema) of
@@ -422,7 +400,7 @@ do_map(Fields, Value, Opts, ParentSchema) ->
     end.
 
 do_map2(Fields, Value0, Opts) ->
-    SchemaFieldNames = lists:map(fun({N, _Schema}) -> N end, Fields),
+    SchemaFieldNames = names_and_aliases(Fields),
     DataFields0 = unbox(Opts, Value0),
     DataFields = drop_nulls(Opts, DataFields0),
     Value = boxit(Opts, DataFields, Value0),
@@ -433,18 +411,19 @@ do_map2(Fields, Value0, Opts) ->
 
 map_fields([], Conf, Mapped, _Opts) ->
     {Mapped, Conf};
-map_fields([{FieldName, FieldSchema} | Fields], Conf0, Acc, Opts) ->
+map_fields([{_, FieldSchema} = Field | Fields], Conf0, Acc, Opts) ->
     case hocon_schema:is_deprecated(FieldSchema) of
         true ->
-            Conf = del_value(Opts, bin(FieldName), Conf0),
+            Conf = del_value(Opts, name_and_aliases(Field), Conf0),
             map_fields(Fields, Conf, Acc, Opts);
         false ->
-            map_fields_cont([{FieldName, FieldSchema} | Fields], Conf0, Acc, Opts)
+            map_fields_cont([Field | Fields], Conf0, Acc, Opts)
     end.
 
-map_fields_cont([{FieldName, FieldSchema} | Fields], Conf0, Acc, Opts) ->
+map_fields_cont([{_, FieldSchema} = Field | Fields], Conf0, Acc, Opts) ->
     FieldType = field_schema(FieldSchema, type),
-    FieldValue = get_field(Opts, FieldName, Conf0),
+    [FieldName | Aliases] = name_and_aliases(Field),
+    FieldValue = get_field_value(Opts, [FieldName | Aliases], Conf0),
     NewOpts = push_stack(Opts, FieldName),
     {FAcc, FValue} =
         try
@@ -478,7 +457,11 @@ map_fields_cont([{FieldName, FieldSchema} | Fields], Conf0, Acc, Opts) ->
                 ),
                 erlang:raise(C, Err, St)
         end,
-    Conf = put_value(Opts, FieldName, unbox(Opts, FValue), Conf0),
+    Conf1 = put_value(Opts, FieldName, unbox(Opts, FValue), Conf0),
+    %% now drop all aliases
+    %% it is allowed to have both old and new names provided in the config
+    %% but the first match wins.
+    Conf = maps:without(Aliases, Conf1),
     map_fields(Fields, Conf, FAcc ++ Acc, Opts).
 
 map_one_field(FieldType, FieldSchema, FieldValue0, Opts) ->
@@ -870,10 +853,11 @@ check_env(Schema, Roots, Ns, EnvVarName) ->
 
 is_field([], _Name) ->
     false;
-is_field([{FN, FT} | Fields], Name) ->
-    case bin(FN) =:= bin(Name) of
+is_field([{_, FieldSc} = Field | Fields], Name) ->
+    Names = name_and_aliases(Field),
+    case lists:member(bin(Name), Names) of
         true ->
-            Type = hocon_schema:field_schema(FT, type),
+            Type = hocon_schema:field_schema(FieldSc, type),
             {true, Type};
         false ->
             is_field(Fields, Name)
@@ -948,18 +932,18 @@ parse_env(Name, Value, Opts) ->
 
 apply_env(_Ns, [], _RootName, Conf, _Opts) ->
     Conf;
-apply_env(Ns, [{VarName, V} | More], RootName, Conf, Opts) ->
+apply_env(Ns, [{VarName, V} | More], RootNames, Conf, Opts) ->
     %% match [_ | _] here because the name is already validated
     [_ | _] = Path0 = env_name_to_path(Ns, VarName),
     NewConf =
-        case Path0 =/= [] andalso bin(RootName) =:= bin(hd(Path0)) of
+        case Path0 =/= [] andalso lists:member(bin(hd(Path0)), RootNames) of
             true ->
                 Path = lists:flatten(string:join(Path0, ".")),
                 do_apply_env(VarName, V, Path, Conf, Opts);
             false ->
                 Conf
         end,
-    apply_env(Ns, More, RootName, NewConf, Opts).
+    apply_env(Ns, More, RootNames, NewConf, Opts).
 
 do_apply_env(VarName, VarValue, Path, Conf, Opts) ->
     %% It lacks schema info here, so we need to tag the value with 'from_env' meta data
@@ -1043,8 +1027,20 @@ mkrich(Map, Box) when is_map(Map) ->
 mkrich(Val, Box) ->
     boxit(Val, Box).
 
-get_field(#{format := richmap}, Path, Conf) -> hocon_maps:deep_get(Path, Conf);
-get_field(#{format := map}, Path, Conf) -> hocon_maps:get(Path, ensure_plain(Conf)).
+get_field_value(_, [], _Conf) ->
+    undefined;
+get_field_value(Opts, [Path | Rest], Conf) ->
+    case do_get_field_value(Opts, Path, Conf) of
+        undefined ->
+            get_field_value(Opts, Rest, Conf);
+        Value ->
+            Value
+    end.
+
+do_get_field_value(#{format := richmap}, Path, Conf) ->
+    hocon_maps:deep_get(Path, Conf);
+do_get_field_value(#{format := map}, Path, Conf) ->
+    hocon_maps:get(Path, ensure_plain(Conf)).
 
 %% put (maybe deep) value to map/richmap
 %% e.g. "path.to.my.value"
@@ -1055,12 +1051,12 @@ put_value(#{format := richmap} = Opts, Path, V, Conf) ->
 put_value(#{format := map} = Opts, Path, V, Conf) ->
     plain_put(Opts, split(Path), V, Conf).
 
-del_value(Opts, Field, Conf) ->
+del_value(Opts, Names, Conf) ->
     case unbox(Opts, Conf) of
         undefined ->
             Conf;
         V ->
-            boxit(Opts, maps:without([Field], V), Conf)
+            boxit(Opts, maps:without(Names, V), Conf)
     end.
 
 split(Path) -> hocon_util:split_path(Path).
@@ -1310,9 +1306,8 @@ ensure_type_path(Errors, ReadableType) ->
         errors => Errors
     }.
 
--ifndef(TEST).
-assert_fields(_, _) -> ok.
--else.
-assert_fields(ParentSchema, Fields) ->
-    hocon_schema:assert_fields(ParentSchema, Fields).
--endif.
+names_and_aliases(Fields) ->
+    hocon_schema:names_and_aliases(Fields).
+
+name_and_aliases(Field) ->
+    hocon_schema:name_and_aliases(Field).
