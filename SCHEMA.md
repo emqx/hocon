@@ -22,7 +22,7 @@ Here is a list of the `primitive` types for reference:
 * enum: Enum is a list of Erlang atoms
 * singleton: singleton is an Erlang atom
 * integer: typerefl:integer()
-* string: typerefl:integer()
+* string: typerefl:string()
 
 And an extended primitive type example: `ip_port`
 
