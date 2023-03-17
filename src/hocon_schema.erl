@@ -39,6 +39,7 @@
     fmt_type/2,
     fmt_ref/2,
     is_deprecated/1,
+    is_hidden/1,
     aliases/1,
     name_and_aliases/1,
     names_and_aliases/1
@@ -272,18 +273,21 @@ fields(Sc, Name) ->
 %% @doc Get fields and meta data of the struct for the given struct name.
 -spec fields_and_meta(schema(), name()) -> fields().
 fields_and_meta(Mod, Name) when is_atom(Mod) ->
-    Meta =
+    Meta0 =
         case Mod:fields(Name) of
             Fields when is_list(Fields) ->
                 maybe_add_desc(Mod, Name, #{fields => Fields});
             Fields ->
                 ensure_struct_meta(Fields)
         end,
+    Meta = maybe_add_hidden(Meta0, Mod, Name),
     Meta#{tags => tags(Mod)};
-fields_and_meta(#{fields := Fields}, Name) when is_function(Fields) ->
-    ensure_struct_meta(Fields(Name));
-fields_and_meta(#{fields := Fields}, Name) when is_map(Fields) ->
-    ensure_struct_meta(maps:get(Name, Fields)).
+fields_and_meta(#{fields := Fields0} = Parent, Name) when is_function(Fields0) ->
+    Fields = ensure_struct_meta(Fields0(Name)),
+    inherit_hidden(Parent, Fields);
+fields_and_meta(#{fields := Fields0} = Parent, Name) when is_map(Fields0) ->
+    Fields = ensure_struct_meta(maps:get(Name, Fields0)),
+    inherit_hidden(Parent, Fields).
 
 maybe_add_desc(Mod, Name, Meta) ->
     case erlang:function_exported(Mod, desc, 1) of
@@ -293,6 +297,27 @@ maybe_add_desc(Mod, Name, Meta) ->
                     Meta;
                 Desc ->
                     Meta#{desc => Desc}
+            end;
+        false ->
+            Meta
+    end.
+
+inherit_hidden(Parent, Fields) when is_map(Fields) ->
+    case Parent of
+        #{hidden := true} ->
+            Fields#{hidden => true};
+        _ ->
+            Fields
+    end.
+
+maybe_add_hidden(Meta, Mod, Name) ->
+    case erlang:function_exported(Mod, hidden, 1) of
+        true ->
+            case Mod:hidden(Name) of
+                true ->
+                    Meta#{hidden => true};
+                _ ->
+                    Meta
             end;
         false ->
             Meta
@@ -349,7 +374,7 @@ find_ref(Schema, Name, Acc, Stack, TStack) ->
     Namespace = namespace(Schema),
     Key = {Namespace, Schema, Name},
     Path = path(Stack),
-    Paths =
+    Paths0 =
         case maps:find(Key, Acc) of
             {ok, #{paths := Ps}} -> Ps;
             error -> #{}
@@ -360,9 +385,46 @@ find_ref(Schema, Name, Acc, Stack, TStack) ->
             Acc;
         false ->
             Fields0 = fields_and_meta(Schema, Name),
-            Fields = Fields0#{paths => Paths#{Path => true}},
+            Paths =
+                case is_hidden_path(Schema, TStack, Stack) of
+                    false ->
+                        Paths0#{Path => true};
+                    true ->
+                        Paths0
+                end,
+            Fields = Fields0#{paths => Paths},
             find_structs(Schema, Fields, Acc#{Key => Fields}, Stack, [Key | TStack])
     end.
+
+is_hidden_path(_Schema, [{_NS, Sc, Name} | _], [CurField | _]) ->
+    #{fields := Fields} = fields_and_meta(Sc, Name),
+    case find_field_meta(Fields, CurField) of
+        #{hidden := true} ->
+            true;
+        _ ->
+            false
+    end;
+is_hidden_path(#{roots := Roots}, [], [Root]) ->
+    case find_field_meta(Roots, Root) of
+        #{hidden := true} ->
+            true;
+        _ ->
+            false
+    end;
+is_hidden_path(_Schema, _TStack, _Stack) ->
+    false.
+
+find_field_meta([{AtomName, Meta} | Rest], StrName) ->
+    case StrName =:= str(AtomName) of
+        true ->
+            Meta;
+        false ->
+            find_field_meta(Rest, StrName)
+    end;
+find_field_meta([_Name | Rest], StrName) ->
+    find_field_meta(Rest, StrName);
+find_field_meta([], _StrName) ->
+    undefined.
 
 %% @doc Collect all structs defined in the given schema.
 -spec find_structs(schema()) ->
@@ -530,6 +592,12 @@ fmt_ref(Ns, Name) ->
 is_deprecated(Schema) ->
     IsDeprecated = field_schema(Schema, deprecated),
     IsDeprecated =/= undefined andalso IsDeprecated =/= false.
+
+%% @doc Return 'true' if the field is marked as hidden.
+-spec is_hidden(field_schema()) -> boolean().
+is_hidden(Schema) ->
+    IsHidden = field_schema(Schema, hidden),
+    IsHidden =/= undefined andalso IsHidden =/= false.
 
 %% @doc Return the aliases in a list.
 -spec aliases(field_schema()) -> [name()].

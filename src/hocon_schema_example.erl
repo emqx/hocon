@@ -83,39 +83,43 @@ fmt_field(
     {PathName, ValName} = resolve_name(Name),
     Path = [str(PathName) | Path0],
     {Link, Opts1} = fmt_struct_link(Type, Path, Opts0),
-    {ok, #{fields := SubFields}} = find_struct_sub_fields(SubName, Opts1),
-    #{indent := Indent, comment := Comment} = Opts0,
-    Opts2 = Opts1#{indent => Indent ++ ?INDENT},
+    case find_struct_sub_fields(SubName, Opts1) of
+        {error, not_found} ->
+            [];
+        {ok, #{fields := SubFields}} ->
+            #{indent := Indent, comment := Comment} = Opts0,
+            Opts2 = Opts1#{indent => Indent ++ ?INDENT},
 
-    SubStructs =
-        case maps:get(examples, Field, #{}) of
-            #{} = Example ->
-                fmt_field_with_example(Path, SubFields, Example, Opts2);
-            {union, UnionExamples} ->
-                Examples1 = filter_union_example(UnionExamples, SubFields),
-                fmt_field_with_example(Path, SubFields, Examples1, Opts2);
-            {array, ArrayExamples} ->
-                lists:flatmap(
-                    fun(SubExample) ->
-                        fmt_field_with_example(Path, SubFields, SubExample, Opts2)
-                    end,
-                    ArrayExamples
-                )
-        end,
-    [
-        fmt_path(Path, Indent),
-        Link,
-        Indent,
-        comment(Comment),
-        ValName,
-        " {",
-        ?NL,
-        lists:join(?NL, SubStructs),
-        Indent,
-        comment(Comment),
-        " }",
-        ?NL
-    ];
+            SubStructs =
+                case maps:get(examples, Field, #{}) of
+                    #{} = Example ->
+                        fmt_field_with_example(Path, SubFields, Example, Opts2);
+                    {union, UnionExamples} ->
+                        Examples1 = filter_union_example(UnionExamples, SubFields),
+                        fmt_field_with_example(Path, SubFields, Examples1, Opts2);
+                    {array, ArrayExamples} ->
+                        lists:flatmap(
+                            fun(SubExample) ->
+                                fmt_field_with_example(Path, SubFields, SubExample, Opts2)
+                            end,
+                            ArrayExamples
+                        )
+                end,
+            [
+                fmt_path(Path, Indent),
+                Link,
+                Indent,
+                comment(Comment),
+                ValName,
+                " {",
+                ?NL,
+                lists:join(?NL, SubStructs),
+                Indent,
+                comment(Comment),
+                " }",
+                ?NL
+            ]
+    end;
 fmt_field(#{type := #{kind := primitive, name := TypeName}} = Field, Path, Opts) ->
     Name = str(maps:get(name, Field)),
     Fix = fmt_fix_header(Field, TypeName, [Name | Path], Opts),

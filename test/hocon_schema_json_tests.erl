@@ -86,5 +86,46 @@ unique_field_name_with_aliases_test() ->
         gen(Sc)
     ).
 
+hidden_structs_test() ->
+    Structs = #{
+        foo => [{id, hoconsc:mk(integer(), #{default => 12})}],
+        foo_hidden => [{id, hoconsc:mk(integer(), #{default => 12, hidden => true})}],
+        bar => [{to_foo, hoconsc:mk(hoconsc:ref(foo_hidden), #{})}],
+        baz => [{to_foo_hidden, hoconsc:mk(hoconsc:ref(foo), #{hidden => true})}]
+    },
+    Sc = #{
+        roots => [
+            {"hidden", hoconsc:mk(hoconsc:ref(foo), #{required => false, hidden => true})},
+            {"nested_hidden1", hoconsc:mk(hoconsc:ref(bar), #{required => false, hidden => false})},
+            {"nested_hidden2", hoconsc:mk(hoconsc:ref(baz), #{required => false, hidden => false})},
+            {"visible", hoconsc:mk(hoconsc:ref(foo), #{required => false})}
+        ],
+        fields => Structs
+    },
+    Json = gen(Sc),
+    ?assertMatch(
+        [
+            #{
+                fields := [
+                    #{name := <<"nested_hidden1">>},
+                    #{name := <<"nested_hidden2">>},
+                    #{name := <<"visible">>}
+                ],
+                full_name := <<"Root Config Keys">>
+            },
+            #{
+                fields := [#{name := <<"to_foo">>}],
+                full_name := <<"bar">>,
+                paths := [<<"nested_hidden1">>]
+            },
+            #{
+                fields := [#{name := <<"id">>}],
+                full_name := <<"foo">>,
+                paths := [<<"visible">>]
+            }
+        ],
+        Json
+    ).
+
 gen(Schema) ->
     hocon_schema_json:gen(Schema).

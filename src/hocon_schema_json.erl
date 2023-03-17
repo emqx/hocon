@@ -49,9 +49,17 @@ gen(Schema, Opts) ->
     Json =
         [
             gen_struct(RootNs, RootNs, "Root Config Keys", #{fields => RootFields}, Opts2)
-            | lists:map(
-                fun({Ns, Name, Fields}) ->
-                    gen_struct(RootNs, Ns, Name, Fields, Opts2)
+            | lists:filtermap(
+                fun
+                    ({_Ns, _Name, _Meta = #{hidden := true}}) ->
+                        false;
+                    ({Ns, Name, Meta}) ->
+                        case gen_struct(RootNs, Ns, Name, Meta, Opts2) of
+                            #{fields := []} ->
+                                false;
+                            S0 ->
+                                {true, S0}
+                        end
                 end,
                 Structs
             )
