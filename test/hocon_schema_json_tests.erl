@@ -86,18 +86,23 @@ unique_field_name_with_aliases_test() ->
         gen(Sc)
     ).
 
-hidden_structs_test() ->
+hidden_structs1_test() ->
     Structs = #{
         foo => [{id, hoconsc:mk(integer(), #{default => 12})}],
         foo_hidden => [{id, hoconsc:mk(integer(), #{default => 12, hidden => true})}],
         bar => [{to_foo, hoconsc:mk(hoconsc:ref(foo_hidden), #{})}],
-        baz => [{to_foo_hidden, hoconsc:mk(hoconsc:ref(foo), #{hidden => true})}]
+        baz => [{to_foo_hidden, hoconsc:mk(hoconsc:ref(foo), #{hidden => true})}],
+        mixed => [
+            {to_too_hidden, hoconsc:mk(hoconsc:ref(foo), #{hidden => true})},
+            {to_foo_visible, hoconsc:mk(hoconsc:ref(foo), #{hidden => false})}
+        ]
     },
     Sc = #{
         roots => [
             {"hidden", hoconsc:mk(hoconsc:ref(foo), #{required => false, hidden => true})},
-            {"nested_hidden1", hoconsc:mk(hoconsc:ref(bar), #{required => false, hidden => false})},
-            {"nested_hidden2", hoconsc:mk(hoconsc:ref(baz), #{required => false, hidden => false})},
+            {"nested_hidden1", hoconsc:mk(hoconsc:ref(bar), #{required => false, hidden => true})},
+            {"nested_hidden2", hoconsc:mk(hoconsc:ref(baz), #{required => false, hidden => true})},
+            {"mixed_hidden", hoconsc:mk(hoconsc:ref(mixed), #{required => false})},
             {"visible", hoconsc:mk(hoconsc:ref(foo), #{required => false})}
         ],
         fields => Structs
@@ -106,22 +111,35 @@ hidden_structs_test() ->
     ?assertMatch(
         [
             #{
-                fields := [
-                    #{name := <<"nested_hidden1">>},
-                    #{name := <<"nested_hidden2">>},
-                    #{name := <<"visible">>}
-                ],
+                fields := [#{name := <<"mixed_hidden">>}, #{name := <<"visible">>}],
                 full_name := <<"Root Config Keys">>
-            },
-            #{
-                fields := [#{name := <<"to_foo">>}],
-                full_name := <<"bar">>,
-                paths := [<<"nested_hidden1">>]
             },
             #{
                 fields := [#{name := <<"id">>}],
                 full_name := <<"foo">>,
-                paths := [<<"visible">>]
+                paths := [<<"mixed_hidden.to_foo_visible">>, <<"visible">>]
+            },
+            #{
+                fields := [#{name := <<"to_foo_visible">>}],
+                full_name := <<"mixed">>,
+                paths := [<<"mixed_hidden">>]
+            }
+        ],
+        Json
+    ).
+
+hidden_structs2_test() ->
+    Json = gen(demo_schema6),
+    ?assertMatch(
+        [
+            #{
+                fields := [#{name := <<"foo">>}],
+                full_name := <<"Root Config Keys">>
+            },
+            #{
+                fields := [#{name := <<"int">>}],
+                full_name := <<"foo">>,
+                paths := [<<"foo.$INDEX">>]
             }
         ],
         Json

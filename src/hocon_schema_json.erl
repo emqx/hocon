@@ -49,17 +49,23 @@ gen(Schema, Opts) ->
     Json =
         [
             gen_struct(RootNs, RootNs, "Root Config Keys", #{fields => RootFields}, Opts2)
-            | lists:filtermap(
-                fun
-                    ({_Ns, _Name, _Meta = #{hidden := true}}) ->
-                        false;
-                    ({Ns, Name, Meta}) ->
-                        case gen_struct(RootNs, Ns, Name, Meta, Opts2) of
-                            #{fields := []} ->
-                                false;
-                            S0 ->
-                                {true, S0}
-                        end
+            | lists:map(
+                fun({Ns, Name, Meta}) ->
+                    case gen_struct(RootNs, Ns, Name, Meta, Opts2) of
+                        #{fields := []} = Meta1 ->
+                            error(
+                                {struct_with_no_fields, #{
+                                    namespace => Ns,
+                                    name => Name,
+                                    meta => Meta1,
+                                    msg =>
+                                        "If all children are hidden fields,"
+                                        " please set the parent struct as hidden."
+                                }}
+                            );
+                        S0 ->
+                            S0
+                    end
                 end,
                 Structs
             )
