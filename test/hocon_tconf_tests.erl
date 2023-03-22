@@ -1437,7 +1437,7 @@ no_default_value_fill_for_hidden_fields_test() ->
                 ]
         }
     },
-    ?assertEqual(#{<<"a">> => #{<<"d">> => "d"}}, hocon_tconf:make_serializable(Sc, #{}, #{})),
+    ?assertEqual(#{}, hocon_tconf:make_serializable(Sc, #{}, #{})),
     C1 = #{<<"a">> => #{<<"d">> => [1]}},
     ?assertEqual(C1, hocon_tconf:make_serializable(Sc, C1, #{})),
     C2 = #{<<"a">> => #{<<"c">> => 2, <<"d">> => [1]}},
