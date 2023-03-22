@@ -283,12 +283,10 @@ fields_and_meta(Mod, Name) when is_atom(Mod) ->
                 ensure_struct_meta(Fields)
         end,
     Meta#{tags => tags(Mod)};
-fields_and_meta(#{fields := Fields0} = Parent, Name) when is_function(Fields0) ->
-    Fields = ensure_struct_meta(Fields0(Name)),
-    inherit_hidden(Parent, Fields);
-fields_and_meta(#{fields := Fields0} = Parent, Name) when is_map(Fields0) ->
-    Fields = ensure_struct_meta(maps:get(Name, Fields0)),
-    inherit_hidden(Parent, Fields).
+fields_and_meta(#{fields := Fields}, Name) when is_function(Fields) ->
+    ensure_struct_meta(Fields(Name));
+fields_and_meta(#{fields := Fields}, Name) when is_map(Fields) ->
+    ensure_struct_meta(maps:get(Name, Fields)).
 
 maybe_add_desc(Mod, Name, Meta) ->
     case erlang:function_exported(Mod, desc, 1) of
@@ -301,14 +299,6 @@ maybe_add_desc(Mod, Name, Meta) ->
             end;
         false ->
             Meta
-    end.
-
-inherit_hidden(Parent, Fields) when is_map(Fields) ->
-    case Parent of
-        #{hidden := true} ->
-            Fields#{hidden => true};
-        _ ->
-            Fields
     end.
 
 tags(Mod) when is_atom(Mod) ->
