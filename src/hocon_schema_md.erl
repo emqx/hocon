@@ -18,9 +18,6 @@
 
 -export([gen/2, gen_from_structs/2]).
 
--include("hoconsc.hrl").
--include("hocon_private.hrl").
-
 gen(Schema, undefined) ->
     gen(Schema, "# HOCON Document");
 gen(Schema, Title) when is_list(Title) orelse is_binary(Title) ->

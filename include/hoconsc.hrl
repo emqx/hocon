@@ -17,8 +17,6 @@
 -ifndef(HOCONSC_HRL).
 -define(HOCONSC_HRL, true).
 
--include_lib("typerefl/include/types.hrl").
-
 -define(ARRAY(OfTYpe), {array, OfTYpe}).
 -define(UNION(OfTypes), {union, OfTypes}).
 -define(ENUM(OfSymbols), {enum, OfSymbols}).
