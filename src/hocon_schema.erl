@@ -311,23 +311,24 @@ tags(Mod) when is_atom(Mod) ->
 ensure_struct_meta(Fields) when is_list(Fields) -> #{fields => Fields};
 ensure_struct_meta(#{fields := _} = Fields) -> Fields.
 
-do_find_structs(Schema, Fields) ->
-    find_structs(Schema, Fields, #{}, _ValueStack = [], _TypeStack = []).
+find_structs_loop(Schema, Fields) ->
+    find_structs_loop(Schema, Fields, #{}, _ValueStack = [], _TypeStack = []).
 
-find_structs(Schema, #{fields := Fields}, Acc, Stack, TStack) ->
-    find_structs(Schema, Fields, Acc, Stack, TStack);
-find_structs(_Schema, [], Acc, _Stack, _TStack) ->
+find_structs_loop(Schema, #{fields := Fields}, Acc, Stack, TStack) ->
+    find_structs_loop(Schema, Fields, Acc, Stack, TStack);
+find_structs_loop(_Schema, [], Acc, _Stack, _TStack) ->
     Acc;
-find_structs(Schema, [{FieldName, FieldSchema} | Fields], Acc0, Stack, TStack) ->
+find_structs_loop(Schema, [{FieldName, FieldSchema} | Fields], Acc0, Stack, TStack) ->
     ShouldIncludeHiddenFields = get_include_hidden_fields(),
     IsHidden = is_hidden(FieldSchema),
-    case ShouldIncludeHiddenFields andalso IsHidden of
+    case IsHidden andalso not ShouldIncludeHiddenFields of
         true ->
-            find_structs(Schema, Fields, Acc0, Stack, TStack);
+            %% hidden root
+            find_structs_loop(Schema, Fields, Acc0, Stack, TStack);
         false ->
             Type = field_schema(FieldSchema, type),
             Acc = find_structs_per_type(Schema, Type, Acc0, [str(FieldName) | Stack], TStack),
-            find_structs(Schema, Fields, Acc, Stack, TStack)
+            find_structs_loop(Schema, Fields, Acc, Stack, TStack)
     end.
 
 find_structs_per_type(Schema, Name, Acc, Stack, TStack) when is_list(Name) ->
@@ -378,22 +379,12 @@ find_ref(Schema, Name, Acc, Stack, TStack) ->
                         drop_hidden(Fields0)
                 end,
             Fields = Fields1#{paths => Paths},
-            find_structs(Schema, Fields, Acc#{Key => Fields}, Stack, [Key | TStack])
+            find_structs_loop(Schema, Fields, Acc#{Key => Fields}, Stack, [Key | TStack])
     end.
 
-drop_hidden(Meta = #{fields := _}) ->
-    maps:update_with(
-        fields,
-        fun(Fs) ->
-            lists:filter(
-                fun({_N, Sc}) ->
-                    not is_hidden(Sc)
-                end,
-                Fs
-            )
-        end,
-        Meta
-    ).
+drop_hidden(#{fields := Fields} = Meta) ->
+    NewFields = lists:filter(fun({_N, Sc}) -> not is_hidden(Sc) end, Fields),
+    Meta#{fields => NewFields}.
 
 %% @doc Collect all structs defined in the given schema.  Used for
 %% exporting the schema to other formats such as JSON.
@@ -409,7 +400,7 @@ find_structs(Schema, Opts) ->
     set_include_hidden_fields(IncludeHiddenFields),
     RootFields = unify_roots(Schema),
     ok = assert_no_dot_in_root_names(Schema, RootFields),
-    All = lists:keysort(1, maps:to_list(do_find_structs(Schema, RootFields))),
+    All = lists:keysort(1, maps:to_list(find_structs_loop(Schema, RootFields))),
     RootNs = hocon_schema:namespace(Schema),
     Unified = lists:map(
         fun({{Ns, _Schema, Name}, Fields}) ->
