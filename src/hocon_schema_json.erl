@@ -50,8 +50,22 @@ gen(Schema, Opts) ->
         [
             gen_struct(RootNs, RootNs, "Root Config Keys", #{fields => RootFields}, Opts2)
             | lists:map(
-                fun({Ns, Name, Fields}) ->
-                    gen_struct(RootNs, Ns, Name, Fields, Opts2)
+                fun({Ns, Name, Meta}) ->
+                    case gen_struct(RootNs, Ns, Name, Meta, Opts2) of
+                        #{fields := []} = Meta1 ->
+                            error(
+                                {struct_with_no_fields, #{
+                                    namespace => Ns,
+                                    name => Name,
+                                    meta => Meta1,
+                                    msg =>
+                                        "If all children are hidden fields,"
+                                        " please set the parent field as hidden."
+                                }}
+                            );
+                        S0 ->
+                            S0
+                    end
                 end,
                 Structs
             )
