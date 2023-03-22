@@ -60,7 +60,7 @@ gen(Schema, Opts) ->
                                     meta => Meta1,
                                     msg =>
                                         "If all children are hidden fields,"
-                                        " please set the parent struct as hidden."
+                                        " please set the parent field as hidden."
                                 }}
                             );
                         S0 ->

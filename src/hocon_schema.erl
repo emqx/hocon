@@ -376,13 +376,13 @@ find_ref(Schema, Name, Acc, Stack, TStack) ->
                     true ->
                         Fields0;
                     false ->
-                        reject_hidden(Fields0)
+                        drop_hidden(Fields0)
                 end,
             Fields = Fields1#{paths => Paths},
             find_structs(Schema, Fields, Acc#{Key => Fields}, Stack, [Key | TStack])
     end.
 
-reject_hidden(Meta = #{fields := _}) ->
+drop_hidden(Meta = #{fields := _}) ->
     maps:update_with(
         fields,
         fun(Fs) ->
