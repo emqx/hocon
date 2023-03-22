@@ -35,11 +35,17 @@ gen(Schema) ->
 %% @doc Generate a JSON compatible list of `map()'s.
 -spec gen(
     hocon_schema:schema(),
-    #{formatter => fmtfieldfunc(), lang => string(), desc_file => filename:file() | undefined}
+    #{
+        formatter => fmtfieldfunc(),
+        lang => string(),
+        desc_file => filename:file() | undefined,
+        include_hidden_fields => boolean()
+    }
 ) ->
     [map()].
 gen(Schema, Opts) ->
-    {RootNs, RootFields, Structs} = hocon_schema:find_structs(Schema),
+    FindOpts = maps:with([include_hidden_fields], Opts),
+    {RootNs, RootFields, Structs} = hocon_schema:find_structs(Schema, FindOpts),
     {File, Opts1} = maps:take(desc_file, Opts),
     Cache = hocon_schema:new_desc_cache(File),
     Opts2 = Opts1#{cache => Cache},

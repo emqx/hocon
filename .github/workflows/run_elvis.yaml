@@ -1,4 +1,4 @@
-name: Elvis Linter
+name: Style Check
 
 on: [pull_request]
 

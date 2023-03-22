@@ -47,7 +47,8 @@ es: $(REBAR)
 elvis:
 	./scripts/elvis-check.sh
 
-.PHONY: erlfmt
+.PHONY: fmt erlfmt
+fmt: erlfmt
 erlfmt: $(REBAR)
 	$(REBAR) fmt -w
 
