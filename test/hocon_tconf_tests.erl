@@ -1413,6 +1413,40 @@ fill_complex_defaults_test() ->
     ),
     ok.
 
+no_default_value_fill_for_hidden_fields_test() ->
+    Sc = #{
+        roots => [
+            {"a",
+                hoconsc:mk(
+                    hoconsc:ref("sub"),
+                    #{
+                        default => #{<<"c">> => 2, <<"d">> => [90, 91, 92]},
+                        hidden => true
+                    }
+                )}
+        ],
+        fields => #{
+            "sub" =>
+                [
+                    {"c", hoconsc:mk(integer(), #{default => $c, hidden => true})},
+                    {"d",
+                        hoconsc:mk(
+                            hoconsc:array(integer()),
+                            #{default => [$d]}
+                        )}
+                ]
+        }
+    },
+    ?assertEqual(#{<<"a">> => #{<<"d">> => "d"}}, hocon_tconf:make_serializable(Sc, #{}, #{})),
+    C1 = #{<<"a">> => #{<<"d">> => [1]}},
+    ?assertEqual(C1, hocon_tconf:make_serializable(Sc, C1, #{})),
+    C2 = #{<<"a">> => #{<<"c">> => 2, <<"d">> => [1]}},
+    ?assertEqual(C2, hocon_tconf:make_serializable(Sc, C2, #{})),
+    C3 = #{<<"a">> => #{<<"c">> => 2}},
+    C4 = #{<<"a">> => #{<<"c">> => 2, <<"d">> => [$d]}},
+    ?assertEqual(C4, hocon_tconf:make_serializable(Sc, C3, #{})),
+    ok.
+
 root_array_test_() ->
     Sc = #{
         roots => [{foo, hoconsc:array(hoconsc:ref(foo))}],

@@ -471,12 +471,19 @@ map_fields_cont([{_, FieldSchema} = Field | Fields], Conf0, Acc, Opts) ->
     map_fields(Fields, Conf, FAcc ++ Acc, Opts).
 
 map_one_field(FieldType, FieldSchema, FieldValue0, Opts) ->
-    {MaybeLog, FieldValue} = resolve_field_value(FieldSchema, FieldValue0, Opts),
+    IsMakeSerializable = is_make_serializable(Opts),
+    %% when making serializable, we do not use default value for hidden fields
+    IsDefaultAllowed =
+        case {IsMakeSerializable, hocon_schema:is_hidden(FieldSchema)} of
+            {true, true} -> false;
+            _ -> true
+        end,
+    {MaybeLog, FieldValue} = resolve_field_value(FieldSchema, FieldValue0, Opts, IsDefaultAllowed),
     Converter = upgrade_converter(field_schema(FieldSchema, converter)),
     {Acc0, NewValue} = map_field_maybe_convert(FieldType, FieldSchema, FieldValue, Opts, Converter),
     Acc = MaybeLog ++ Acc0,
     Validators =
-        case is_make_serializable(Opts) orelse is_primitive_type(FieldType) of
+        case IsMakeSerializable orelse is_primitive_type(FieldType) of
             true ->
                 %% we do not validate serializable maps (assuming it's typechecked already)
                 %% primitive values are already validated
@@ -787,7 +794,7 @@ do_map_array(F, [Elem | Rest], Res, Index, Acc) ->
         {error, Reasons} -> {error, Reasons}
     end.
 
-resolve_field_value(Schema, FieldValue, Opts) ->
+resolve_field_value(Schema, FieldValue, Opts, IsDefaultAllowed) ->
     Meta = meta(FieldValue),
     case Meta of
         #{from_env := EnvName} ->
@@ -796,15 +803,13 @@ resolve_field_value(Schema, FieldValue, Opts) ->
                 FieldValue
             };
         _ ->
-            {[], maybe_use_default(field_schema(Schema, default), FieldValue, Opts)}
+            DefaultValue = field_schema(Schema, default),
+            {[], maybe_use_default(DefaultValue, FieldValue, Opts, IsDefaultAllowed)}
     end.
 
-%% use default value if field value is 'undefined'
-maybe_use_default(undefined, Value, _Opts) ->
-    Value;
-maybe_use_default(Default, undefined, Opts) ->
+maybe_use_default(Default, undefined, Opts, _IsDefaultAllowed = true) when Default =/= undefined ->
     maybe_mkrich(Opts, Default, ?META_BOX(made_for, default_value));
-maybe_use_default(_, Value, _Opts) ->
+maybe_use_default(_, Value, _Opts, _IsUseDefault) ->
     Value.
 
 collect_envs(Schema, Opts, Roots) ->
