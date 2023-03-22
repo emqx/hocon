@@ -83,7 +83,6 @@
 ]).
 
 -include("hoconsc.hrl").
--include("hocon_private.hrl").
 
 -type name() :: atom() | string() | binary().
 -type desc_id() :: atom() | string() | binary().

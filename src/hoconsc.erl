@@ -24,7 +24,7 @@
 -export([is_schema/1]).
 -export([union_members/1]).
 
--include("hoconsc.hrl").
+-include("hocon_types.hrl").
 
 %% @doc Make a schema without metadata.
 mk(Type) ->

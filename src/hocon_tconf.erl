@@ -470,13 +470,28 @@ map_fields_cont([{_, FieldSchema} = Field | Fields], Conf0, Acc, Opts) ->
         end,
     map_fields(Fields, Conf, FAcc ++ Acc, Opts).
 
-map_one_field(FieldType, FieldSchema, FieldValue0, Opts) ->
+map_one_field(FieldType, FieldSchema, FieldValue, Opts) ->
+    case
+        is_make_serializable(Opts) andalso
+            FieldValue =:= undefined andalso
+            hocon_schema:is_hidden(FieldSchema)
+    of
+        true ->
+            %% this field is hidden and not provided in the config
+            %% so we do not try to fill it with default value
+            {[], undefined};
+        false ->
+            map_one_field_non_hidden(FieldType, FieldSchema, FieldValue, Opts)
+    end.
+
+map_one_field_non_hidden(FieldType, FieldSchema, FieldValue0, Opts) ->
+    IsMakeSerializable = is_make_serializable(Opts),
     {MaybeLog, FieldValue} = resolve_field_value(FieldSchema, FieldValue0, Opts),
     Converter = upgrade_converter(field_schema(FieldSchema, converter)),
     {Acc0, NewValue} = map_field_maybe_convert(FieldType, FieldSchema, FieldValue, Opts, Converter),
     Acc = MaybeLog ++ Acc0,
     Validators =
-        case is_make_serializable(Opts) orelse is_primitive_type(FieldType) of
+        case IsMakeSerializable orelse is_primitive_type(FieldType) of
             true ->
                 %% we do not validate serializable maps (assuming it's typechecked already)
                 %% primitive values are already validated
@@ -796,13 +811,11 @@ resolve_field_value(Schema, FieldValue, Opts) ->
                 FieldValue
             };
         _ ->
-            {[], maybe_use_default(field_schema(Schema, default), FieldValue, Opts)}
+            DefaultValue = field_schema(Schema, default),
+            {[], maybe_use_default(DefaultValue, FieldValue, Opts)}
     end.
 
-%% use default value if field value is 'undefined'
-maybe_use_default(undefined, Value, _Opts) ->
-    Value;
-maybe_use_default(Default, undefined, Opts) ->
+maybe_use_default(Default, undefined, Opts) when Default =/= undefined ->
     maybe_mkrich(Opts, Default, ?META_BOX(made_for, default_value));
 maybe_use_default(_, Value, _Opts) ->
     Value.

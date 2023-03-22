@@ -18,9 +18,6 @@
 
 -export([gen/1, gen/2]).
 
--include("hoconsc.hrl").
--include("hocon_private.hrl").
-
 -type fmtfieldfunc() :: fun(
     (
         Namespace :: binary() | undefined,

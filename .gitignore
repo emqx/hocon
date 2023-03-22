@@ -31,3 +31,5 @@ generated/
 
 # git shallow clone does not work with rebar.lock
 rebar.lock
+
+erlang_ls.config
