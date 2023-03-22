@@ -44,7 +44,7 @@ gen(Schema) ->
 ) ->
     [map()].
 gen(Schema, Opts) ->
-    FindOpts = maps:with([include_hidden_fields],  Opts),
+    FindOpts = maps:with([include_hidden_fields], Opts),
     {RootNs, RootFields, Structs} = hocon_schema:find_structs(Schema, FindOpts),
     {File, Opts1} = maps:take(desc_file, Opts),
     Cache = hocon_schema:new_desc_cache(File),
