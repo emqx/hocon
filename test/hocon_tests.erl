@@ -354,16 +354,18 @@ expand_paths_test_() ->
 maybe_var_test_() ->
     [
         ?_assertEqual(#{<<"x">> => 1, <<"y">> => 1}, binary(<<"x=1, y=${?x}">>)),
-        ?_assertEqual(#{<<"x">> => 1}, binary(<<"x=1, y=${?a}">>)),
-        ?_assertEqual(#{<<"x">> => [1, 3]}, binary(<<"x=[1, ${?x}, 3]">>)),
+        ?_assertEqual(#{<<"x">> => 1, <<"y">> => #{}}, binary(<<"x=1, y=${?a}">>)),
+        ?_assertEqual(#{<<"x">> => [1, #{}, 3]}, binary(<<"x=[1, ${?x}, 3]">>)),
         ?_assertEqual(#{<<"x">> => <<"aacc">>}, binary(<<"x=aa${?b}cc">>)),
-        ?_assertEqual(#{}, binary(<<"x=${?a}">>)),
-        ?_assertEqual(#{<<"x">> => #{<<"p">> => 1}}, binary(<<"x={p=1, q=${?a}}">>)),
-        ?_assertEqual(#{}, binary(<<"x=${?y}, z=${?x}">>)),
+        ?_assertEqual(#{<<"x">> => #{}}, binary(<<"x=${?a}">>)),
+        ?_assertEqual(
+            #{<<"x">> => #{<<"p">> => 1, <<"q">> => #{}}}, binary(<<"x={p=1, q=${?a}}">>)
+        ),
+        ?_assertEqual(#{<<"x">> => #{}, <<"z">> => #{}}, binary(<<"x=${?y}, z=${?x}">>)),
         ?_assertEqual(#{<<"x">> => #{<<"p">> => 1}}, binary(<<"x=${?y}{p=1}">>)),
         ?_assertEqual(#{<<"x">> => [1, 2]}, binary(<<"x=${?y}[1, 2]">>)),
-        ?_assertEqual(#{<<"x">> => #{}}, binary(<<"x={p=${?a}}">>)),
-        ?_assertEqual(#{}, binary(<<"x=${?y}${?z}">>))
+        ?_assertEqual(#{<<"x">> => #{<<"p">> => #{}}}, binary(<<"x={p=${?a}}">>)),
+        ?_assertEqual(#{<<"x">> => #{}}, binary(<<"x=${?y}${?z}">>))
     ].
 
 cuttlefish_proplists_test_() ->
@@ -586,7 +588,7 @@ resolve_error_binary_test_() ->
             hocon:binary("a=${x}\n ${y}")
         ),
         ?_assertEqual(
-            {ok, #{}},
+            {ok, #{<<"a">> => #{}, <<"x">> => #{}}},
             hocon:binary("a=${x}\n x=${?y}")
         )
     ].

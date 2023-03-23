@@ -320,7 +320,7 @@ do_concat(Concat, Location) ->
     do_concat(Concat, Location, []).
 
 do_concat([], _, []) ->
-    nothing;
+    #{?HOCON_T => object, ?HOCON_V => []};
 do_concat([], MetaKey, [{#{?METADATA := MetaFirstElem}, _V} = F | _Fs] = Acc) when ?IS_FIELD(F) ->
     Metadata = deep_merge(MetaFirstElem, MetaKey),
     case lists:all(fun(F0) -> ?IS_FIELD(F0) end, Acc) of
