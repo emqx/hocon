@@ -369,7 +369,7 @@ do_concat([], MetaKey, [#{?HOCON_T := array, ?METADATA := MetaFirstElem} | _] = 
         false ->
             concat_error(lists:reverse(Acc), #{?METADATA => Metadata})
     end;
-do_concat([], Metadata, Acc) when length(Acc) > 1 ->
+do_concat([], Metadata, [_, _ | _] = Acc) ->
     concat_error(lists:reverse(Acc), #{?METADATA => Metadata});
 do_concat([], _, [Acc]) ->
     Acc;
