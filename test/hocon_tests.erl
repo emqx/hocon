@@ -900,3 +900,9 @@ invalid_utf8_test() ->
         {error, {scan_invalid_utf8, _, _}},
         hocon:load("./test/data/invalid-utf8.conf")
     ).
+
+empty_map_test_() ->
+    [
+        ?_assertEqual({ok, #{<<"a">> => #{}}}, hocon:binary("a={}")),
+        ?_assertEqual({ok, #{<<"a">> => #{<<"b">> => #{}}}}, hocon:binary("a:{b:{}}"))
+    ].

@@ -25,6 +25,9 @@
 
 -export([duration/1]).
 
+%% internal
+-export([expand/1, resolve/1, concat/1]).
+
 -type config() :: map().
 -type ctx() :: #{
     path => list(),
@@ -42,6 +45,8 @@
 
 -include("hocon.hrl").
 -include("hocon_private.hrl").
+
+-define(UNRESOLVABLE, '$unresolvable').
 
 main(Args) ->
     hocon_cli:main(Args).
@@ -150,9 +155,9 @@ do_binary(Binary, Ctx) when is_binary(Binary) ->
             fun hocon_token:trans_key/1,
             fun hocon_token:parse/2,
             fun hocon_token:include/2,
-            fun expand/1,
-            fun resolve/1,
-            fun concat/1
+            fun ?MODULE:expand/1,
+            fun ?MODULE:resolve/1,
+            fun ?MODULE:concat/1
         ]
     ).
 
@@ -218,8 +223,8 @@ do_resolve([V | More], Acc, Unresolved, RootKVList) ->
             do_resolve(More, [V | Acc], [Var | Unresolved], RootKVList);
         skip ->
             do_resolve(More, [V | Acc], Unresolved, RootKVList);
-        delete ->
-            {resolved, lists:reverse(Acc, More)}
+        ?UNRESOLVABLE ->
+            {resolved, lists:reverse(Acc, [?UNRESOLVABLE | More])}
     end;
 do_resolve(#{?HOCON_T := T} = X, _Acc, _Unresolved, RootKVList) when ?IS_VALUE_LIST(T) ->
     case do_resolve(value_of(X), [], [], RootKVList) of
@@ -231,11 +236,11 @@ do_resolve(#{?HOCON_T := T} = X, _Acc, _Unresolved, RootKVList) when ?IS_VALUE_L
             skip
     end;
 do_resolve(#{?HOCON_T := variable, required := Required} = V, _Acc, _Unresolved, RootKVList) ->
-    case {lookup(paths(hocon_token:value_of(V)), RootKVList), Required} of
+    case {lookup(paths(value_of(V)), RootKVList), Required} of
         {notfound, true} ->
             {unresolved, V};
         {notfound, false} ->
-            delete;
+            ?UNRESOLVABLE;
         {ResolvedValue, _} ->
             {resolved, ResolvedValue}
     end;
@@ -308,7 +313,7 @@ concat(#{?HOCON_T := object} = O) ->
     O#{?HOCON_V => lists:map(fun(E) -> verify_concat(E) end, value_of(O))}.
 
 verify_concat(#{?HOCON_T := concat} = C) ->
-    do_concat(value_of(C), metadata_of(C));
+    concat2(value_of(C), metadata_of(C));
 verify_concat({#{?HOCON_T := key, ?METADATA := Metadata} = K, Value}) when is_map(Value) ->
     {K, verify_concat(Value#{?METADATA => Metadata})};
 verify_concat({#{?HOCON_T := key} = K, Value}) ->
@@ -316,11 +321,28 @@ verify_concat({#{?HOCON_T := key} = K, Value}) ->
 verify_concat(Other) ->
     Other.
 
-do_concat(Concat, Location) ->
-    do_concat(Concat, Location, []).
+concat2(Concat, Location) ->
+    concat2(Concat, Location, []).
 
-do_concat([], _, []) ->
-    nothing;
+concat2(Concats, Meta, Acc) ->
+    %% If a substitution with the ${?foo} syntax is undefined:
+    %%  * if it is the value of an object field then the field should not be created.
+    %%    If the field would have overridden a previously-set value for the same field,
+    %%    then the previous value remains.
+    case lists:all(fun(I) -> I =:= ?UNRESOLVABLE end, Concats) of
+        true ->
+            ?UNRESOLVABLE;
+        false ->
+            do_concat(rm_unresolvable(Concats), Meta, Acc)
+    end.
+
+do_concat([], Meta, []) ->
+    #{
+        ?HOCON_T => object,
+        % no fields
+        ?HOCON_V => [],
+        ?METADATA => Meta
+    };
 do_concat([], MetaKey, [{#{?METADATA := MetaFirstElem}, _V} = F | _Fs] = Acc) when ?IS_FIELD(F) ->
     Metadata = deep_merge(MetaFirstElem, MetaKey),
     case lists:all(fun(F0) -> ?IS_FIELD(F0) end, Acc) of
@@ -347,7 +369,7 @@ do_concat([], MetaKey, [#{?HOCON_T := array, ?METADATA := MetaFirstElem} | _] = 
         false ->
             concat_error(lists:reverse(Acc), #{?METADATA => Metadata})
     end;
-do_concat([], Metadata, Acc) when length(Acc) > 1 ->
+do_concat([], Metadata, [_, _ | _] = Acc) ->
     concat_error(lists:reverse(Acc), #{?METADATA => Metadata});
 do_concat([], _, [Acc]) ->
     Acc;
@@ -359,7 +381,7 @@ do_concat([#{?HOCON_T := object} = O | More], Metadata, Acc) ->
 do_concat([#{?HOCON_T := string} = S | More], Metadata, Acc) ->
     do_concat(More, Metadata, [S | Acc]);
 do_concat([#{?HOCON_T := concat} = C | More], Metadata, Acc) ->
-    ConcatC = do_concat(value_of(C), new_meta(Metadata, filename_of(C), line_of(C))),
+    ConcatC = concat2(value_of(C), new_meta(Metadata, filename_of(C), line_of(C))),
     do_concat([ConcatC | More], Metadata, Acc);
 do_concat([{#{?HOCON_T := key} = K, Value} | More], Metadata, Acc) ->
     do_concat(More, Metadata, [{K, verify_concat(Value)} | Acc]);
@@ -368,37 +390,37 @@ do_concat([Other | More], Metadata, Acc) ->
 
 -spec transform(hocon_token:boxed(), map()) -> config().
 transform(#{?HOCON_T := object, ?HOCON_V := V} = O, #{format := richmap} = Opts) ->
-    NewV = do_transform(remove_nothing(V), #{}, Opts),
+    NewV = do_transform(rm_unresolvable(V), #{}, Opts),
     O#{?HOCON_V => NewV};
 transform(#{?HOCON_T := object, ?HOCON_V := V}, Opts) ->
-    do_transform(remove_nothing(V), #{}, Opts).
+    do_transform(rm_unresolvable(V), #{}, Opts).
 
 do_transform([], Map, _Opts) ->
     Map;
 do_transform([{Key, Value} | More], Map, Opts) ->
-    [KeyReal] = paths(hocon_token:value_of(Key)),
+    [KeyReal] = paths(value_of(Key)),
     ValueReal = unpack(Value, Opts),
     do_transform(More, merge(KeyReal, ValueReal, Map), Opts).
 
 unpack(#{?HOCON_T := object, ?HOCON_V := V} = O, #{format := richmap} = Opts) ->
-    O#{?HOCON_V => do_transform(remove_nothing(V), #{}, Opts)};
+    O#{?HOCON_V => do_transform(rm_unresolvable(V), #{}, Opts)};
 unpack(#{?HOCON_T := object, ?HOCON_V := V}, Opts) ->
-    do_transform(remove_nothing(V), #{}, Opts);
+    do_transform(rm_unresolvable(V), #{}, Opts);
 unpack(#{?HOCON_T := array, ?HOCON_V := V} = A, #{format := richmap} = Opts) ->
-    NewV = [unpack(E, Opts) || E <- remove_nothing(V)],
+    NewV = [unpack(E, Opts) || E <- rm_unresolvable(V)],
     A#{?HOCON_V => NewV};
 unpack(#{?HOCON_T := array, ?HOCON_V := V}, Opts) ->
-    [unpack(Val, Opts) || Val <- remove_nothing(V)];
+    [unpack(Val, Opts) || Val <- rm_unresolvable(V)];
 unpack(M, #{format := richmap}) ->
     M;
 unpack(#{?HOCON_V := V}, _Opts) ->
     V.
 
-remove_nothing(List) ->
+rm_unresolvable(List) ->
     lists:filter(
         fun
-            (nothing) -> false;
-            ({_Key, nothing}) -> false;
+            (?UNRESOLVABLE) -> false;
+            ({_Key, ?UNRESOLVABLE}) -> false;
             (_Other) -> true
         end,
         List
@@ -451,7 +473,7 @@ format_tokens(#{?HOCON_T := array} = A) ->
 format_tokens({K, V}) ->
     {format_tokens(K), format_tokens(V)};
 format_tokens(Token) ->
-    hocon_token:value_of(Token).
+    value_of(Token).
 
 value_of(Token) ->
     hocon_token:value_of(Token).
