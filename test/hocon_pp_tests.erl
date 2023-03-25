@@ -33,6 +33,19 @@ do(File) ->
     {ok, Conf2} = hocon:binary(iolist_to_binary(PP)),
     ?assertEqual(Conf, Conf2).
 
+load_unicode_pp_test() ->
+    File = "etc/unicode.conf",
+    {ok, Conf} = hocon:load(File),
+    PP = hocon_pp:do(Conf, #{}),
+    TmpFile = File ++ ".pp",
+    file:write_file(TmpFile, PP),
+    {ok, TmpConf} = hocon:load(TmpFile),
+    ?assertEqual(Conf, TmpConf),
+    {ok, Conf3} = file:read_file(TmpFile),
+    {ok, Conf4} = file:read_file(File),
+    ?assertEqual(Conf3, Conf4),
+    file:delete(TmpFile).
+
 load_file_pp_test() ->
     TmpF = "/tmp/load_file_pp_test",
     F = fun(Raw, Format) ->
