@@ -39,7 +39,7 @@
     fmt_type/2,
     fmt_ref/2,
     is_deprecated/1,
-    is_hidden/1,
+    is_hidden/2,
     aliases/1,
     name_and_aliases/1,
     names_and_aliases/1
@@ -59,7 +59,8 @@
     translationfunc/0,
     desc/0,
     union_members/0,
-    union_selector/0
+    union_selector/0,
+    importance/0
 ]).
 
 -callback namespace() -> name().
@@ -89,6 +90,7 @@
 -type desc() :: iodata() | {desc, module(), desc_id()}.
 -type union_selector() :: fun((all_union_members | {value, _}) -> type() | [type()]).
 -type union_members() :: [type()] | union_selector().
+-type importance() :: ?IMPORTANCE_HIGH | ?IMPORTANCE_MEDIUM | ?IMPORTANCE_LOW | ?IMPORTANCE_HIDDEN.
 %% primitive (or complex, but terminal) type
 -type type() ::
     typerefl:type()
@@ -127,7 +129,7 @@
         sensitive => boolean(),
         desc => desc(),
         %% hide it from doc generation
-        hidden => boolean(),
+        importance => importance(),
         %% Set to {since, Version} to mark field as deprecated.
         %% deprecated field can not be removed due to compatibility reasons.
         %% The value will be dropped,
@@ -179,7 +181,10 @@
 -type bin_name() :: binary().
 -type tag() :: binary().
 
--type find_structs_opts() :: #{include_hidden_fields => boolean()}.
+-type find_structs_opts() :: #{
+    include_importance_up_from => importance(),
+    _ => _
+}.
 
 %% @doc Get translation identified by `Name' from the given schema.
 -spec translation(schema(), name()) -> [translation()].
@@ -311,51 +316,49 @@ tags(Mod) when is_atom(Mod) ->
 ensure_struct_meta(Fields) when is_list(Fields) -> #{fields => Fields};
 ensure_struct_meta(#{fields := _} = Fields) -> Fields.
 
-find_structs_loop(Schema, Fields) ->
-    find_structs_loop(Schema, Fields, #{}, _ValueStack = [], _TypeStack = []).
+find_structs_loop(Schema, Fields, Opts) ->
+    find_structs_loop(Schema, Fields, #{}, _ValueStack = [], _TypeStack = [], Opts).
 
-find_structs_loop(Schema, #{fields := Fields}, Acc, Stack, TStack) ->
-    find_structs_loop(Schema, Fields, Acc, Stack, TStack);
-find_structs_loop(_Schema, [], Acc, _Stack, _TStack) ->
+find_structs_loop(Schema, #{fields := Fields}, Acc, Stack, TStack, Opts) ->
+    find_structs_loop(Schema, Fields, Acc, Stack, TStack, Opts);
+find_structs_loop(_Schema, [], Acc, _Stack, _TStack, _Opts) ->
     Acc;
-find_structs_loop(Schema, [{FieldName, FieldSchema} | Fields], Acc0, Stack, TStack) ->
-    ShouldIncludeHiddenFields = get_include_hidden_fields(),
-    IsHidden = is_hidden(FieldSchema),
-    case IsHidden andalso not ShouldIncludeHiddenFields of
+find_structs_loop(Schema, [{FieldName, FieldSchema} | Fields], Acc0, Stack, TStack, Opts) ->
+    case is_hidden(FieldSchema, Opts) of
         true ->
             %% hidden root
-            find_structs_loop(Schema, Fields, Acc0, Stack, TStack);
+            find_structs_loop(Schema, Fields, Acc0, Stack, TStack, Opts);
         false ->
             Type = field_schema(FieldSchema, type),
-            Acc = find_structs_per_type(Schema, Type, Acc0, [str(FieldName) | Stack], TStack),
-            find_structs_loop(Schema, Fields, Acc, Stack, TStack)
+            Acc = find_structs_per_type(Schema, Type, Acc0, [str(FieldName) | Stack], TStack, Opts),
+            find_structs_loop(Schema, Fields, Acc, Stack, TStack, Opts)
     end.
 
-find_structs_per_type(Schema, Name, Acc, Stack, TStack) when is_list(Name) ->
-    find_ref(Schema, Name, Acc, Stack, TStack);
-find_structs_per_type(Schema, ?REF(Name), Acc, Stack, TStack) ->
-    find_ref(Schema, Name, Acc, Stack, TStack);
-find_structs_per_type(_Schema, ?R_REF(Module, Name), Acc, Stack, TStack) ->
-    find_ref(Module, Name, Acc, Stack, TStack);
-find_structs_per_type(Schema, ?LAZY(Type), Acc, Stack, TStack) ->
-    find_structs_per_type(Schema, Type, Acc, Stack, TStack);
-find_structs_per_type(Schema, ?ARRAY(Type), Acc, Stack, TStack) ->
-    find_structs_per_type(Schema, Type, Acc, ["$INDEX" | Stack], TStack);
-find_structs_per_type(Schema, ?UNION(Types0), Acc, Stack, TStack) ->
+find_structs_per_type(Schema, Name, Acc, Stack, TStack, Opts) when is_list(Name) ->
+    find_ref(Schema, Name, Acc, Stack, TStack, Opts);
+find_structs_per_type(Schema, ?REF(Name), Acc, Stack, TStack, Opts) ->
+    find_ref(Schema, Name, Acc, Stack, TStack, Opts);
+find_structs_per_type(_Schema, ?R_REF(Module, Name), Acc, Stack, TStack, Opts) ->
+    find_ref(Module, Name, Acc, Stack, TStack, Opts);
+find_structs_per_type(Schema, ?LAZY(Type), Acc, Stack, TStack, Opts) ->
+    find_structs_per_type(Schema, Type, Acc, Stack, TStack, Opts);
+find_structs_per_type(Schema, ?ARRAY(Type), Acc, Stack, TStack, Opts) ->
+    find_structs_per_type(Schema, Type, Acc, ["$INDEX" | Stack], TStack, Opts);
+find_structs_per_type(Schema, ?UNION(Types0), Acc, Stack, TStack, Opts) ->
     Types = hoconsc:union_members(Types0),
     lists:foldl(
         fun(T, AccIn) ->
-            find_structs_per_type(Schema, T, AccIn, Stack, TStack)
+            find_structs_per_type(Schema, T, AccIn, Stack, TStack, Opts)
         end,
         Acc,
         Types
     );
-find_structs_per_type(Schema, ?MAP(Name, Type), Acc, Stack, TStack) ->
-    find_structs_per_type(Schema, Type, Acc, ["$" ++ str(Name) | Stack], TStack);
-find_structs_per_type(_Schema, _Type, Acc, _Stack, _TStack) ->
+find_structs_per_type(Schema, ?MAP(Name, Type), Acc, Stack, TStack, Opts) ->
+    find_structs_per_type(Schema, Type, Acc, ["$" ++ str(Name) | Stack], TStack, Opts);
+find_structs_per_type(_Schema, _Type, Acc, _Stack, _TStack, _Opts) ->
     Acc.
 
-find_ref(Schema, Name, Acc, Stack, TStack) ->
+find_ref(Schema, Name, Acc, Stack, TStack, Opts) ->
     Namespace = namespace(Schema),
     Key = {Namespace, Schema, Name},
     Path = path(Stack),
@@ -371,19 +374,13 @@ find_ref(Schema, Name, Acc, Stack, TStack) ->
         false ->
             Fields0 = fields_and_meta(Schema, Name),
             Paths = Paths0#{Path => true},
-            Fields1 =
-                case get_include_hidden_fields() of
-                    true ->
-                        Fields0;
-                    false ->
-                        drop_hidden(Fields0)
-                end,
+            Fields1 = drop_hidden(Fields0, Opts),
             Fields = Fields1#{paths => Paths},
-            find_structs_loop(Schema, Fields, Acc#{Key => Fields}, Stack, [Key | TStack])
+            find_structs_loop(Schema, Fields, Acc#{Key => Fields}, Stack, [Key | TStack], Opts)
     end.
 
-drop_hidden(#{fields := Fields} = Meta) ->
-    NewFields = lists:filter(fun({_N, Sc}) -> not is_hidden(Sc) end, Fields),
+drop_hidden(#{fields := Fields} = Meta, Opts) ->
+    NewFields = lists:filter(fun({_N, Sc}) -> not is_hidden(Sc, Opts) end, Fields),
     Meta#{fields => NewFields}.
 
 %% @doc Collect all structs defined in the given schema.  Used for
@@ -391,16 +388,14 @@ drop_hidden(#{fields := Fields} = Meta) ->
 -spec find_structs(schema()) ->
     {RootNs :: name(), RootFields :: [field()], [{Namespace :: name(), Name :: name(), fields()}]}.
 find_structs(Schema) ->
-    find_structs(Schema, #{include_hidden_fields => false}).
+    find_structs(Schema, #{}).
 
 -spec find_structs(schema(), find_structs_opts()) ->
     {RootNs :: name(), RootFields :: [field()], [{Namespace :: name(), Name :: name(), fields()}]}.
 find_structs(Schema, Opts) ->
-    IncludeHiddenFields = maps:get(include_hidden_fields, Opts, false),
-    set_include_hidden_fields(IncludeHiddenFields),
-    RootFields = unify_roots(Schema),
+    RootFields = unify_roots(Schema, Opts),
     ok = assert_no_dot_in_root_names(Schema, RootFields),
-    All = lists:keysort(1, maps:to_list(find_structs_loop(Schema, RootFields))),
+    All = lists:keysort(1, maps:to_list(find_structs_loop(Schema, RootFields, Opts))),
     RootNs = hocon_schema:namespace(Schema),
     Unified = lists:map(
         fun({{Ns, _Schema, Name}, Fields}) ->
@@ -410,7 +405,7 @@ find_structs(Schema, Opts) ->
     ),
     {RootNs, RootFields, Unified}.
 
-unify_roots(Schema) ->
+unify_roots(Schema, Opts) ->
     Roots0 = ?MODULE:roots(Schema),
     Roots1 = lists:map(
         fun({_BinName, {RootFieldName, RootFieldSchema}}) ->
@@ -418,28 +413,12 @@ unify_roots(Schema) ->
         end,
         Roots0
     ),
-    case get_include_hidden_fields() of
-        true ->
-            Roots1;
-        false ->
-            lists:filter(
-                fun({_RootFieldName, RootFieldSchema}) ->
-                    not is_hidden(RootFieldSchema)
-                end,
-                Roots1
-            )
-    end.
-
-set_include_hidden_fields(IncludeHiddenFields) ->
-    put({?MODULE, include_hidden_fields}, IncludeHiddenFields).
-
-get_include_hidden_fields() ->
-    case get({?MODULE, include_hidden_fields}) of
-        true ->
-            true;
-        _ ->
-            false
-    end.
+    lists:filter(
+        fun({_RootFieldName, RootFieldSchema}) ->
+            not is_hidden(RootFieldSchema, Opts)
+        end,
+        Roots1
+    ).
 
 str(A) when is_atom(A) -> atom_to_list(A);
 str(S) when is_list(S) -> S.
@@ -583,11 +562,26 @@ is_deprecated(Schema) ->
     IsDeprecated = field_schema(Schema, deprecated),
     IsDeprecated =/= undefined andalso IsDeprecated =/= false.
 
-%% @doc Return 'true' if the field is marked as hidden.
--spec is_hidden(field_schema()) -> boolean().
-is_hidden(Schema) ->
-    IsHidden = field_schema(Schema, hidden),
-    IsHidden =:= true.
+%% @doc Return 'true' if the field has an importance less than or equal to the
+%% provided minimum importance level.
+-spec is_hidden(field_schema(), find_structs_opts()) -> boolean().
+is_hidden(Schema, Opts) ->
+    NeededImportance = maps:get(
+        include_importance_up_from,
+        Opts,
+        ?DEFAULT_INCLUDE_IMPORTANCE_UP_FROM
+    ),
+    DefinedImprotance =
+        case field_schema(Schema, importance) of
+            undefined -> ?DEFAULT_IMPORTANCE;
+            I -> I
+        end,
+    importance_num(DefinedImprotance) < importance_num(NeededImportance).
+
+importance_num(?IMPORTANCE_HIDDEN) -> 0;
+importance_num(?IMPORTANCE_LOW) -> 7;
+importance_num(?IMPORTANCE_MEDIUM) -> 8;
+importance_num(?IMPORTANCE_HIGH) -> 9.
 
 %% @doc Return the aliases in a list.
 -spec aliases(field_schema()) -> [name()].

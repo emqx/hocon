@@ -88,20 +88,22 @@ unique_field_name_with_aliases_test() ->
 
 hidden_structs1_test() ->
     Structs = #{
-        foo => [{id, hoconsc:mk(integer(), #{default => 12})}],
-        foo_hidden => [{id, hoconsc:mk(integer(), #{default => 12, hidden => true})}],
-        bar => [{to_foo, hoconsc:mk(hoconsc:ref(foo_hidden), #{})}],
-        baz => [{to_foo_hidden, hoconsc:mk(hoconsc:ref(foo), #{hidden => true})}],
+        foo => [{id, hoconsc:mk(integer(), #{default => 12, importance => low})}],
+        foo_hidden => [{id, hoconsc:mk(integer(), #{default => 12, importance => hidden})}],
+        bar => [{to_foo, hoconsc:mk(hoconsc:ref(foo_hidden), #{importance => medium})}],
+        baz => [{to_foo_hidden, hoconsc:mk(hoconsc:ref(foo), #{importance => hidden})}],
         mixed => [
-            {to_too_hidden, hoconsc:mk(hoconsc:ref(foo), #{hidden => true})},
-            {to_foo_visible, hoconsc:mk(hoconsc:ref(foo), #{hidden => false})}
+            {to_too_hidden, hoconsc:mk(hoconsc:ref(foo), #{importance => hidden})},
+            {to_foo_visible, hoconsc:mk(hoconsc:ref(foo), #{importance => high})}
         ]
     },
     Sc = #{
         roots => [
-            {"hidden", hoconsc:mk(hoconsc:ref(foo), #{required => false, hidden => true})},
-            {"nested_hidden1", hoconsc:mk(hoconsc:ref(bar), #{required => false, hidden => true})},
-            {"nested_hidden2", hoconsc:mk(hoconsc:ref(baz), #{required => false, hidden => true})},
+            {"hidden", hoconsc:mk(hoconsc:ref(foo), #{required => false, importance => hidden})},
+            {"nested_hidden1",
+                hoconsc:mk(hoconsc:ref(bar), #{required => false, importance => hidden})},
+            {"nested_hidden2",
+                hoconsc:mk(hoconsc:ref(baz), #{required => false, importance => hidden})},
             {"mixed_hidden", hoconsc:mk(hoconsc:ref(mixed), #{required => false})},
             {"visible", hoconsc:mk(hoconsc:ref(foo), #{required => false})}
         ],

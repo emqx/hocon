@@ -14,7 +14,7 @@ roots() ->
 
 fields(foo) ->
     [ {int, integer()}
-    , {hidden_field, hoconsc:mk(hoconsc:ref(?MODULE, im_hidden), #{hidden => true})}
+    , {hidden_field, hoconsc:mk(hoconsc:ref(?MODULE, im_hidden), #{importance => hidden})}
     ];
 fields(im_hidden) ->
     [{i_should_be_hidden, integer()}].

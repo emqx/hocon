@@ -62,7 +62,8 @@
     format => map | richmap,
     stack => [name()],
     schema => schema(),
-    check_lazy => boolean()
+    check_lazy => boolean(),
+    include_importance_up_from => hocon_schema:importance()
 }.
 
 -type name() :: hocon_schema:name().
@@ -474,7 +475,7 @@ map_one_field(FieldType, FieldSchema, FieldValue, Opts) ->
     case
         is_make_serializable(Opts) andalso
             FieldValue =:= undefined andalso
-            hocon_schema:is_hidden(FieldSchema)
+            hocon_schema:is_hidden(FieldSchema, Opts)
     of
         true ->
             %% this field is hidden and not provided in the config
