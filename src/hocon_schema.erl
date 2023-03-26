@@ -20,7 +20,6 @@
 -export([
     roots/1,
     fields/2,
-    fields_and_meta/2,
     translations/1,
     translation/2,
     validations/1
@@ -49,6 +48,11 @@
     new_desc_cache/1,
     resolve_schema/2,
     delete_desc_cache/1
+]).
+
+%% only for testing
+-export([
+    fields_and_meta/2
 ]).
 
 -export_type([

@@ -126,6 +126,7 @@ fmt_field(Ns, Name, FieldSchema, Opts) ->
                 {since, Vsn} = hocon_schema:field_schema(FieldSchema, deprecated),
                 [
                     {name, bin(Name)},
+                    {importance, hocon_schema:field_schema(FieldSchema, importance)},
                     {aliases, hocon_schema:aliases(FieldSchema)},
                     {type, fmt_type(Ns, hocon_schema:field_schema(FieldSchema, type))},
                     {desc, bin(["Deprecated since ", Vsn, "."])}
@@ -134,6 +135,7 @@ fmt_field(Ns, Name, FieldSchema, Opts) ->
                 Default = hocon_schema:field_schema(FieldSchema, default),
                 [
                     {name, bin(Name)},
+                    {importance, hocon_schema:field_schema(FieldSchema, importance)},
                     {aliases, hocon_schema:aliases(FieldSchema)},
                     {type, fmt_type(Ns, hocon_schema:field_schema(FieldSchema, type))},
                     {default, fmt_default(Default)},
