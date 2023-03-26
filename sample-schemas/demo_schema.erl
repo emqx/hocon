@@ -16,7 +16,7 @@
 
 -define(FIELD(NAME, TYPE), hoconsc:mk(TYPE, #{mapping => NAME})).
 
-roots() -> [foo, {"a_b", hoconsc:mk(hoconsc:ref("a_b"), #{hidden => true})}, "b", person, "vm"].
+roots() -> [foo, {"a_b", hoconsc:mk(hoconsc:ref("a_b"), #{importance => hidden})}, "b", person, "vm"].
 translations() -> ["app_foo"].
 
 fields(foo) ->
@@ -33,7 +33,7 @@ fields(foo) ->
 
 fields("a_b") ->
     [ {"some_int", hoconsc:mk(integer(), #{mapping => "a_b.some_int",
-                                           hidden => true
+                                           importance => hidden
                                           })}
     ];
 

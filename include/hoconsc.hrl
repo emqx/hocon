@@ -20,4 +20,19 @@
 -include_lib("typerefl/include/types.hrl").
 -include_lib("hocon/include/hocon_types.hrl").
 
+%% high importance, should be visible to all users
+-define(IMPORTANCE_HIGH, high).
+%% medium important, should be visible to most users
+-define(IMPORTANCE_MEDIUM, medium).
+%% not important, usually only for advanced users
+-define(IMPORTANCE_LOW, low).
+%% hidden for normal users, only experts should need to care
+-define(IMPORTANCE_HIDDEN, hidden).
+
+%% The default importance level for a config item.
+-define(DEFAULT_IMPORTANCE, ?IMPORTANCE_HIGH).
+%% The default minimum importance level when dumping config schema
+%% or filling config default values.
+-define(DEFAULT_INCLUDE_IMPORTANCE_UP_FROM, ?IMPORTANCE_LOW).
+
 -endif.

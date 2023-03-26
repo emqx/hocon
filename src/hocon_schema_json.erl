@@ -39,13 +39,12 @@ gen(Schema) ->
         formatter => fmtfieldfunc(),
         lang => string(),
         desc_file => filename:file() | undefined,
-        include_hidden_fields => boolean()
+        include_importance_up_from => hocon_schema:importance()
     }
 ) ->
     [map()].
 gen(Schema, Opts) ->
-    FindOpts = maps:with([include_hidden_fields], Opts),
-    {RootNs, RootFields, Structs} = hocon_schema:find_structs(Schema, FindOpts),
+    {RootNs, RootFields, Structs} = hocon_schema:find_structs(Schema, Opts),
     {File, Opts1} = maps:take(desc_file, Opts),
     Cache = hocon_schema:new_desc_cache(File),
     Opts2 = Opts1#{cache => Cache},
@@ -111,7 +110,7 @@ assert_unique_names(FullName, Fields) ->
 fmt_fields(_Ns, [], _Opts) ->
     [];
 fmt_fields(Ns, [{Name, FieldSchema} | Fields], Opts) ->
-    case hocon_schema:field_schema(FieldSchema, hidden) of
+    case hocon_schema:is_hidden(FieldSchema, Opts) of
         true ->
             fmt_fields(Ns, Fields, Opts);
         _ ->
@@ -127,6 +126,7 @@ fmt_field(Ns, Name, FieldSchema, Opts) ->
                 {since, Vsn} = hocon_schema:field_schema(FieldSchema, deprecated),
                 [
                     {name, bin(Name)},
+                    {importance, hocon_schema:field_schema(FieldSchema, importance)},
                     {aliases, hocon_schema:aliases(FieldSchema)},
                     {type, fmt_type(Ns, hocon_schema:field_schema(FieldSchema, type))},
                     {desc, bin(["Deprecated since ", Vsn, "."])}
@@ -135,6 +135,7 @@ fmt_field(Ns, Name, FieldSchema, Opts) ->
                 Default = hocon_schema:field_schema(FieldSchema, default),
                 [
                     {name, bin(Name)},
+                    {importance, hocon_schema:field_schema(FieldSchema, importance)},
                     {aliases, hocon_schema:aliases(FieldSchema)},
                     {type, fmt_type(Ns, hocon_schema:field_schema(FieldSchema, type))},
                     {default, fmt_default(Default)},
