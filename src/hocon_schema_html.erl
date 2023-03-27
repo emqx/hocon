@@ -77,7 +77,7 @@ fmt_fields(_Ns, _StructName, _Opts, []) ->
     [];
 fmt_fields(Ns, StructName, Opts, [{Name, FieldSchema} | Fields]) ->
     HTML = fmt_field(Ns, StructName, Opts, Name, FieldSchema),
-    case hocon_schema:field_schema(FieldSchema, hidden) of
+    case hocon_schema:is_hidden(FieldSchema, #{}) of
         true -> fmt_fields(Ns, StructName, Opts, Fields);
         _ -> [bin(HTML) | fmt_fields(Ns, StructName, Opts, Fields)]
     end.

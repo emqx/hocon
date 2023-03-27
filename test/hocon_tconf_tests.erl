@@ -1421,14 +1421,18 @@ no_default_value_fill_for_hidden_fields_test() ->
                     hoconsc:ref("sub"),
                     #{
                         default => #{<<"c">> => 2, <<"d">> => [90, 91, 92]},
-                        hidden => true
+                        importance => ?IMPORTANCE_HIDDEN
                     }
                 )}
         ],
         fields => #{
             "sub" =>
                 [
-                    {"c", hoconsc:mk(integer(), #{default => $c, hidden => true})},
+                    {"c",
+                        hoconsc:mk(integer(), #{
+                            default => $c,
+                            importance => ?IMPORTANCE_HIDDEN
+                        })},
                     {"d",
                         hoconsc:mk(
                             hoconsc:array(integer()),
