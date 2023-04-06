@@ -183,7 +183,7 @@ bind(Port) ->
 no_crash_test_() ->
     [
         {"example", gen(?MODULE)},
-        {"demo_schema", gen(demo_schema, "./test/data/demo_schema_doc.conf")},
+        {"demo_schema", gen(demo_schema)},
         {"demo_schema2", gen(demo_schema2)},
         {"demo_schema3", gen(demo_schema3)},
         {"emqx_schema", gen(emqx_schema)},
@@ -223,10 +223,3 @@ no_crash_test_() ->
     ].
 
 gen(Schema) -> fun() -> hocon_schema_example:gen(Schema, "test") end.
-gen(Schema, DescFile) ->
-    fun() ->
-        hocon_schema_example:gen(
-            Schema,
-            #{title => "test", body => <<>>, desc_file => DescFile}
-        )
-    end.

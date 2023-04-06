@@ -19,6 +19,7 @@
 %% Deep ops of deep maps.
 -export([
     deep_get/2,
+    deep_get/3,
     deep_put/4,
     deep_merge/2
 ]).
@@ -126,7 +127,11 @@ get(Path, Config, Default) ->
 %% Key (first arg) can be "foo.bar.baz" or ["foo.bar", "baz"] or ["foo", "bar", "baz"].
 -spec deep_get(name() | [name()], config()) -> config() | undefined.
 deep_get(Path, Conf) ->
-    do_get(hocon_util:split_path(Path), Conf, richmap).
+    deep_get(Path, Conf, richmap).
+
+-spec deep_get(name() | [name()], config(), richmap | map) -> config() | undefined.
+deep_get(Path, Conf, Format) ->
+    do_get(hocon_util:split_path(Path), Conf, Format).
 
 %% @doc Get value from a maybe-rich map.
 %% always return plain-value.
