@@ -49,6 +49,11 @@
     fields_and_meta/2
 ]).
 
+%% only for testing
+-export([
+    fields_and_meta/2
+]).
+
 -export_type([
     field_schema/0,
     name/0,
