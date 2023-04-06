@@ -18,6 +18,8 @@
 
 -export([gen/1, gen/2]).
 
+-include("hocon_types.hrl").
+
 -type fmtfieldfunc() :: fun(
     (
         Namespace :: binary() | undefined,
@@ -27,33 +29,33 @@
     ) -> map()
 ).
 
+-type desc_resolver() :: fun((term()) -> iodata()).
+
 %% @doc Generate a JSON compatible list of `map()'s.
 -spec gen(hocon_schema:schema()) -> [map()].
 gen(Schema) ->
-    Opts = #{formatter => fun fmt_field/4, desc_file => undefined, lang => "en"},
+    Opts = #{formatter => fun fmt_field/4,
+     desc_resolver => fun dummy_desc_resolver/1},
     gen(Schema, Opts).
+
 %% @doc Generate a JSON compatible list of `map()'s.
 -spec gen(
     hocon_schema:schema(),
     #{
         formatter => fmtfieldfunc(),
-        lang => string(),
-        desc_file => filename:file() | undefined,
+        desc_resolver => desc_resolver(),
         include_importance_up_from => hocon_schema:importance()
     }
 ) ->
     [map()].
 gen(Schema, Opts) ->
     {RootNs, RootFields, Structs} = hocon_schema:find_structs(Schema, Opts),
-    {File, Opts1} = maps:take(desc_file, Opts),
-    Cache = hocon_schema:new_desc_cache(File),
-    Opts2 = Opts1#{cache => Cache},
     Json =
         [
-            gen_struct(RootNs, RootNs, "Root Config Keys", #{fields => RootFields}, Opts2)
+            gen_struct(RootNs, RootNs, "Root Config Keys", #{fields => RootFields}, Opts)
             | lists:map(
                 fun({Ns, Name, Meta}) ->
-                    case gen_struct(RootNs, Ns, Name, Meta, Opts2) of
+                    case gen_struct(RootNs, Ns, Name, Meta, Opts) of
                         #{fields := []} = Meta1 ->
                             error(
                                 {struct_with_no_fields, #{
@@ -72,7 +74,6 @@ gen(Schema, Opts) ->
                 Structs
             )
         ],
-    hocon_schema:delete_desc_cache(Cache),
     Json.
 
 gen_struct(_RootNs, Ns, Name, #{fields := Fields} = Meta, Opts) ->
@@ -115,8 +116,7 @@ fmt_fields(Ns, [{Name, FieldSchema} | Fields], Opts) ->
             fmt_fields(Ns, Fields, Opts);
         _ ->
             FmtFieldFun = formatter_func(Opts),
-            Opts1 = Opts#{lang => maps:get(lang, Opts, "en")},
-            [FmtFieldFun(Ns, Name, FieldSchema, Opts1) | fmt_fields(Ns, Fields, Opts)]
+            [FmtFieldFun(Ns, Name, FieldSchema, Opts) | fmt_fields(Ns, Fields, Opts)]
     end.
 
 fmt_field(Ns, Name, FieldSchema, Opts) ->
@@ -169,15 +169,11 @@ fmt_default(Value) ->
 fmt_type(Ns, T) ->
     hocon_schema:fmt_type(Ns, T).
 
-fmt_desc(Struct, Opts = #{cache := Cache}) ->
-    Desc = hocon_schema:resolve_schema(Struct, Cache),
-    case is_map(Desc) of
-        true ->
-            Lang = maps:get(lang, Opts, "en"),
-            bin(hocon_maps:get(["desc", Lang], Desc));
-        false ->
-            bin(Desc)
-    end.
+fmt_desc(Desc, #{desc_resolver := F}) when Desc =/= undefined ->
+    F(Desc);
+fmt_desc(_Desc, _) ->
+    %% no resolver, no description needed at all for this schema dump
+    undefined.
 
 bin(undefined) -> undefined;
 bin(S) when is_list(S) -> unicode:characters_to_binary(S, utf8);
@@ -186,3 +182,12 @@ bin(B) when is_binary(B) -> B.
 
 formatter_func(Opts) ->
     maps:get(formatter, Opts, fun fmt_field/4).
+
+%% @priv Dummy resolver just reutrns the reference as a binary.
+%% If thre is a need to resolve the reference, a custom resolver
+%% should be provided.
+dummy_desc_resolver(?DESC(Namespace, Id)) ->
+    %% hey, if you want to use gettext, parse the msgid: prefix
+    bin(["msgid:", bin(Namespace), ".", bin(Id)]);
+dummy_desc_resolver(Desc) ->
+    bin(Desc).

@@ -62,10 +62,17 @@ no_crash_test_() ->
 
 gen(Schema) -> fun() -> hocon_schema_md:gen(Schema, "test") end.
 gen(Schema, DescFile) ->
+    {ok, Desc} = hocon:load(DescFile),
+    Resolver =
+        fun({desc, Ns, Id}) ->
+            Path = iolist_to_binary([atom_to_binary(Ns), ".", Id, ".desc"]),
+            hocon_maps:deep_get(Path, Desc, map);
+            (Text) -> iolist_to_binary(Text)
+        end,
     fun() ->
         hocon_schema_md:gen(
             Schema,
-            #{title => "test", body => <<>>, desc_file => DescFile}
+            #{title => "test", body => <<>>, desc_resolver => Resolver}
         )
     end.
 
