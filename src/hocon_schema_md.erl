@@ -24,9 +24,7 @@ gen(Schema, Title) when is_list(Title) orelse is_binary(Title) ->
     gen(Schema, #{title => Title, body => <<>>});
 gen(Schema, Opts0) ->
     Opts = ensure_env_prefix_opt(Opts0),
-    File = maps:get(desc_file, Opts, undefined),
-    Lang = maps:get(lang, Opts, "en"),
-    Structs = hocon_schema_json:gen(Schema, #{desc_file => File, lang => Lang}),
+    Structs = hocon_schema_json:gen(Schema, Opts),
     gen_from_structs(Structs, Opts).
 
 gen_from_structs(Structs, #{title := Title, body := Body} = Opts) ->
