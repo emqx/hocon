@@ -10,6 +10,7 @@
 -type percent() :: float().
 -type file() :: string().
 -type comma_separated_list() :: list().
+-type comma_separated_atoms() :: [atom()].
 -type bar_separated_list() :: list().
 -type ip_port() :: tuple().
 
@@ -19,18 +20,19 @@
 -typerefl_from_string({bytesize/0, emqx_schema, to_bytesize}).
 -typerefl_from_string({percent/0, emqx_schema, to_percent}).
 -typerefl_from_string({comma_separated_list/0, emqx_schema, to_comma_separated_list}).
+-typerefl_from_string({comma_separated_atoms/0, emqx_schema, to_comma_separated_atoms}).
 -typerefl_from_string({bar_separated_list/0, emqx_schema, to_bar_separated_list}).
 -typerefl_from_string({ip_port/0, emqx_schema, to_ip_port}).
 
 % workaround: prevent being recognized as unused functions
 -export([to_duration/1, to_duration_s/1, to_bytesize/1,
-         to_flag/1, to_percent/1, to_comma_separated_list/1,
+         to_flag/1, to_percent/1, to_comma_separated_list/1, to_comma_separated_atoms/1,
          to_bar_separated_list/1, to_ip_port/1, namespace/0]).
 
 -behaviour(hocon_schema).
 
 -reflect_type([ log_level/0, flag/0, duration/0, duration_s/0,
-                bytesize/0, percent/0, file/0,
+                bytesize/0, percent/0, file/0, comma_separated_atoms/0,
                 comma_separated_list/0, bar_separated_list/0, ip_port/0]).
 
 -export([roots/0, fields/1, translations/0, translation/1, tags/0]).
@@ -1189,6 +1191,9 @@ to_percent(Str) ->
 to_comma_separated_list(Str) ->
     {ok, string:tokens(Str, ", ")}.
 
+to_comma_separated_atoms(Str) ->
+    {ok, lists:map(fun to_atom/1, string:tokens(Str, ", "))}.
+
 to_bar_separated_list(Str) ->
     {ok, string:tokens(Str, "| ")}.
 
@@ -1201,6 +1206,13 @@ to_ip_port(Str) ->
             end;
         _ -> {error, Str}
     end.
+
+to_atom(Atom) when is_atom(Atom) ->
+    Atom;
+to_atom(Str) when is_list(Str) ->
+    list_to_atom(Str);
+to_atom(Bin) when is_binary(Bin) ->
+    binary_to_atom(Bin, utf8).
 
 map_ref(Name) ->
     hoconsc:mk(hoconsc:map("name", hoconsc:ref(Name))).
