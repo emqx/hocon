@@ -132,7 +132,20 @@ fmt_field(#{type := #{kind := enum, symbols := Symbols}} = Field, Path, Opts) ->
     [Fix, fmt_examples(Name, Field, Opts)];
 fmt_field(#{type := #{kind := union, members := Members0} = Type} = Field, Path0, Opts0) ->
     Name = str(maps:get(name, Field)),
-    Names = lists:map(fun(#{name := N}) -> N end, Members0),
+    Names = lists:map(
+        fun
+            (#{name := N}) ->
+                N;
+            (
+                #{
+                    elements := #{name := N},
+                    kind := array
+                }
+            ) ->
+                <<"[", N/binary, "]">>
+        end,
+        Members0
+    ),
     Path = [Name | Path0],
     TypeStr = ["union() ", lists:join(" | ", Names)],
     Fix = fmt_fix_header(Field, TypeStr, Path, Opts0),
