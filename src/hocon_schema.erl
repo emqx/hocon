@@ -44,10 +44,9 @@
     names_and_aliases/1
 ]).
 
+%% only for testing
 -export([
-    new_desc_cache/1,
-    resolve_schema/2,
-    delete_desc_cache/1
+    fields_and_meta/2
 ]).
 
 %% only for testing
@@ -458,47 +457,6 @@ field_schema(FieldSchema, SchemaKey) when is_function(FieldSchema, 1) ->
     FieldSchema(SchemaKey);
 field_schema(FieldSchema, SchemaKey) when is_map(FieldSchema) ->
     maps:get(SchemaKey, FieldSchema, undefined).
-
-new_desc_cache(undefined) ->
-    #{file => undefined, tab => undefined};
-new_desc_cache(File) ->
-    case hocon:load(File) of
-        {ok, Schema} ->
-            Tab = ets:new(?MODULE, [set]),
-            maps:map(
-                fun(Mod, ModMap) ->
-                    maps:map(
-                        fun(Id, SubMap) ->
-                            ets:insert(Tab, {{Mod, Id}, SubMap})
-                        end,
-                        ModMap
-                    )
-                end,
-                Schema
-            ),
-            #{tab => Tab, file => File};
-        {error, Reason} ->
-            error(#{reason => Reason, file => File})
-    end.
-
-delete_desc_cache(#{tab := undefined}) -> ok;
-delete_desc_cache(#{tab := Tab}) -> ets:delete(Tab).
-
-resolve_schema(?DESC(Mod, Id), State) ->
-    case get_cache_desc(State, bin(Mod), bin(Id)) of
-        undefined -> error(#{reason => no_desc_for_id, key => {Mod, Id}, state => State});
-        Desc -> Desc
-    end;
-resolve_schema(Any, _State) ->
-    Any.
-
-get_cache_desc(#{tab := undefined}, _, _) ->
-    undefined;
-get_cache_desc(#{tab := Tab}, Mod, Id) ->
-    case ets:lookup(Tab, {Mod, Id}) of
-        [{_, Desc}] -> Desc;
-        [] -> undefined
-    end.
 
 readable_type(T) ->
     case fmt_type(undefined, T) of

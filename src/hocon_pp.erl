@@ -88,12 +88,18 @@ gen(A, _Opts) when is_atom(A) -> atom_to_binary(A, utf8);
 gen(Bin, Opts) when is_binary(Bin) ->
     gen(unicode:characters_to_list(Bin, utf8), Opts);
 gen(S, Opts) when is_list(S) ->
-    case io_lib:printable_unicode_list(S) of
+    case io_lib:printable_latin1_list(S) of
         true ->
             %% ~p to ensure always quote string value
             bin(io_lib:format("~100000p", [S]));
         false ->
-            gen_list(S, Opts)
+            case io_lib:printable_unicode_list(S) of
+                true ->
+                    S1 = re:replace(S, ",?\r?\n\s*", ", ", [{return, list}, global, unicode]),
+                    bin(io_lib:format("\"~ts\"", [S1]));
+                false ->
+                    gen_list(S, Opts)
+            end
     end;
 gen(M, Opts) when is_map(M) ->
     NL =
@@ -151,7 +157,13 @@ maybe_quote(K) ->
         _ -> io_lib:format("~100000p", [unicode:characters_to_list(K, utf8)])
     end.
 
-bin(IoData) -> iolist_to_binary(IoData).
+bin(IoData) ->
+    try unicode:characters_to_binary(IoData, utf8) of
+        Bin when is_binary(Bin) -> Bin;
+        _ -> iolist_to_binary(IoData)
+    catch
+        _:_ -> iolist_to_binary(IoData)
+    end.
 
 fmt(I) when is_integer(I) -> I;
 fmt(B) when is_binary(B) -> B;

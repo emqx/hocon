@@ -66,7 +66,9 @@ fields("example") ->
         {array_key2, hoconsc:array(?R_REF(emqx_schema, "etcd"))},
         {array_key3, hoconsc:array(integer())},
         {array_key4, hoconsc:array(integer())},
-        {array_key5, ?HOCON(hoconsc:array(?R_REF("map_name")), #{examples => [Element]})}
+        {array_key5, ?HOCON(hoconsc:array(?R_REF("map_name")), #{examples => [Element]})},
+        {union_array_key,
+            ?HOCON(hoconsc:union([emqx_schema:comma_separated_atoms(), hoconsc:array(atom())]))}
     ];
 fields("base") ->
     [
@@ -183,7 +185,7 @@ bind(Port) ->
 no_crash_test_() ->
     [
         {"example", gen(?MODULE)},
-        {"demo_schema", gen(demo_schema, "./test/data/demo_schema_doc.conf")},
+        {"demo_schema", gen(demo_schema)},
         {"demo_schema2", gen(demo_schema2)},
         {"demo_schema3", gen(demo_schema3)},
         {"emqx_schema", gen(emqx_schema)},
@@ -223,10 +225,3 @@ no_crash_test_() ->
     ].
 
 gen(Schema) -> fun() -> hocon_schema_example:gen(Schema, "test") end.
-gen(Schema, DescFile) ->
-    fun() ->
-        hocon_schema_example:gen(
-            Schema,
-            #{title => "test", body => <<>>, desc_file => DescFile}
-        )
-    end.

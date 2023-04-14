@@ -34,7 +34,13 @@
 %% Map keys are always strings
 -define(MAP(Name, Type), {map, Name, Type}).
 
--define(DESC(Module, Id), {desc, Module, Id}).
+%% A description namespace does not have to be the type namespace
+%% but would be good to have an alignment
+-define(DESC(Namespace, Id), {desc, Namespace, Id}).
+%% NOTE: Using module for namespace
+%% results in very clear mapping between types and descriptions.
+%% However it is perhaps not quite friendly for translators
+%% when need to support multiple languages.
 -define(DESC(Id), ?DESC(?MODULE, Id)).
 
 %% To avoid not import those function. we provide a macro to call them.

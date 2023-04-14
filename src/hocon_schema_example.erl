@@ -25,7 +25,6 @@
 -define(COMMENT2, "## ").
 -define(INDENT, "  ").
 -define(NL, io_lib:nl()).
--define(DOC, "@doc ").
 -define(TYPE, "@type ").
 -define(PATH, "@path ").
 -define(LINK, "@link ").
@@ -36,9 +35,7 @@ gen(Schema, undefined) ->
 gen(Schema, Title) when is_list(Title) orelse is_binary(Title) ->
     gen(Schema, #{title => Title, body => <<>>});
 gen(Schema, #{title := Title, body := Body} = Opts) ->
-    File = maps:get(desc_file, Opts, undefined),
-    Lang = maps:get(lang, Opts, "en"),
-    [Roots | Fields] = hocon_schema_json:gen(Schema, #{desc_file => File, lang => Lang}),
+    [Roots | Fields] = hocon_schema_json:gen(Schema),
     FmtOpts = #{
         tid => new_cache(),
         indent => "",
@@ -54,7 +51,6 @@ gen(Schema, #{title := Title, body := Body} = Opts) ->
         Structs = lists:map(
             fun(Root) ->
                 [
-                    fmt_desc(Root, ""),
                     fmt_field(Root, "", FmtOpts)
                 ]
             end,
@@ -136,7 +132,20 @@ fmt_field(#{type := #{kind := enum, symbols := Symbols}} = Field, Path, Opts) ->
     [Fix, fmt_examples(Name, Field, Opts)];
 fmt_field(#{type := #{kind := union, members := Members0} = Type} = Field, Path0, Opts0) ->
     Name = str(maps:get(name, Field)),
-    Names = lists:map(fun(#{name := N}) -> N end, Members0),
+    Names = lists:map(
+        fun
+            (#{name := N}) ->
+                N;
+            (
+                #{
+                    elements := #{name := N},
+                    kind := array
+                }
+            ) ->
+                <<"[", N/binary, "]">>
+        end,
+        Members0
+    ),
     Path = [Name | Path0],
     TypeStr = ["union() ", lists:join(" | ", Names)],
     Fix = fmt_fix_header(Field, TypeStr, Path, Opts0),
@@ -276,13 +285,6 @@ ensure_bin_key(List) when is_list(List) -> [ensure_bin_key(Map) || Map <- List];
 ensure_bin_key(Term) ->
     Term.
 
-fmt_desc(#{desc := Desc0}, Indent) ->
-    Target = iolist_to_binary([?NL, Indent, ?COMMENT2]),
-    Desc = string:trim(Desc0, both),
-    [Indent, ?COMMENT2, ?DOC, binary:replace(Desc, [<<"\n">>], Target, [global]), ?NL];
-fmt_desc(_, _) ->
-    <<"">>.
-
 fmt_type(Type, Indent) ->
     [Indent, ?COMMENT2, ?TYPE, Type, ?NL].
 
@@ -290,7 +292,6 @@ fmt_path(Path, Indent) -> [Indent, ?COMMENT2, ?PATH, hocon_schema:path(Path), ?N
 
 fmt_fix_header(Field, Type, Path, #{indent := Indent}) ->
     [
-        fmt_desc(Field, Indent),
         fmt_path(Path, Indent),
         fmt_type(Type, Indent),
         fmt_default(Field, Indent)
