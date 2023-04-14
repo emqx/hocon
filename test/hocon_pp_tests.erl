@@ -17,6 +17,20 @@
 
 -include_lib("erlymatch/include/erlymatch.hrl").
 -include_lib("typerefl/include/types.hrl").
+-include_lib("eunit/include/eunit.hrl").
+
+atom_test() ->
+    RawConf =
+        #{
+            atom_key => #{atom_key => atom_value},
+            <<"binary_key">> => #{atom_key => <<"binary_value">>}
+        },
+    PP = hocon_pp:do(RawConf, #{}),
+    {ok, RawConf2} = hocon:binary(iolist_to_binary(PP)),
+    ?assertEqual(#{
+        <<"atom_key">> => #{<<"atom_key">> => <<"atom_value">>},
+        <<"binary_key">> => #{<<"atom_key">> => <<"binary_value">>}
+    }, RawConf2).
 
 pp_test_() ->
     [
