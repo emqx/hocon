@@ -38,6 +38,7 @@ atom_test() ->
 pp_test_() ->
     [
         {"emqx.conf", do_fun("etc/emqx.conf")},
+        {"unicode.conf", do_fun("etc/unicode.conf")},
         {"unescape.conf", do_fun("etc/unescape.conf")}
     ].
 
@@ -48,20 +49,22 @@ do(File) ->
     {ok, Conf} = hocon:load(File),
     PP = hocon_pp:do(Conf, #{}),
     {ok, Conf2} = hocon:binary(iolist_to_binary(PP)),
-    ?assertEqual(Conf, Conf2).
+    ?assertEqual(Conf, Conf2),
+    TmpFile = File ++ ".pp",
+    file:write_file(TmpFile, [PP]),
+    {ok, Conf3} = hocon:load(TmpFile),
+    ?assertEqual(Conf, Conf3),
+    file:delete(TmpFile).
 
-load_unicode_pp_test() ->
-    File = "etc/unicode.conf",
+pp_escape_to_file_test() ->
+    File = "etc/unescape.conf",
     {ok, Conf} = hocon:load(File),
     PP = hocon_pp:do(Conf, #{}),
     TmpFile = File ++ ".pp",
-    file:write_file(TmpFile, PP),
-    {ok, TmpConf} = hocon:load(TmpFile),
-    ?assertEqual(Conf, TmpConf),
-    {ok, Conf3} = file:read_file(TmpFile),
-    {ok, Conf4} = file:read_file(File),
-    ?assertEqual(Conf3, Conf4),
-    file:delete(TmpFile).
+    file:write_file(TmpFile, [PP]),
+    ?assertEqual(file:read_file(File), file:read_file(TmpFile)),
+    file:delete(TmpFile),
+    ok.
 
 load_file_pp_test() ->
     TmpF = "/tmp/load_file_pp_test",
@@ -143,3 +146,11 @@ escape_test() ->
     PP = hocon_pp:do(Conf, #{}),
     {ok, Conf2} = hocon:binary(PP),
     ?assertEqual(Conf, Conf2).
+
+utf8_test() ->
+    InvalidUtf8 = #{<<"test">> => <<"测试-专用">>},
+    ?assertThrow({invalid_utf8, _}, hocon_pp:do(InvalidUtf8, #{})),
+    Utf8 = #{<<"test">> => <<"测试-专用"/utf8>>},
+    PP = hocon_pp:do(Utf8, #{}),
+    {ok, Conf2} = hocon:binary(PP),
+    ?assertEqual(Utf8, Conf2).
