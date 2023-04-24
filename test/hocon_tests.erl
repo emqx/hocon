@@ -210,6 +210,58 @@ escape_test_() ->
         ?_assertEqual(
             #{<<"str_b">> => <<" key=\"val\" ">>},
             binary("str_b = \" key=\\\"val\\\" \"")
+        ),
+        %% if there are unescaped quotes between "..."
+        %% it fails the scanner
+        ?_assertMatch(
+            {error, {scan_error, _}},
+            hocon:binary(<<"k=\"a\"cd\"">>)
+        ),
+        %% if there are two backslashes before the " between "..."
+        %% it passes the scanner, but should fail at unescaping
+        ?_assertEqual(
+            {error, {unescaped_quote, "\"a\\\\\"cd\""}},
+            hocon:binary(<<"k=\"a\\\\\"cd\"">>)
+        ),
+        %% " is allowed between """...""" without escaping
+        ?_assertEqual(
+            #{<<"k">> => <<"a\"cd\"x">>},
+            binary(<<"k=\"\"\"a\"cd\"x\"\"\"">>)
+        ),
+        %% " is also allowed between """...""" with escaping
+        ?_assertEqual(
+            #{<<"k">> => <<"a\"cd\"x">>},
+            binary(<<"k=\"\"\"a\\\"cd\\\"x\"\"\"">>)
+        ),
+        %% " immediately beofre """ should be escaped, otherwise scan_error
+        ?_assertMatch(
+            {error, {scan_error, _}},
+            hocon:binary(<<"k=\"\"\"a\"cd\"\"\"\"">>)
+        ),
+        %% " immediately beofre """ should be escaped
+        ?_assertEqual(
+            #{<<"k">> => <<"a\"cd\"">>},
+            binary(<<"k=\"\"\"a\"cd\\\"\"\"\"">>)
+        ),
+        %% \n is parsed as \n between """..."""
+        ?_assertEqual(
+            #{<<"k">> => <<"a\nd">>},
+            binary(<<"k=\"\"\"a\nd\"\"\"">>)
+        ),
+        %% \n between "..." is a scan error
+        ?_assertMatch(
+            {error, {scan_error, _}},
+            hocon:binary(<<"k=\"a\nd\"">>)
+        ),
+        %% \\n parsed as \n between """..."""
+        ?_assertEqual(
+            #{<<"k">> => <<"a\nd">>},
+            binary(<<"k=\"\"\"a\\nd\"\"\"">>)
+        ),
+        %% \\n parsed as \n between "..."
+        ?_assertEqual(
+            #{<<"k">> => <<"a\nd">>},
+            binary(<<"k=\"a\\nd\"">>)
         )
     ].
 
