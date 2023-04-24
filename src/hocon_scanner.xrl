@@ -80,8 +80,8 @@ Rules.
 {Unquoted}        : {token, maybe_include(TokenChars, TokenLine)}.
 {Integer}         : {token, {integer, TokenLine, list_to_integer(TokenChars)}}.
 {Float}           : {token, {float, TokenLine, to_float(TokenChars)}}.
-{String}          : {token, {string, TokenLine, unquote(TokenChars)}}.
-{MultilineString} : {token, {string, TokenLine, unquote(TokenChars)}}.
+{String}          : {token, {string, TokenLine, unquote(TokenChars, force_escape)}}.
+{MultilineString} : {token, {string, TokenLine, unquote(TokenChars, allow_unescaped)}}.
 {Bytesize}        : {token, {string, TokenLine, TokenChars}}.
 {Percent}         : {token, {string, TokenLine, TokenChars}}.
 {Duration}        : {token, {string, TokenLine, TokenChars}}.
@@ -102,23 +102,38 @@ get_filename_from_required("required(" ++ Filename) ->
 bool("true")  -> true;
 bool("false") -> false.
 
-unquote(Str) ->
-    unescape(strip_surrounded_quotes(Str)).
+unquote(Str, Allow) ->
+    Str1 = strip_surrounded_quotes(Str),
+    unescape(Str1, Allow).
 
 strip_surrounded_quotes([$" | Rem]) ->
     lists:reverse(strip_surrounded_quotes(lists:reverse(Rem)));
 strip_surrounded_quotes(Str) ->
     Str.
 
-unescape([]) -> [];
-unescape([$\\, $\\ | T]) -> [$\\ | unescape(T)];
-unescape([$\\, $" | T]) -> [$" | unescape(T)];
-unescape([$\\, $n | T]) -> [$\n | unescape(T)];
-unescape([$\\, $t | T]) -> [$\t | unescape(T)];
-unescape([$\\, $r | T]) -> [$\r | unescape(T)];
-unescape([$\\, $b | T]) -> [$\b | unescape(T)];
-unescape([$\\, $f | T]) -> [$\f | unescape(T)];
-unescape([H | T]) -> [H | unescape(T)].
+% the first clause is commented out on purpose
+% meaning below two escape sequence (in a hocon file)
+% key="\\""
+% key="\\\""
+% would be parsed into the same vaulue a string
+% of two chars, a back-slash and a double-quote
+% this is left as it is to keep backward compatibility.
+%unescape([$" | _], force_escape) ->
+%    throw(unescaped_quote);
+unescape([], _Allow) ->
+    [];
+unescape(S, Allow) ->
+    {H, T} = unesc(S),
+    [H | unescape(T, Allow)].
+
+unesc([$\\, $\\ | T]) -> {$\\, T};
+unesc([$\\, $" | T]) -> {$", T};
+unesc([$\\, $n | T]) -> {$\n, T};
+unesc([$\\, $t | T]) -> {$\t, T};
+unesc([$\\, $r | T]) -> {$\r, T};
+unesc([$\\, $b | T]) -> {$\b, T};
+unesc([$\\, $f | T]) -> {$\f, T};
+unesc([H | T]) -> {H, T}.
 
 maybe_var_ref_name("${?" ++ Name_CR) ->
     [$} | NameRev] = lists:reverse(Name_CR),
