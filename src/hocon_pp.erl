@@ -86,19 +86,20 @@ gen(I, _Opts) when is_integer(I) -> integer_to_binary(I);
 gen(F, _Opts) when is_float(F) -> float_to_binary(F, [{decimals, 6}, compact]);
 gen(A, _Opts) when is_atom(A) -> atom_to_binary(A, utf8);
 gen(Bin, Opts) when is_binary(Bin) ->
-    gen(unicode:characters_to_list(Bin, utf8), Opts);
+    Str = unicode:characters_to_list(Bin, utf8),
+    case is_list(Str) of
+        true -> gen(Str, Opts);
+        false -> throw({invalid_utf8, Bin})
+    end;
 gen(S, Opts) when is_list(S) ->
     case io_lib:printable_latin1_list(S) of
         true ->
             %% ~p to ensure always quote string value
-            bin(io_lib:format("~100000p", [S]));
+            bin(io_lib:format("~0p", [S]));
         false ->
             case io_lib:printable_unicode_list(S) of
-                true ->
-                    S1 = re:replace(S, ",?\r?\n\s*", ", ", [{return, list}, global, unicode]),
-                    bin(io_lib:format("\"~ts\"", [S1]));
-                false ->
-                    gen_list(S, Opts)
+                true -> <<"\"", (format_escape_sequences(S))/binary, "\"">>;
+                false -> gen_list(S, Opts)
             end
     end;
 gen(M, Opts) when is_map(M) ->
@@ -154,7 +155,7 @@ maybe_quote(K) when is_atom(K) -> atom_to_list(K);
 maybe_quote(K) ->
     case re:run(K, "[^A-Za-z_]") of
         nomatch -> K;
-        _ -> io_lib:format("~100000p", [unicode:characters_to_list(K, utf8)])
+        _ -> io_lib:format("~0p", [unicode:characters_to_list(K, utf8)])
     end.
 
 bin(IoData) ->
@@ -170,8 +171,8 @@ fmt(B) when is_binary(B) -> B;
 fmt(L) when is_list(L) ->
     bin(lists:map(fun fmt/1, L));
 fmt({indent, Block}) ->
-    FormatedBlock = fmt(Block),
-    bin([[?INDENT, Line, ?NL] || Line <- split(FormatedBlock)]).
+    FormattedBlock = fmt(Block),
+    bin([[?INDENT, Line, ?NL] || Line <- split(FormattedBlock)]).
 
 split(Bin) ->
     [Line || Line <- binary:split(Bin, ?NL, [global]), Line =/= <<>>].
@@ -179,3 +180,28 @@ split(Bin) ->
 infix([], _) -> [];
 infix([One], _) -> [One];
 infix([H | T], Infix) -> [[H, Infix] | infix(T, Infix)].
+
+format_escape_sequences(Str) ->
+    bin(lists:map(fun esc/1, Str)).
+
+% LF
+esc($\n) -> "\\n";
+% CR
+esc($\r) -> "\\r";
+% TAB
+esc($\t) -> "\\t";
+% VT
+esc($\v) -> "\\v";
+% FF
+esc($\f) -> "\\f";
+% BS
+esc($\b) -> "\\b";
+% ESC
+esc($\e) -> "\\e";
+% DEL
+esc($\d) -> "\\d";
+% "
+esc($\") -> "\\\"";
+% \
+esc($\\) -> "\\\\";
+esc(Char) -> Char.
