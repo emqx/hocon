@@ -2148,3 +2148,25 @@ convert_undefined_test() ->
     Res = hocon_tconf:check(Sc, RichMap),
     ?assertEqual(#{<<"root">> => "string"}, hocon_maps:ensure_plain(Res)),
     ok.
+
+convert_map_test() ->
+    %% this converter only works for the map
+    %% but not the map value
+    Converter = fun(#{<<"name1">> := <<"foo1">>}) ->
+        #{<<"name1">> => <<"foo2">>}
+    end,
+    Sc = #{
+        roots => [
+            {"root",
+                hoconsc:mk(
+                    hoconsc:map("name", string()),
+                    #{
+                        converter => Converter
+                    }
+                )}
+        ],
+        fields => #{}
+    },
+    {ok, Map} = hocon:binary("root = {name1 = foo1}", #{format => map}),
+    Res = hocon_tconf:check_plain(Sc, Map),
+    ?assertEqual(#{<<"root">> => #{<<"name1">> => "foo2"}}, Res).
