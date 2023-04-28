@@ -563,7 +563,7 @@ map_field(?MAP(_Name, Type), FieldSchema, Value, Opts) ->
                     %% All objects in this map should share the same schema.
                     NewSc = hocon_schema:override(
                         FieldSchema,
-                        #{type => Type, mapping => undefined}
+                        #{type => Type, mapping => undefined, converter => undefined}
                     ),
                     NewFields = [{FieldName, NewSc} || FieldName <- FieldNames],
                     %% start over
