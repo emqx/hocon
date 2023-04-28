@@ -1590,6 +1590,28 @@ fill_defaults_with_env_override_test() ->
         envs([{"EMQX_FOO__BAR", "122"}])
     ).
 
+fill_defaults_array_test() ->
+    Union = hoconsc:union([integer(), string()]),
+    Sc = #{
+        roots => [foo],
+        fields => #{
+            foo => [
+                {"bar", #{
+                    type => hoconsc:array(Union),
+                    default => [<<"str">>]
+                }},
+                {"baz", #{type => integer()}}
+            ]
+        }
+    },
+    Conf0 = "foo={baz=121}",
+    {ok, Conf} = hocon:binary(Conf0),
+    Res = hocon_tconf:check_plain(Sc, Conf, #{
+        make_serializable => true,
+        apply_override_envs => true
+    }),
+    ?assertEqual(#{<<"foo">> => #{<<"baz">> => 121, <<"bar">> => [<<"str">>]}}, Res).
+
 array_env_override_test_() ->
     Sc = #{
         roots => [foo],
