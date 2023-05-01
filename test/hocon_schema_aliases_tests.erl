@@ -40,7 +40,10 @@ roots() ->
     ].
 
 fields("root1") ->
-    [{key1, integer()}];
+    [
+        {key1, hoconsc:mk(integer(), #{required => false})},
+        {key2, hoconsc:mk(integer(), #{required => false})}
+    ];
 fields("root2") ->
     [
         {key2, #{aliases => [old_key2], type => integer()}},
@@ -48,7 +51,7 @@ fields("root2") ->
     ].
 
 %% test a root field can be safely renamed
-%% in this case, one of the root level fieds in the test schema ?MODULE.
+%% in this case, one of the root level fields in the test schema ?MODULE.
 %% old_root1 is renamed to root1
 check_root_test() ->
     ConfText = "{old_root1 = {key1 = 1}, root2 = {key2 = 2, key3 = \"foo\"}}",
@@ -89,6 +92,30 @@ check_env_test() ->
             )
         end,
     with_envs(Fun, [], envs([{"EMQX_OLD_ROOT1__key1", "42"}, {"EMQX_ROOT2__OLD_KEY2", "43"}])).
+
+check_mix_env_test() ->
+    Fun =
+        fun() ->
+            ConfText = "{old_root1 = {key1 = 0, key2 = 1}}",
+            {ok, Conf0} = hocon:binary(ConfText),
+            Conf = hocon_tconf:merge_env_overrides(?MODULE, Conf0, all, #{format => map}),
+            ?assertEqual(
+                #{
+                    <<"root1">> => #{<<"key1">> => 0, <<"key2">> => 2},
+                    <<"root2">> => #{<<"key2">> => 42, <<"key3">> => "foo"}
+                },
+                hocon_tconf:check_plain(?MODULE, Conf)
+            )
+        end,
+    with_envs(
+        Fun,
+        [],
+        envs([
+            {"EMQX_ROOT1__KEY2", "2"},
+            {"EMQX_ROOT2__OLD_KEY2", "42"},
+            {"EMQX_ROOT2__KEY3", "foo"}
+        ])
+    ).
 
 no_value_test() ->
     ConfText = "{root3 = b, old_root3 = a}",
