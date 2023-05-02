@@ -47,7 +47,10 @@ fields("root1") ->
 fields("root2") ->
     [
         {key2, #{aliases => [old_key2], type => integer()}},
-        {key3, string()}
+        {key3, string()},
+        {key4, #{
+            aliases => [old_key4], type => integer(), converter => fun incr/2, required => false
+        }}
     ].
 
 %% test a root field can be safely renamed
@@ -60,6 +63,17 @@ check_root_test() ->
         #{
             <<"root1">> => #{<<"key1">> => 1},
             <<"root2">> => #{<<"key2">> => 2, <<"key3">> => "foo"}
+        },
+        hocon_tconf:check_plain(?MODULE, Conf)
+    ).
+
+check_converter_test() ->
+    ConfText = "{old_root1 = {key1 = 1}, root2 = {key2 = 2, key3 = \"foo\", old_key4 = 3}}",
+    {ok, Conf} = hocon:binary(ConfText),
+    ?assertEqual(
+        #{
+            <<"root1">> => #{<<"key1">> => 1},
+            <<"root2">> => #{<<"key2">> => 2, <<"key3">> => "foo", <<"key4">> => 4}
         },
         hocon_tconf:check_plain(?MODULE, Conf)
     ).
@@ -86,12 +100,20 @@ check_env_test() ->
             ?assertEqual(
                 #{
                     <<"root1">> => #{<<"key1">> => 42},
-                    <<"root2">> => #{<<"key2">> => 43, <<"key3">> => "foo"}
+                    <<"root2">> => #{<<"key2">> => 43, <<"key3">> => "foo", <<"key4">> => 2}
                 },
                 hocon_tconf:check_plain(?MODULE, Conf)
             )
         end,
-    with_envs(Fun, [], envs([{"EMQX_OLD_ROOT1__key1", "42"}, {"EMQX_ROOT2__OLD_KEY2", "43"}])).
+    with_envs(
+        Fun,
+        [],
+        envs([
+            {"EMQX_OLD_ROOT1__key1", "42"},
+            {"EMQX_ROOT2__OLD_KEY2", "43"},
+            {"EMQX_ROOT2__OLD_KEY4", "1"}
+        ])
+    ).
 
 check_mix_env_test() ->
     Fun =
@@ -127,3 +149,6 @@ with_envs(Fun, Args, Envs) ->
 
 envs(Envs) ->
     [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"} | Envs].
+
+incr(undefined, _Opts) -> undefined;
+incr(Val, _Opts) -> Val + 1.
