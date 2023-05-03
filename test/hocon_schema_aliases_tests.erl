@@ -65,6 +65,15 @@ check_root_test() ->
             <<"root2">> => #{<<"key2">> => 2, <<"key3">> => "foo"}
         },
         hocon_tconf:check_plain(?MODULE, Conf)
+    ),
+    {ok, RichConf} = hocon:binary(ConfText, #{format => richmap}),
+    ?assertEqual(
+        #{
+            <<"old_root1">> => #{<<"key1">> => 1},
+            <<"root1">> => #{<<"key1">> => 1},
+            <<"root2">> => #{<<"key2">> => 2, <<"key3">> => "foo"}
+        },
+        hocon_util:richmap_to_map(hocon_tconf:check(?MODULE, RichConf))
     ).
 
 check_converter_test() ->
@@ -76,6 +85,20 @@ check_converter_test() ->
             <<"root2">> => #{<<"key2">> => 2, <<"key3">> => "foo", <<"key4">> => 4}
         },
         hocon_tconf:check_plain(?MODULE, Conf)
+    ),
+    {ok, RichConf} = hocon:binary(ConfText, #{format => richmap}),
+    ?assertEqual(
+        #{
+            <<"old_root1">> => #{<<"key1">> => 1},
+            <<"root1">> => #{<<"key1">> => 1},
+            <<"root2">> => #{
+                <<"key2">> => 2,
+                <<"key3">> => "foo",
+                <<"old_key4">> => 3,
+                <<"key4">> => 4
+            }
+        },
+        hocon_util:richmap_to_map(hocon_tconf:check(?MODULE, RichConf))
     ).
 
 check_field_test() ->
@@ -89,6 +112,18 @@ check_field_test() ->
             <<"root2">> => #{<<"key2">> => 2, <<"key3">> => "foo"}
         },
         hocon_tconf:check_plain(?MODULE, Conf)
+    ),
+    {ok, RichConf} = hocon:binary(ConfText, #{format => richmap}),
+    ?assertEqual(
+        #{
+            <<"old_root1">> => #{<<"key1">> => 1},
+            <<"root1">> => #{<<"key1">> => 1},
+            <<"root2">> => #{<<"key2">> => 2, <<"key3">> => "foo", <<"old_key2">> => 2}
+            %% deprecated field(old_root3,root3) is not included in the map
+            %%<<"old_root3">> => a,
+            %% <<"root3">> => b
+        },
+        hocon_util:richmap_to_map(hocon_tconf:check(?MODULE, RichConf))
     ).
 
 check_env_test() ->
@@ -103,6 +138,22 @@ check_env_test() ->
                     <<"root2">> => #{<<"key2">> => 43, <<"key3">> => "foo", <<"key4">> => 2}
                 },
                 hocon_tconf:check_plain(?MODULE, Conf)
+            ),
+            {ok, RichConf} = hocon:binary(ConfText, #{format => richmap}),
+            Conf1 = hocon_tconf:merge_env_overrides(?MODULE, RichConf, all, #{format => richmap}),
+            ?assertEqual(
+                #{
+                    <<"root1">> => #{<<"key1">> => 42},
+                    <<"old_root1">> => #{<<"key1">> => 42},
+                    <<"root2">> => #{
+                        <<"key2">> => 43,
+                        <<"old_key2">> => 43,
+                        <<"key3">> => "foo",
+                        <<"key4">> => 2,
+                        <<"old_key4">> => 1
+                    }
+                },
+                hocon_util:richmap_to_map(hocon_tconf:check(?MODULE, Conf1))
             )
         end,
     with_envs(
@@ -127,6 +178,20 @@ check_mix_env_test() ->
                     <<"root2">> => #{<<"key2">> => 42, <<"key3">> => "foo"}
                 },
                 hocon_tconf:check_plain(?MODULE, Conf)
+            ),
+            {ok, RichConf} = hocon:binary(ConfText, #{format => richmap}),
+            Conf1 = hocon_tconf:merge_env_overrides(?MODULE, RichConf, all, #{format => richmap}),
+            ?assertEqual(
+                #{
+                    <<"root1">> => #{<<"key1">> => 0, <<"key2">> => 2},
+                    <<"old_root1">> => #{<<"key1">> => 0, <<"key2">> => 1},
+                    <<"root2">> => #{
+                        <<"key2">> => 42,
+                        <<"old_key2">> => 42,
+                        <<"key3">> => "foo"
+                    }
+                },
+                hocon_util:richmap_to_map(hocon_tconf:check(?MODULE, Conf1))
             )
         end,
     with_envs(
