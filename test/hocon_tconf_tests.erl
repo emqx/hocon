@@ -1078,6 +1078,82 @@ converter_test() ->
         hocon_tconf:check_plain(Sc, BadIn)
     ).
 
+%% converter can be used to convert a value to a different type
+%% From ref(bar) to map(name, ref(bar)).
+converter_type_test() ->
+    Sc = #{
+        roots => [
+            {f1,
+                hoconsc:mk(
+                    hoconsc:union([
+                        hoconsc:ref(?MODULE, bar), hoconsc:map(name, hoconsc:ref(?MODULE, bar))
+                    ]),
+                    #{
+                        converter => fun(Conf, _Opts) ->
+                            Fields = lists:map(fun({F, _}) -> atom_to_binary(F) end, fields(bar)),
+                            DefaultBar = maps:with(Fields, Conf),
+                            MapBar = maps:without(Fields, Conf),
+                            hocon_maps:deep_merge(MapBar, #{<<"default">> => DefaultBar})
+                        end
+                    }
+                )}
+        ]
+    },
+    Inputs = [
+        "{f1.field1: \"foo1\"}",
+        ""
+        "\n"
+        "        {f1 {field1: foo1\n"
+        "             host: \"127.0.0.1\",\n"
+        "             my-test-name: {\n"
+        "                field1: \"test-name\"\n"
+        "                },\n"
+        "             default: {\n"
+        "                field1: \"default-field1\"\n"
+        "                }\n"
+        "             }\n"
+        "        }\n"
+        "        "
+        ""
+    ],
+    Expects = [
+        #{
+            <<"f1">> =>
+                #{
+                    <<"default">> =>
+                        #{<<"field1">> => "foo1", <<"union_with_default">> => dummy}
+                }
+        },
+        #{
+            <<"f1">> =>
+                #{
+                    <<"default">> =>
+                        #{
+                            <<"field1">> => "foo1",
+                            <<"union_with_default">> => dummy,
+                            <<"host">> => "127.0.0.1"
+                        },
+                    <<"my-test-name">> =>
+                        #{
+                            <<"field1">> => "test-name",
+                            <<"union_with_default">> => dummy
+                        }
+                }
+        }
+    ],
+    lists:foreach(
+        fun({Input, Expect}) ->
+            {ok, PlainConf} = hocon:binary(Input, #{format => map}),
+            {ok, RichConf} = hocon:binary(Input, #{format => richmap}),
+            PlainConverted = hocon_tconf:check_plain(Sc, PlainConf),
+            RichConverted = richmap_to_map(hocon_tconf:check(Sc, RichConf)),
+            ?assertEqual(PlainConverted, RichConverted),
+            ?assertEqual(Expect, PlainConverted)
+        end,
+        lists:zip(Inputs, Expects)
+    ),
+    ok.
+
 converter_non_primitive_test() ->
     Sc = #{
         roots => [
@@ -1125,7 +1201,7 @@ converter_return_undefined_test() ->
         ]
     },
     Input = #{<<"f1">> => <<"1">>},
-    %% assert that converter ruturning 'undefined' has no effect
+    %% assert that converter returning 'undefined' has no effect
     %% this is a limitation of current version:
     %% there is no way to 'remove' a config value by converting values to 'undefined'
     %% use 'deprecated' instead
