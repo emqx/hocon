@@ -1031,9 +1031,8 @@ maybe_mkrich(_, undefined, _Box) ->
     undefined;
 maybe_mkrich(#{format := map}, Value, _Box) ->
     Value;
-maybe_mkrich(#{format := richmap} = Opts, Value, Box) ->
-    RichValue = unbox(mkrich(Value, Box)),
-    boxit(Opts, RichValue, Box).
+maybe_mkrich(#{format := richmap}, Value, Box) ->
+    mkrich(Value, Box).
 
 mkrich(Arr, Box) when is_list(Arr) ->
     NewArr = [mkrich(I, Box) || I <- Arr],
