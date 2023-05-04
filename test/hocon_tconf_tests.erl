@@ -825,7 +825,7 @@ type_stack_cannot_concatenate_test() ->
         #{
             path := "f1.1.maybe",
             matched_type := "s1/s2",
-            errors := [_ | _]
+            reason := required_field
         },
         hocon_tconf:check_plain(Sc, #{<<"f1">> => [#{<<"maybe">> => #{}}]}, #{})
     ),

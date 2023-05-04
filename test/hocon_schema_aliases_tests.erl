@@ -40,15 +40,21 @@ roots() ->
     ].
 
 fields("root1") ->
-    [{key1, integer()}];
+    [
+        {key1, hoconsc:mk(integer(), #{required => false})},
+        {key2, hoconsc:mk(integer(), #{required => false})}
+    ];
 fields("root2") ->
     [
         {key2, #{aliases => [old_key2], type => integer()}},
-        {key3, string()}
+        {key3, string()},
+        {key4, #{
+            aliases => [old_key4], type => integer(), converter => fun incr/2, required => false
+        }}
     ].
 
 %% test a root field can be safely renamed
-%% in this case, one of the root level fieds in the test schema ?MODULE.
+%% in this case, one of the root level fields in the test schema ?MODULE.
 %% old_root1 is renamed to root1
 check_root_test() ->
     ConfText = "{old_root1 = {key1 = 1}, root2 = {key2 = 2, key3 = \"foo\"}}",
@@ -59,6 +65,40 @@ check_root_test() ->
             <<"root2">> => #{<<"key2">> => 2, <<"key3">> => "foo"}
         },
         hocon_tconf:check_plain(?MODULE, Conf)
+    ),
+    {ok, RichConf} = hocon:binary(ConfText, #{format => richmap}),
+    ?assertEqual(
+        #{
+            <<"old_root1">> => #{<<"key1">> => 1},
+            <<"root1">> => #{<<"key1">> => 1},
+            <<"root2">> => #{<<"key2">> => 2, <<"key3">> => "foo"}
+        },
+        hocon_util:richmap_to_map(hocon_tconf:check(?MODULE, RichConf))
+    ).
+
+check_converter_test() ->
+    ConfText = "{old_root1 = {key1 = 1}, root2 = {key2 = 2, key3 = \"foo\", old_key4 = 3}}",
+    {ok, Conf} = hocon:binary(ConfText),
+    ?assertEqual(
+        #{
+            <<"root1">> => #{<<"key1">> => 1},
+            <<"root2">> => #{<<"key2">> => 2, <<"key3">> => "foo", <<"key4">> => 4}
+        },
+        hocon_tconf:check_plain(?MODULE, Conf)
+    ),
+    {ok, RichConf} = hocon:binary(ConfText, #{format => richmap}),
+    ?assertEqual(
+        #{
+            <<"old_root1">> => #{<<"key1">> => 1},
+            <<"root1">> => #{<<"key1">> => 1},
+            <<"root2">> => #{
+                <<"key2">> => 2,
+                <<"key3">> => "foo",
+                <<"old_key4">> => 3,
+                <<"key4">> => 4
+            }
+        },
+        hocon_util:richmap_to_map(hocon_tconf:check(?MODULE, RichConf))
     ).
 
 check_field_test() ->
@@ -72,6 +112,18 @@ check_field_test() ->
             <<"root2">> => #{<<"key2">> => 2, <<"key3">> => "foo"}
         },
         hocon_tconf:check_plain(?MODULE, Conf)
+    ),
+    {ok, RichConf} = hocon:binary(ConfText, #{format => richmap}),
+    ?assertEqual(
+        #{
+            <<"old_root1">> => #{<<"key1">> => 1},
+            <<"root1">> => #{<<"key1">> => 1},
+            <<"root2">> => #{<<"key2">> => 2, <<"key3">> => "foo", <<"old_key2">> => 2}
+            %% deprecated field(old_root3,root3) is not included in the map
+            %%<<"old_root3">> => a,
+            %% <<"root3">> => b
+        },
+        hocon_util:richmap_to_map(hocon_tconf:check(?MODULE, RichConf))
     ).
 
 check_env_test() ->
@@ -83,12 +135,74 @@ check_env_test() ->
             ?assertEqual(
                 #{
                     <<"root1">> => #{<<"key1">> => 42},
-                    <<"root2">> => #{<<"key2">> => 43, <<"key3">> => "foo"}
+                    <<"root2">> => #{<<"key2">> => 43, <<"key3">> => "foo", <<"key4">> => 2}
                 },
                 hocon_tconf:check_plain(?MODULE, Conf)
+            ),
+            {ok, RichConf} = hocon:binary(ConfText, #{format => richmap}),
+            Conf1 = hocon_tconf:merge_env_overrides(?MODULE, RichConf, all, #{format => richmap}),
+            ?assertEqual(
+                #{
+                    <<"root1">> => #{<<"key1">> => 42},
+                    <<"old_root1">> => #{<<"key1">> => 42},
+                    <<"root2">> => #{
+                        <<"key2">> => 43,
+                        <<"old_key2">> => 43,
+                        <<"key3">> => "foo",
+                        <<"key4">> => 2,
+                        <<"old_key4">> => 1
+                    }
+                },
+                hocon_util:richmap_to_map(hocon_tconf:check(?MODULE, Conf1))
             )
         end,
-    with_envs(Fun, [], envs([{"EMQX_OLD_ROOT1__key1", "42"}, {"EMQX_ROOT2__OLD_KEY2", "43"}])).
+    with_envs(
+        Fun,
+        [],
+        envs([
+            {"EMQX_OLD_ROOT1__key1", "42"},
+            {"EMQX_ROOT2__OLD_KEY2", "43"},
+            {"EMQX_ROOT2__OLD_KEY4", "1"}
+        ])
+    ).
+
+check_mix_env_test() ->
+    Fun =
+        fun() ->
+            ConfText = "{old_root1 = {key1 = 0, key2 = 1}}",
+            {ok, Conf0} = hocon:binary(ConfText),
+            Conf = hocon_tconf:merge_env_overrides(?MODULE, Conf0, all, #{format => map}),
+            ?assertEqual(
+                #{
+                    <<"root1">> => #{<<"key1">> => 0, <<"key2">> => 2},
+                    <<"root2">> => #{<<"key2">> => 42, <<"key3">> => "foo"}
+                },
+                hocon_tconf:check_plain(?MODULE, Conf)
+            ),
+            {ok, RichConf} = hocon:binary(ConfText, #{format => richmap}),
+            Conf1 = hocon_tconf:merge_env_overrides(?MODULE, RichConf, all, #{format => richmap}),
+            ?assertEqual(
+                #{
+                    <<"root1">> => #{<<"key1">> => 0, <<"key2">> => 2},
+                    <<"old_root1">> => #{<<"key1">> => 0, <<"key2">> => 1},
+                    <<"root2">> => #{
+                        <<"key2">> => 42,
+                        <<"old_key2">> => 42,
+                        <<"key3">> => "foo"
+                    }
+                },
+                hocon_util:richmap_to_map(hocon_tconf:check(?MODULE, Conf1))
+            )
+        end,
+    with_envs(
+        Fun,
+        [],
+        envs([
+            {"EMQX_ROOT1__KEY2", "2"},
+            {"EMQX_ROOT2__OLD_KEY2", "42"},
+            {"EMQX_ROOT2__KEY3", "foo"}
+        ])
+    ).
 
 no_value_test() ->
     ConfText = "{root3 = b, old_root3 = a}",
@@ -100,3 +214,6 @@ with_envs(Fun, Args, Envs) ->
 
 envs(Envs) ->
     [{"HOCON_ENV_OVERRIDE_PREFIX", "EMQX_"} | Envs].
+
+incr(undefined, _Opts) -> undefined;
+incr(Val, _Opts) -> Val + 1.
