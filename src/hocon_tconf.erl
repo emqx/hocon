@@ -424,7 +424,7 @@ map_fields([{_, FieldSchema} = Field | Fields], Conf0, Acc, Opts) ->
 map_fields_cont([{_, FieldSchema} = Field | Fields], Conf0, Acc, Opts) ->
     FieldType = field_schema(FieldSchema, type),
     [FieldName | Aliases] = NameAliases = name_and_aliases(Field),
-    FieldValue = get_field_value(Opts, NameAliases, Conf0),
+    FieldValue = get_field_value(NameAliases, Opts, Conf0),
     NewOpts = push_stack(Opts, FieldName),
     {FAcc, FValue} =
         try
@@ -1047,21 +1047,24 @@ mkrich(Map, Box) when is_map(Map) ->
 mkrich(Val, Box) ->
     boxit(Val, Box).
 
-get_field_value(Opts, NameAliases, Conf) ->
-    get_field_value(Opts, NameAliases, Conf, #{}).
+get_field_value(NameAliases, Opts, Conf) ->
+    get_field_value(NameAliases, Opts, Conf, undefined).
 
-get_field_value(_, [], _Conf, Acc) when Acc =:= #{} -> undefined;
-get_field_value(_, [], _Conf, Acc) ->
+get_field_value([], _Opts, _Conf, Acc) ->
     Acc;
-get_field_value(Opts, [Path | Rest], Conf, Acc) ->
+get_field_value([Path | Rest], Opts, Conf, Acc0) ->
     case do_get_field_value(Opts, Path, Conf) of
         undefined ->
-            get_field_value(Opts, Rest, Conf, Acc);
+            get_field_value(Rest, Opts, Conf, Acc0);
         Value when is_map(Value) ->
-            get_field_value(Opts, Rest, Conf, hocon_maps:deep_merge(Value, Acc));
+            Acc1 = merge_alias_value(Acc0, Value),
+            get_field_value(Rest, Opts, Conf, Acc1);
         Value ->
             Value
     end.
+
+merge_alias_value(undefined, Value) -> Value;
+merge_alias_value(Acc, Value) -> hocon_maps:deep_merge(Value, Acc).
 
 do_get_field_value(#{format := richmap}, Path, Conf) ->
     hocon_maps:deep_get(Path, Conf);

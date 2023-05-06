@@ -155,6 +155,32 @@ obfuscate_sensitive_fill_default_test() ->
     ),
     ok.
 
+nest_ref_fill_default_test() ->
+    Module = nest_ref_fill_default_demo,
+    Str = "broker {perf {} route_batch_clean = false }",
+    {ok, HoconRichMap} = hocon:binary(Str, #{format => richmap}),
+    OptsRichMap = #{make_serializable => true, format => richmap},
+    [] = hocon_tconf:generate(Module, HoconRichMap, OptsRichMap),
+    {[], ConfRichMap} = hocon_tconf:map_translate(Module, HoconRichMap, OptsRichMap),
+    Expect = #{
+        <<"broker">> =>
+            #{
+                <<"perf">> =>
+                    #{
+                        <<"route_lock_type">> => key,
+                        <<"trie_compaction">> => true
+                    },
+                <<"route_batch_clean">> => false
+            }
+    },
+    ?assertEqual(Expect, richmap_to_map(ConfRichMap)),
+
+    {ok, HoconMap} = hocon:binary(Str, #{format => map}),
+    OptsMap = #{make_serializable => true, format => map},
+    [] = hocon_tconf:generate(Module, HoconMap, OptsMap),
+    {[], ConfMap} = hocon_tconf:map_translate(Module, HoconMap, OptsMap),
+    ?assertEqual(Expect, ConfMap).
+
 env_override_test() ->
     with_envs(
         fun() ->
@@ -825,7 +851,7 @@ type_stack_cannot_concatenate_test() ->
         #{
             path := "f1.1.maybe",
             matched_type := "s1/s2",
-            reason := required_field
+            errors := [_ | _]
         },
         hocon_tconf:check_plain(Sc, #{<<"f1">> => [#{<<"maybe">> => #{}}]}, #{})
     ),
