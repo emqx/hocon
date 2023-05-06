@@ -667,6 +667,22 @@ atom_key_test() ->
         richmap_to_map(hocon_tconf:check(Sc, RichMap, #{atom_key => true}))
     ).
 
+invalid_utf8_binary_test() ->
+    Sc = #{roots => [{val, binary()}]},
+    %% The HTTP API may take invalid UTF-8 characters as input.
+    PlainMap = #{<<"val">> => <<"您好-测试">>},
+    ?assertThrow(
+        {_, [
+            #{
+                kind := validation_error,
+                path := "val",
+                reason := #{expected_type := "binary()"},
+                value := {error, _, _}
+            }
+        ]},
+        hocon_tconf:check_plain(Sc, PlainMap)
+    ).
+
 atom_key_array_test() ->
     Sc = #{
         roots => [{arr, hoconsc:array("sub")}],
