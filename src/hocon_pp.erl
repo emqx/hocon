@@ -152,10 +152,13 @@ gen_map_field(K, V, Opts, NL) ->
 
 %% maybe quote key
 maybe_quote(K) when is_atom(K) -> atom_to_list(K);
-maybe_quote(K) ->
-    case re:run(K, "[^A-Za-z_]") of
-        nomatch -> K;
-        _ -> io_lib:format("~0p", [unicode:characters_to_list(K, utf8)])
+maybe_quote(K0) ->
+    case re:run(K0, "[^A-Za-z_]") of
+        nomatch ->
+            K0;
+        _ ->
+            K1 = unicode:characters_to_list(K0, utf8),
+            <<"\"", (format_escape_sequences(K1))/binary, "\"">>
     end.
 
 bin(IoData) ->
