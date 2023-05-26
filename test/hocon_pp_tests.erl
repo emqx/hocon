@@ -152,5 +152,10 @@ utf8_test() ->
     ?assertThrow({invalid_utf8, _}, hocon_pp:do(InvalidUtf8, #{})),
     Utf8 = #{<<"test">> => <<"测试-专用"/utf8>>},
     PP = hocon_pp:do(Utf8, #{}),
-    {ok, Conf2} = hocon:binary(PP),
-    ?assertEqual(Utf8, Conf2).
+    {ok, Conf} = hocon:binary(PP),
+    ?assertEqual(Utf8, Conf),
+    %% support utf8 key
+    Utf81 = #{<<"测试-test-专用"/utf8>> => <<"测试-专用"/utf8>>},
+    PP1 = hocon_pp:do(Utf81, #{}),
+    {ok, Conf1} = hocon:binary(PP1),
+    ?assertEqual(Utf81, Conf1).
