@@ -289,25 +289,16 @@ parse_error(Line, ErrorInfo, Ctx) ->
     throw({parse_error, format_error(Line, ErrorInfo, Ctx)}).
 
 format_error(Line, ErrorInfo, #{filename := [undefined]}) ->
-    unicode_bin(
-        [
-            ErrorInfo,
-            io_lib:format(
-                " line_number ~w",
-                [Line]
-            )
-        ]
-    );
+    #{
+        reason => lists:flatten([ErrorInfo]),
+        line => Line
+    };
 format_error(Line, ErrorInfo, Ctx) ->
-    unicode_bin(
-        [
-            ErrorInfo,
-            io_lib:format(
-                " line_number ~w in_file ~s",
-                [Line, hd(hocon_util:get_stack(filename, Ctx))]
-            )
-        ]
-    ).
+    #{
+        reason => lists:flatten([ErrorInfo]),
+        line => Line,
+        file => hd(hocon_util:get_stack(filename, Ctx))
+    }.
 
 unicode_bin(L) -> unicode:characters_to_binary(L, utf8).
 unicode_list(B) -> unicode:characters_to_list(B, utf8).

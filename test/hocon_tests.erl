@@ -602,8 +602,8 @@ concat_error_binary_test_() ->
     ].
 
 parse_sytax_error_test() ->
-    {error, {parse_error, Txt}} = hocon:binary("a=xyz, b=true${a}"),
-    ?assertEqual(Txt, <<"syntax error before: <<\"a\">> line_number 1">>).
+    {error, {parse_error, Error}} = hocon:binary("a=xyz, b=true${a}"),
+    ?assertEqual(Error, #{line => 1, reason => "syntax error before: <<\"a\">>"}).
 
 concat_error_file_test_() ->
     [
