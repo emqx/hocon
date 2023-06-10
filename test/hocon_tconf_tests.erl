@@ -93,6 +93,17 @@ default_value_test() ->
             }
         },
         Res
+    ),
+    %% check foo and dummy is binary.
+    ?assertEqual(
+        #{
+            <<"bar">> =>
+                #{
+                    <<"field1">> => <<"foo">>,
+                    <<"union_with_default">> => <<"dummy">>
+                }
+        },
+        hocon_tconf:make_serializable(?MODULE, Res, #{})
     ).
 
 obfuscate_sensitive_values_test() ->
@@ -167,7 +178,7 @@ nest_ref_fill_default_test() ->
             #{
                 <<"perf">> =>
                     #{
-                        <<"route_lock_type">> => key,
+                        <<"route_lock_type">> => <<"key">>,
                         <<"trie_compaction">> => true
                     },
                 <<"route_batch_clean">> => false
