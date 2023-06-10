@@ -657,7 +657,7 @@ map_field(Type, Schema, Value0, Opts) ->
 eval_builtin_converter(PlainValue, Type, Opts) ->
     case is_make_serializable(Opts) of
         true ->
-            ensure_bin_str(PlainValue);
+            ensure_serializable(PlainValue);
         false ->
             hocon_schema_builtin:convert(PlainValue, Type)
     end.
@@ -1263,12 +1263,16 @@ eval_arity1_converter(F, V, Opts) ->
 obfuscate_sensitive_values(#{obfuscate_sensitive_values := true}) -> true;
 obfuscate_sensitive_values(_) -> false.
 
-ensure_bin_str(Value) when is_list(Value) ->
+ensure_serializable(undefined) ->
+    undefined;
+ensure_serializable(Boolean) when is_boolean(Boolean) -> Boolean;
+ensure_serializable(Atom) when is_atom(Atom) -> atom_to_binary(Atom, utf8);
+ensure_serializable(Value) when is_list(Value) ->
     case io_lib:printable_unicode_list(Value) of
         true -> unicode:characters_to_binary(Value, utf8);
         false -> Value
     end;
-ensure_bin_str(Value) ->
+ensure_serializable(Value) ->
     Value.
 
 check_indexed_array(List) ->
