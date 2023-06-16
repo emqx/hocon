@@ -43,12 +43,7 @@ convert(Symbol, ?ENUM(_OfSymbols)) ->
             Symbol
     end;
 convert(Int, Type) when is_integer(Int) ->
-    case Type =:= string() of
-        true ->
-            integer_to_list(Int);
-        false ->
-            Int
-    end;
+    convert(integer_to_list(Int), Type);
 convert(Bin, Type) when is_binary(Bin) ->
     Str = unicode:characters_to_list(Bin, utf8),
     convert(Str, Type);
