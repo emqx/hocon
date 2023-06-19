@@ -687,7 +687,7 @@ invalid_utf8_binary_test() ->
             #{
                 kind := validation_error,
                 path := "val",
-                reason := #{expected_type := "binary()"},
+                reason := #{expected := "binary()"},
                 value := {error, _, _}
             }
         ]},
