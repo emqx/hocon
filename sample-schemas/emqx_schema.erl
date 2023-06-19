@@ -115,7 +115,7 @@ fields("node") ->
     , {"global_gc_interval", t(duration_s(), "emqx.global_gc_interval", undefined)}
     , {"fullsweep_after", t(non_neg_integer(),
                             "vm_args.-env ERL_FULLSWEEP_AFTER", 1000)}
-    , {"max_ets_tables", t(duration(), "vm_args.+e", 256000)}
+    , {"max_ets_tables", t(integer(), "vm_args.+e", 256000)}
     , {"crash_dump", t(file(), "vm_args.-env ERL_CRASH_DUMP", undefined)}
     , {"dist_net_ticktime", t(integer(), "vm_args.-kernel net_ticktime", undefined)}
     , {"dist_listen_min", t(integer(), "kernel.inet_dist_listen_min", undefined)}
@@ -236,7 +236,7 @@ fields("zone") ->
     , {"upgrade_qos", t(flag(), undefined, false)}
     , {"max_inflight", t(range(0, 65535))}
     , {"retry_interval", t(duration_s(), undefined, "30s")}
-    , {"max_awaiting_rel", t(duration(), undefined, 0)}
+    , {"max_awaiting_rel", t(hoconsc:union([integer(), duration()]), undefined, 0)}
     , {"await_rel_timeout", t(duration_s(), undefined, "300s")}
     , {"ignore_loop_deliver", t(boolean())}
     , {"session_expiry_interval", t(duration_s(), undefined, "2h")}
@@ -379,24 +379,24 @@ fields("perf") ->
     ];
 
 fields("sysmon") ->
-    [ {"long_gc", t(duration(), undefined, 0)}
-    , {"long_schedule", t(duration(), undefined, 240)}
+    [ {"long_gc", t(hoconsc:union([integer(), duration()]), undefined, 0)}
+    , {"long_schedule", t(duration(), undefined, "240ms")}
     , {"large_heap", t(bytesize(), undefined, "8MB")}
     , {"busy_dist_port", t(boolean(), undefined, true)}
     , {"busy_port", t(boolean(), undefined, false)}
     ];
 
 fields("os_mon") ->
-    [ {"cpu_check_interval", t(duration_s(), undefined, 60)}
+    [ {"cpu_check_interval", t(duration_s(), undefined, "60s")}
     , {"cpu_high_watermark", t(percent(), undefined, "80%")}
     , {"cpu_low_watermark", t(percent(), undefined, "60%")}
-    , {"mem_check_interval", t(duration_s(), undefined, 60)}
+    , {"mem_check_interval", t(duration_s(), undefined, "60s")}
     , {"sysmem_high_watermark", t(percent(), undefined, "70%")}
     , {"procmem_high_watermark", t(percent(), undefined, "5%")}
     ];
 
 fields("vm_mon") ->
-    [ {"check_interval", t(duration_s(), undefined, 30)}
+    [ {"check_interval", t(duration_s(), undefined, "30s")}
     , {"process_high_watermark", t(percent(), undefined, "80%")}
     , {"process_low_watermark", t(percent(), undefined, "60%")}
     ];

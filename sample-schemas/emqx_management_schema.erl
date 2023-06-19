@@ -4,7 +4,7 @@
 
 -behaviour(hocon_schema).
 
--type endpoint() :: integer() | string().
+-type endpoint() :: string() | integer() .
 -type verify() :: verify_peer | verify_none.
 
 -reflect_type([endpoint/0, verify/0]).
@@ -104,4 +104,3 @@ tr_listeners(Conf) ->
 
 filter(Opts) ->
     [{K, V} || {K, V} <- Opts, V =/= undefined].
-
