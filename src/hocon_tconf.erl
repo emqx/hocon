@@ -1112,7 +1112,7 @@ builtin_validators(Type) ->
             {error, _Reason} ->
                 %% discard typerefl reason because it contains the actual value
                 %% which could potentially be sensitive (hence need obfuscation)
-                {error, #{expected_type => readable_type(Type)}}
+                {error, #{expected => readable_type(Type)}}
         end
     end,
     [TypeChecker].
