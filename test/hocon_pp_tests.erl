@@ -23,14 +23,22 @@ atom_test() ->
     RawConf =
         #{
             atom_key => #{atom_key => atom_value},
-            <<"binary_key">> => #{atom_key => <<"binary_value">>}
+            <<"binary_key">> => #{
+                atom_key1 => <<"binary_value">>,
+                atom_key2 => '42wierd_atom_value',
+                atom_key3 => ''
+            }
         },
     PP = hocon_pp:do(RawConf, #{}),
     {ok, RawConf2} = hocon:binary(iolist_to_binary(PP)),
     ?assertEqual(
         #{
             <<"atom_key">> => #{<<"atom_key">> => <<"atom_value">>},
-            <<"binary_key">> => #{<<"atom_key">> => <<"binary_value">>}
+            <<"binary_key">> => #{
+                <<"atom_key1">> => <<"binary_value">>,
+                <<"atom_key2">> => <<"42wierd_atom_value">>,
+                <<"atom_key3">> => <<"">>
+            }
         },
         RawConf2
     ).
@@ -38,6 +46,7 @@ atom_test() ->
 pp_test_() ->
     [
         {"emqx.conf", do_fun("etc/emqx.conf")},
+        {"null.conf", do_fun("etc/null.conf")},
         {"unicode.conf", do_fun("etc/unicode.conf")},
         {"unescape.conf", do_fun("etc/unescape.conf")}
     ].

@@ -82,9 +82,14 @@ gen([], _Opts) ->
     <<"[]">>;
 gen(<<>>, _Opts) ->
     <<"\"\"">>;
+gen('', _Opts) ->
+    <<"\"\"">>;
+gen(null, _Opts) ->
+    <<"null">>;
 gen(I, _Opts) when is_integer(I) -> integer_to_binary(I);
 gen(F, _Opts) when is_float(F) -> float_to_binary(F, [{decimals, 6}, compact]);
-gen(A, _Opts) when is_atom(A) -> atom_to_binary(A, utf8);
+gen(B, _Opts) when is_boolean(B) -> atom_to_binary(B);
+gen(A, Opts) when is_atom(A) -> gen(atom_to_list(A), Opts);
 gen(Bin, Opts) when is_binary(Bin) ->
     Str = unicode:characters_to_list(Bin, utf8),
     case is_list(Str) of
