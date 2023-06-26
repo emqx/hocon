@@ -93,8 +93,8 @@ load_file_pp_test() ->
     ?assertEqual(
         [
             <<"f1 = 1 # /tmp/load_file_pp_test:2">>,
-            <<"foo.1 = \"a\" # /tmp/load_file_pp_test:1">>,
-            <<"foo.2 = \"b\" # /tmp/load_file_pp_test:1">>
+            <<"foo.1 = a # /tmp/load_file_pp_test:1">>,
+            <<"foo.2 = b # /tmp/load_file_pp_test:1">>
         ],
         F("foo=[a,b]\nf1=1", richmap)
     ).
