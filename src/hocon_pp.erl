@@ -99,8 +99,7 @@ gen(Bin, Opts) when is_binary(Bin) ->
 gen(S, Opts) when is_list(S) ->
     case io_lib:printable_latin1_list(S) of
         true ->
-            %% ~p to ensure always quote string value
-            bin(io_lib:format("~0p", [S]));
+            maybe_quote_latin1_str(S);
         false ->
             case io_lib:printable_unicode_list(S) of
                 true -> <<"\"", (format_escape_sequences(S))/binary, "\"">>;
@@ -151,19 +150,45 @@ gen_map_fields(M, Opts, NL) ->
     [gen_map_field(K, V, Opts, NL) || {K, V} <- maps:to_list(M)].
 
 gen_map_field(K, V, Opts, NL) when is_map(V) ->
-    [maybe_quote(K), " ", gen(V, Opts), NL];
+    [maybe_quote_key(K), " ", gen(V, Opts), NL];
 gen_map_field(K, V, Opts, NL) ->
-    [maybe_quote(K), " = ", gen(V, Opts), NL].
+    [maybe_quote_key(K), " = ", gen(V, Opts), NL].
 
-%% maybe quote key
-maybe_quote(K) when is_atom(K) -> atom_to_list(K);
-maybe_quote(K0) ->
-    case re:run(K0, "[^A-Za-z_]") of
-        nomatch ->
-            K0;
-        _ ->
+maybe_quote_key(K) when is_atom(K) -> atom_to_list(K);
+maybe_quote_key(K0) ->
+    case is_quote_key(K0) of
+        true ->
             K1 = unicode:characters_to_list(K0, utf8),
-            <<"\"", (format_escape_sequences(K1))/binary, "\"">>
+            <<"\"", (format_escape_sequences(K1))/binary, "\"">>;
+        false ->
+            K0
+    end.
+
+is_quote_key(K) ->
+    %% key contain _ should not be quoted
+    need_quote(K, "[^A-Za-z0-9_]").
+
+need_quote(Str, Patten) ->
+    case re:run(Str, Patten) of
+        nomatch -> is_digit(Str);
+        _ -> true
+    end.
+
+is_quote_str(S) ->
+    %% string contain _ should be quoted
+    need_quote(S, "[^A-Za-z0-9]").
+
+maybe_quote_latin1_str(S) ->
+    case is_quote_str(S) of
+        true -> bin(io_lib:format("~0p", [S]));
+        false -> S
+    end.
+
+is_digit(S) ->
+    case string:to_integer(S) of
+        {_, []} -> true;
+        {_, <<>>} -> true;
+        _ -> false
     end.
 
 bin(IoData) ->
