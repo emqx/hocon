@@ -75,6 +75,31 @@ pp_escape_to_file_test() ->
     file:delete(TmpFile),
     ok.
 
+pp_quote_test() ->
+    Fun = fun(Map, ExpectBin) ->
+        Bin = iolist_to_binary(hocon_pp:do(Map, #{})),
+        ?assertEqual(ExpectBin, Bin),
+        {ok, Map2} = hocon:binary(Bin),
+        ?assertEqual(Map, Map2)
+    end,
+    %% normal without quote
+    Fun(#{<<"d_dfdk2f">> => <<"19%">>}, <<"d_dfdk2f = 19%\n">>),
+    %% key begin with integer should be quote
+    Fun(#{<<"1f">> => <<"1d">>}, <<"\"1f\" = 1d\n">>),
+    %% key begin with _ should be quote
+    Fun(#{<<"_f">> => 12}, <<"\"_f\" = 12\n">>),
+    %% value contain special char should be quote
+    Fun(#{<<"d2">> => <<"_kdfj">>}, <<"d2 = \"_kdfj\"\n">>),
+    Fun(#{<<"d_dfdk2f">> => <<"https://test.com">>}, <<"d_dfdk2f = \"https://test.com\"\n">>),
+    %% value is empty string should be quote
+    Fun(#{<<"d_dfdk2f">> => <<>>}, <<"d_dfdk2f = \"\"\n">>),
+    Fun(
+        #{<<"d_dfdk2f">> => <<"466f5fbb86b19f14f921784539870228">>},
+        <<"d_dfdk2f = \"466f5fbb86b19f14f921784539870228\"\n">>
+    ),
+    Fun(#{<<"$d_dfdk2f">> => <<"12">>}, <<"\"$d_dfdk2f\" = \"12\"\n">>),
+    ok.
+
 load_file_pp_test() ->
     TmpF = "/tmp/load_file_pp_test",
     F = fun(Raw, Format) ->
