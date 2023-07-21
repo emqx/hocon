@@ -98,6 +98,29 @@ pp_quote_test() ->
         <<"d_dfdk2f = \"466f5fbb86b19f14f921784539870228\"\n">>
     ),
     Fun(#{<<"$d_dfdk2f">> => <<"12">>}, <<"\"$d_dfdk2f\" = \"12\"\n">>),
+
+    %% backslash
+    Fun(#{<<"test_backslash">> => <<"\\emqx">>}, <<"test_backslash = \"\\\\emqx\"\n">>),
+    Fun(#{<<"test_backslash">> => <<"emqx\\emqx">>}, <<"test_backslash = \"emqx\\\\emqx\"\n">>),
+    Fun(#{<<"test_backslash">> => <<"emqx\\">>}, <<"test_backslash = \"emqx\\\\\"\n">>),
+
+    %% quote
+    Fun(#{<<"test_quote">> => <<"\"emqx">>}, <<"test_quote = \"\\\"emqx\"\n">>),
+    Fun(#{<<"test_quote">> => <<"emqx\"emqx">>}, <<"test_quote = \"emqx\\\"emqx\"\n">>),
+    Fun(#{<<"test_quote">> => <<"emqx\"">>}, <<"test_quote = \"emqx\\\"\"\n">>),
+
+    %% '${}[]:=,+#`^?!@*& ' should quote
+    lists:foreach(
+        fun(Char) ->
+            Header = list_to_binary([Char | "emqx"]),
+            Tail = list_to_binary("emqx" ++ [Char]),
+            Middle = <<Tail/binary, "emqx">>,
+            Fun(#{<<"test_key">> => Header}, <<"test_key = \"", Header/binary, "\"\n">>),
+            Fun(#{<<"test_key">> => Tail}, <<"test_key = \"", Tail/binary, "\"\n">>),
+            Fun(#{<<"test_key">> => Middle}, <<"test_key = \"", Middle/binary, "\"\n">>)
+        end,
+        "'${}[]:=,+#`^?!@*& "
+    ),
     ok.
 
 load_file_pp_test() ->

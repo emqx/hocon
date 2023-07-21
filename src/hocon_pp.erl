@@ -176,10 +176,22 @@ is_quote_key(K) ->
             true
     end.
 
+%% A sequence of characters outside of a quoted string is a string value if:
+%% it does not contain "forbidden characters":
+%% '$', '"', '{', '}', '[', ']', ':', '=', ',', '+', '#', '`', '^', '?', '!', '@', '*',
+%% '&', '' (backslash), or whitespace.
+%% '$"{}[]:=,+#`^?!@*& \\'
+
 is_quote_str(S) ->
     case hocon_scanner:string(S) of
-        {ok, [{string, 1, S}], 1} -> false;
-        _ -> true
+        {ok, [{string, 1, S}], 1} ->
+            %% contain $"{}[]:=,+#`^?!@*& \\ should be quote
+            case re:run(S, "^[^$\"{}\\[\\]:=,+#`\\^?!@*&\\ \\\\]*$") of
+                nomatch -> true;
+                _ -> false
+            end;
+        _ ->
+            true
     end.
 
 maybe_quote_latin1_str(S) ->
