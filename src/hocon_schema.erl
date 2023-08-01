@@ -67,7 +67,7 @@
 -callback translations() -> [name()].
 -callback translation(name()) -> [translation()].
 -callback validations() -> [validation()].
--callback desc(name()) -> iodata() | undefined.
+-callback desc(name()) -> desc() | undefined.
 -callback tags() -> [tag()].
 
 -optional_callbacks([
