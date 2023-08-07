@@ -961,3 +961,44 @@ empty_map_test_() ->
         ?_assertEqual({ok, #{<<"a">> => #{}}}, hocon:binary("a={}")),
         ?_assertEqual({ok, #{<<"a">> => #{<<"b">> => #{}}}}, hocon:binary("a:{b:{}}"))
     ].
+
+adjacent_maps_test_() ->
+    [
+        ?_assertEqual(
+            {ok, #{<<"x">> => [#{<<"a">> => 1}, #{<<"b">> => 2}]}},
+            hocon:binary(<<"x = [\n{a = 1}\n{b = 2}\n]\n">>)
+        ),
+        ?_assertEqual(
+            {ok, #{<<"x">> => [#{<<"a">> => 1, <<"aa">> => 11}, #{<<"b">> => 2}]}},
+            hocon:binary(<<"x = [\n{a = 1, aa = 11}\n{b = 2}\n]\n">>)
+        ),
+        ?_assertEqual(
+            {ok, #{<<"x">> => [#{<<"a">> => 1, <<"aa">> => 11}, #{<<"b">> => 2}]}},
+            hocon:binary(<<"x = [\n{a = 1, aa = 11}, {b = 2}\n]\n">>)
+        ),
+        ?_assertEqual(
+            {ok, #{<<"x">> => [#{<<"a">> => 1, <<"aa">> => 11}, #{<<"b">> => 2}]}},
+            hocon:binary(<<"x = [\n{a = 1, aa = 11}, {b = 2}\n]\n">>)
+        ),
+        ?_assertEqual(
+            {ok, #{<<"x">> => [1, #{<<"a">> => 1, <<"b">> => 2}, #{<<"c">> => 3}, 4]}},
+            hocon:binary(<<"x = [\n1, {a = 1} {b = 2}\n{c = 3}, 4\n]\n">>)
+        ),
+        ?_assertEqual(
+            {ok, #{<<"x">> => [1, #{<<"a">> => 1, <<"b">> => 2}, #{<<"c">> => 3}, 4]}},
+            hocon:binary(<<"x = [\n1, {\n a = 1} {\n b = 2}\n{c = 3}, 4\n]\n">>)
+        ),
+        ?_assertEqual(
+            {ok, #{<<"x">> => [1, #{<<"a">> => 1, <<"b">> => 2}, #{<<"c">> => 3}, 4]}},
+            hocon:binary(<<"x = [\n1, {\n a = 1\n} {\n b = 2}\n{c = 3}, 4\n]\n">>)
+        ),
+        ?_assertEqual(
+            {ok, #{<<"x">> => [1, #{<<"a">> => 1}, #{<<"b">> => 2}, #{<<"c">> => 3}, 4]}},
+            hocon:binary(<<"x = [\n1, {\n a = 1\n}\n {\n b = 2}\n{c = 3}, 4\n]\n">>)
+        ),
+        {"newlines act as commas",
+            ?_assertEqual(
+                {ok, #{<<"x">> => [#{<<"a">> => 1}, #{<<"b">> => 2}]}},
+                hocon:binary(<<"x = [{a = 1}\n {b = 2}]">>)
+            )}
+    ].
