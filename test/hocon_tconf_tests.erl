@@ -2321,3 +2321,113 @@ convert_map_test() ->
     {ok, Map} = hocon:binary("root = {name1 = foo1}", #{format => map}),
     Res = hocon_tconf:check_plain(Sc, Map),
     ?assertEqual(#{<<"root">> => #{<<"name1">> => "foo2"}}, Res).
+
+map_atom_keys_test_() ->
+    Sc = #{
+        roots => [
+            {"root", hoconsc:mk(hoconsc:map(name, hoconsc:ref(foo)), #{})}
+        ],
+        fields =>
+            #{foo => [{foo, hoconsc:mk(map(), #{})}]}
+    },
+    Map0 = #{
+        <<"root">> =>
+            #{
+                <<"name1">> =>
+                    #{
+                        <<"foo">> =>
+                            #{
+                                <<"key1">> => <<"value">>,
+                                <<"key2">> => 10,
+                                <<"key3">> =>
+                                    #{
+                                        <<"deep">> => <<"map">>,
+                                        <<"deeper">> => [#{<<"struct">> => true}]
+                                    }
+                            }
+                    }
+            }
+    },
+    RandomKey0 = random_key(),
+    RandomKey1 = random_key(),
+    Map1 = #{
+        <<"root">> =>
+            #{
+                RandomKey0 =>
+                    #{<<"foo">> => #{}}
+            }
+    },
+    Map2 = #{
+        <<"root">> =>
+            #{
+                RandomKey1 =>
+                    #{
+                        <<"foo">> => #{
+                            <<"key1">> => true,
+                            <<"key2">> => #{
+                                <<"deep">> => <<"map">>,
+                                <<"deeper">> => [#{<<"struct">> => true}]
+                            }
+                        }
+                    }
+            }
+    },
+    %% ensure atoms exist before checking
+    _ = [name1],
+    [
+        ?_assertEqual(
+            #{
+                root =>
+                    #{
+                        name1 =>
+                            #{
+                                foo => #{
+                                    <<"key1">> => <<"value">>,
+                                    <<"key2">> => 10,
+                                    <<"key3">> => #{
+                                        <<"deep">> => <<"map">>,
+                                        <<"deeper">> => [#{<<"struct">> => true}]
+                                    }
+                                }
+                            }
+                    }
+            },
+            hocon_tconf:check_plain(Sc, Map0, #{atom_key => true})
+        ),
+        {"nonexistent atom",
+            ?_assertError(
+                #{exception := {non_existing_atom, _}},
+                hocon_tconf:check_plain(Sc, Map1, #{atom_key => true})
+            )},
+        %% this one doesn't need the atom to exist prior to checking
+        {"nonexistent atom key + unsafe",
+            ?_test(begin
+                Res = hocon_tconf:check_plain(
+                    Sc,
+                    Map2,
+                    #{atom_key => {true, unsafe}}
+                ),
+                ?assertMatch(#{root := #{}}, Res),
+                #{root := M} = Res,
+                [{K, V}] = maps:to_list(M),
+                ?assert(is_atom(K)),
+                ?assertEqual(RandomKey1, atom_to_binary(K, utf8)),
+                ?assertEqual(
+                    #{
+                        foo => #{
+                            <<"key1">> => true,
+                            <<"key2">> => #{
+                                <<"deep">> => <<"map">>,
+                                <<"deeper">> => [#{<<"struct">> => true}]
+                            }
+                        }
+                    },
+                    V
+                )
+            end)}
+    ].
+
+random_key() ->
+    Bytes = crypto:strong_rand_bytes(10),
+    Key0 = base64:encode(Bytes),
+    iolist_to_binary(re:replace(Key0, <<"[^-a-zA-Z0-9_]">>, <<>>, [global])).

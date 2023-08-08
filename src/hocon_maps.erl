@@ -96,6 +96,8 @@ maybe_atom(#{atom_key := true}, Name) when is_binary(Name) ->
         _:_ ->
             error({non_existing_atom, Name})
     end;
+maybe_atom(#{atom_key := {true, unsafe}}, Name) when is_binary(Name) ->
+    binary_to_atom(Name, utf8);
 maybe_atom(_Opts, Name) ->
     Name.
 
