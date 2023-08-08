@@ -110,6 +110,8 @@ trans_key([T | Tokens], Acc) ->
     trans_key(Tokens, [T | Acc]).
 
 trans_key_lb([{string, Line, Value} | TokensRev]) ->
+    [{key, Line, {quoted, Value}} | TokensRev];
+trans_key_lb([{unquoted_string, Line, Value} | TokensRev]) ->
     [{key, Line, Value} | TokensRev];
 trans_key_lb(Otherwise) ->
     Otherwise.
@@ -146,6 +148,7 @@ trans_splice_end([], Seq, Acc) ->
 
 do_trans_splice_end([]) -> [];
 do_trans_splice_end([{string, Line, Value} | T]) -> [{endstr, Line, Value} | T];
+do_trans_splice_end([{unquoted_string, Line, Value} | T]) -> [{endstr, Line, Value} | T];
 do_trans_splice_end([{variable, Line, Value} | T]) -> [{endvar, Line, Value} | T];
 do_trans_splice_end([{'}', Line} | T]) -> [{endobj, Line} | T];
 do_trans_splice_end([{']', Line} | T]) -> [{endarr, Line} | T];

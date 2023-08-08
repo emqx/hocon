@@ -192,7 +192,12 @@ do_expand([Other | More], Acc) ->
     do_expand(More, [Other | Acc]).
 
 create_nested(#{?HOCON_T := key} = Key, Value) ->
-    do_create_nested(paths(value_of(Key)), Value, Key).
+    case value_of(Key) of
+        {quoted, _K} ->
+            {Key, Value};
+        K ->
+            do_create_nested(paths(K), Value, Key)
+    end.
 
 do_create_nested([], Value, _OriginalKey) ->
     Value;
@@ -353,7 +358,7 @@ do_concat([], MetaKey, [{#{?METADATA := MetaFirstElem}, _V} = F | _Fs] = Acc) wh
     end;
 do_concat([], MetaKey, [#{?HOCON_T := string, ?METADATA := MetaFirstElem} | _] = Acc) ->
     Metadata = deep_merge(MetaFirstElem, MetaKey),
-    case lists:all(fun(A) -> type_of(A) =:= string end, Acc) of
+    case lists:all(fun(A) -> type_of(A) =:= string orelse type_of(A) =:= unquoted_string end, Acc) of
         true ->
             BinList = lists:map(fun(M) -> maps:get(?HOCON_V, M) end, lists:reverse(Acc)),
             #{?HOCON_T => string, ?HOCON_V => unicode_bin(BinList), ?METADATA => Metadata};
@@ -380,6 +385,8 @@ do_concat([#{?HOCON_T := object} = O | More], Metadata, Acc) ->
     do_concat(More, Metadata, lists:reverse(ConcatO, Acc));
 do_concat([#{?HOCON_T := string} = S | More], Metadata, Acc) ->
     do_concat(More, Metadata, [S | Acc]);
+do_concat([#{?HOCON_T := unquoted_string} = S | More], Metadata, Acc) ->
+    do_concat(More, Metadata, [S | Acc]);
 do_concat([#{?HOCON_T := concat} = C | More], Metadata, Acc) ->
     ConcatC = concat2(value_of(C), new_meta(Metadata, filename_of(C), line_of(C))),
     do_concat([ConcatC | More], Metadata, Acc);
@@ -398,7 +405,10 @@ transform(#{?HOCON_T := object, ?HOCON_V := V}, Opts) ->
 do_transform([], Map, _Opts) ->
     Map;
 do_transform([{Key, Value} | More], Map, Opts) ->
-    [KeyReal] = paths(value_of(Key)),
+    KeyReal = case paths(value_of(Key)) of
+                  {quoted, K} -> K;
+                  [K] -> K
+              end,
     ValueReal = unpack(Value, Opts),
     do_transform(More, merge(KeyReal, ValueReal, Map), Opts).
 
@@ -426,6 +436,10 @@ rm_unresolvable(List) ->
         List
     ).
 
+paths({quoted, Key}) when is_binary(Key) ->
+    {quoted, Key};
+paths({quoted, Key}) when is_list(Key) ->
+    {quoted, unicode_bin(Key)};
 paths(Key) when is_binary(Key) ->
     paths(unicode:characters_to_list(Key, utf8));
 paths(Key) when is_list(Key) ->

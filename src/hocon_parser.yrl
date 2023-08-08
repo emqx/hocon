@@ -12,7 +12,7 @@ Terminals
   '{' '}' '[' ']' ','
   bool integer float null
   percent bytesize duration
-  string variable
+  string unquoted_string variable
   endstr endvar endarr endobj
   include key required.
 
@@ -30,6 +30,7 @@ partials -> '{' endobj : [make_object(line_of('$1'), [])].
 partials -> '[' endarr : [make_array(line_of('$1'), [])].
 
 partial -> string : str_to_bin(make_primitive_value('$1')).
+partial -> unquoted_string : str_to_bin(make_primitive_value('$1')).
 partial -> variable : make_variable('$1').
 partial -> '{' fields '}' : make_object(line_of('$1'), '$2').
 partial -> '{' '}' : make_object(line_of('$1'), []).
@@ -88,7 +89,9 @@ make_include(String, false) ->  #{'$hcTyp' => include,
 
 make_concat(S) -> #{'$hcTyp' => concat, '$hcVal' => S}.
 
-str_to_bin(#{'$hcTyp' := T, '$hcVal' := V} = M) when T =:= string -> M#{'$hcVal' => bin(V)}.
+str_to_bin(#{'$hcTyp' := T, '$hcVal' := V} = M)
+  when T =:= string; T =:= unquoted_string ->
+    M#{'$hcVal' => bin(V)}.
 
 line_of(Token) -> element(2, Token).
 value_of(Token) -> element(3, Token).

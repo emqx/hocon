@@ -48,7 +48,8 @@ pp_test_() ->
         {"emqx.conf", do_fun("etc/emqx.conf")},
         {"null.conf", do_fun("etc/null.conf")},
         {"unicode.conf", do_fun("etc/unicode.conf")},
-        {"unescape.conf", do_fun("etc/unescape.conf")}
+        {"unescape.conf", do_fun("etc/unescape.conf")},
+        {"map_with_placeholders.conf", do_fun("etc/map_with_placeholders.conf")}
     ].
 
 do_fun(File) ->
@@ -141,8 +142,8 @@ load_file_pp_test() ->
     ?assertEqual(
         [
             <<"f1 = 1 # /tmp/load_file_pp_test:2">>,
-            <<"foo.1 = a # /tmp/load_file_pp_test:1">>,
-            <<"foo.2 = b # /tmp/load_file_pp_test:1">>
+            <<"foo.1 = \"a\" # /tmp/load_file_pp_test:1">>,
+            <<"foo.2 = \"b\" # /tmp/load_file_pp_test:1">>
         ],
         F("foo=[a,b]\nf1=1", richmap)
     ).
@@ -216,3 +217,23 @@ utf8_test() ->
     PP1 = hocon_pp:do(Utf81, #{}),
     {ok, Conf1} = hocon:binary(PP1),
     ?assertEqual(Utf81, Conf1).
+
+map_with_placeholders_test() ->
+    RawConf =
+        #{ <<"headers">> =>
+               #{
+                 <<"fixed_key">> => <<"fixed_value">>,
+                 <<"${.payload.key}">> => <<"fixed_value">>,
+                 <<"${.payload.key}2">> => <<"${.payload.value}">>,
+                 <<"fixed_key2">> => <<"${.payload.value}">>
+                }
+         },
+    TmpFile = "/tmp/" ++ atom_to_list(?FUNCTION_NAME) ++ ".conf",
+    try
+        ok = file:write_file(TmpFile, hocon_pp:do(RawConf, #{})),
+        {ok, LoadedConf} = hocon:load(TmpFile, #{format => map}),
+        ?assertEqual(RawConf, LoadedConf),
+        ok
+    after
+        file:delete(TmpFile)
+    end.
