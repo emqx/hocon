@@ -126,6 +126,12 @@ trans_splice_end([{include, _File} = V | Tokens], Seq, Acc) ->
 trans_splice_end([{T, _Line} = V | Tokens], Seq, Acc) when T =:= ',' ->
     NewAcc = [V | do_trans_splice_end(Seq) ++ Acc],
     trans_splice_end(Tokens, [], NewAcc);
+trans_splice_end([{'}', Line1} = V1, {'{', Line2} = V2 | Tokens], Seq, Acc) when
+    Line1 /= Line2
+->
+    %% Inject virtual comma to avoid concatenating objects that are separated by newlines,
+    %% as we don't track newline tokens here.
+    trans_splice_end([V1, {',', Line1}, V2 | Tokens], Seq, Acc);
 trans_splice_end([{T, _Line} = V | Tokens], Seq, Acc) when
     T =:= '}' orelse
         T =:= ']'
