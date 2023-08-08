@@ -184,7 +184,7 @@ is_quote_key(K) ->
 
 is_quote_str(S) ->
     case hocon_scanner:string(S) of
-        {ok, [{string, 1, S}], 1} ->
+        {ok, [{Tag, 1, S}], 1} when Tag =:= string orelse Tag =:= unqstr ->
             %% contain $"{}[]:=,+#`^?!@*& \\ should be quote
             case re:run(S, "^[^$\"{}\\[\\]:=,+#`\\^?!@*&\\ \\\\]*$") of
                 nomatch -> true;

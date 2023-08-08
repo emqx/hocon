@@ -82,7 +82,7 @@ union_with_default(_) ->
     undefined.
 
 default_value_test() ->
-    Conf = "{\"bar.field1\": \"foo\"}",
+    Conf = "{bar.field1: \"foo\"}",
     Res = check(Conf, #{format => richmap}),
     ?assertEqual(Res, check_plain(Conf)),
     ?assertEqual(
@@ -107,7 +107,7 @@ default_value_test() ->
     ).
 
 obfuscate_sensitive_values_test() ->
-    Conf = "{\"bar.field1\": \"foo\"}",
+    Conf = "{bar.field1: \"foo\"}",
     Res = check(Conf, #{format => richmap}),
     Res1 = check_plain(Conf, #{obfuscate_sensitive_values => true}),
     ?assertNotEqual(Res, Res1),
@@ -195,7 +195,7 @@ nest_ref_fill_default_test() ->
 env_override_test() ->
     with_envs(
         fun() ->
-            Conf = "{\"bar.field1\": \"foo\", bar.host: \"127.0.0.1\"}",
+            Conf = "{bar.field1: \"foo\", bar.host: \"127.0.0.1\"}",
             Opts = #{format => richmap},
             Res = check(Conf, Opts#{apply_override_envs => true}),
             ?assertEqual(
@@ -244,7 +244,7 @@ env_override_test() ->
 no_env_override_test() ->
     with_envs(
         fun() ->
-            Conf = "{\"bar.field1\": \"foo\"}",
+            Conf = "{bar.field1: \"foo\"}",
             Res = check(Conf, #{format => richmap}),
             PlainRes = check_plain(Conf, #{logger => fun(_, _) -> ok end}),
             ?assertEqual(Res, PlainRes),
@@ -270,7 +270,7 @@ unknown_env_test() ->
     Ref = make_ref(),
     with_envs(
         fun() ->
-            Conf = "{\"bar.field1\": \"foo\"}",
+            Conf = "{bar.field1: \"foo\"}",
             Opts = #{
                 logger => fun(Level, Msg) ->
                     Tester ! {Ref, Level, Msg},
