@@ -219,9 +219,8 @@ fmt({indent, Block}) ->
 split(Bin) ->
     [Line || Line <- binary:split(Bin, ?NL, [global]), Line =/= <<>>].
 
-infix([], _) -> [];
-infix([One], _) -> [One];
-infix([H | T], Infix) -> [[H, Infix] | infix(T, Infix)].
+infix(List, Sep) ->
+    lists:join(Sep, List).
 
 format_escape_sequences(Str) ->
     bin(lists:map(fun esc/1, Str)).

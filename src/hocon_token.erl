@@ -322,6 +322,5 @@ paths(Key) when is_binary(Key) ->
 paths(Key) when is_list(Key) ->
     lists:map(fun unicode_bin/1, string:tokens(Key, ".")).
 
-infix([], _) -> [];
-infix([X], _) -> [X];
-infix([H | T], I) -> [H, I | infix(T, I)].
+infix(List, Sep) ->
+    lists:join(Sep, List).
