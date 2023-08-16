@@ -109,6 +109,8 @@ trans_key([{'{', Line} | Tokens], Acc) ->
 trans_key([T | Tokens], Acc) ->
     trans_key(Tokens, [T | Acc]).
 
+trans_key_lb([{unqstr, Line, Value} | TokensRev]) ->
+    [{key, Line, {keypath, paths(Value)}} | TokensRev];
 trans_key_lb([{string, Line, Value} | TokensRev]) ->
     [{key, Line, Value} | TokensRev];
 trans_key_lb(Otherwise) ->
@@ -145,6 +147,7 @@ trans_splice_end([], Seq, Acc) ->
     lists:reverse(NewAcc).
 
 do_trans_splice_end([]) -> [];
+do_trans_splice_end([{unqstr, Line, Value} | T]) -> [{endstr, Line, Value} | T];
 do_trans_splice_end([{string, Line, Value} | T]) -> [{endstr, Line, Value} | T];
 do_trans_splice_end([{variable, Line, Value} | T]) -> [{endvar, Line, Value} | T];
 do_trans_splice_end([{'}', Line} | T]) -> [{endobj, Line} | T];
@@ -225,7 +228,12 @@ abspath(Var, PathStack) ->
 do_abspath(Var, ['$root']) ->
     Var;
 do_abspath(Var, [#{?HOCON_T := key} = K | More]) ->
-    do_abspath(unicode_bin([value_of(K), <<".">>, Var]), More).
+    do_abspath(unicode_bin([maybe_join(value_of(K)), <<".">>, Var]), More).
+
+maybe_join({keypath, Path}) ->
+    infix(Path, ".");
+maybe_join(Path) ->
+    Path.
 
 -spec load_include(boxed(), hocon:ctx()) -> boxed() | nothing.
 
@@ -308,3 +316,11 @@ format_error(Line, ErrorInfo, Ctx) ->
 
 unicode_bin(L) -> unicode:characters_to_binary(L, utf8).
 unicode_list(B) -> unicode:characters_to_list(B, utf8).
+
+paths(Key) when is_binary(Key) ->
+    paths(unicode:characters_to_list(Key, utf8));
+paths(Key) when is_list(Key) ->
+    lists:map(fun unicode_bin/1, string:tokens(Key, ".")).
+
+infix(List, Sep) ->
+    lists:join(Sep, List).

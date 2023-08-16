@@ -820,7 +820,7 @@ files_unicode_path_test() ->
             "a=1\n"
             "b=2\n"
             "unicode = \"测试unicode文件路径\"\n"
-            "\"语言.英文\" = english\n"/utf8
+            "\"语言英文\" = english\n"/utf8
         >>,
     Filename =
         case file:native_name_encoding() of
@@ -834,7 +834,7 @@ files_unicode_path_test() ->
             #{format => richmap}
         ),
         ?assertEqual(<<"测试unicode文件路径"/utf8>>, deep_get("unicode", Conf, ?HOCON_V)),
-        ?assertEqual(<<"english">>, deep_get("语言.英文", Conf, ?HOCON_V))
+        ?assertEqual(<<"english">>, deep_get("语言英文", Conf, ?HOCON_V))
     after
         file:delete(Filename)
     end.
@@ -1002,3 +1002,24 @@ adjacent_maps_test_() ->
                 hocon:binary(<<"x = [{a = 1}\n {b = 2}]">>)
             )}
     ].
+
+map_with_placeholders_test() ->
+    RawConf =
+        #{
+            <<"headers">> =>
+                #{
+                    <<"fixed_key">> => <<"fixed_value">>,
+                    <<"${.payload.key}">> => <<"fixed_value">>,
+                    <<"${.payload.key}2">> => <<"${.payload.value}">>,
+                    <<"fixed_key2">> => <<"${.payload.value}">>
+                }
+        },
+    TmpFile = "/tmp/" ++ atom_to_list(?FUNCTION_NAME) ++ ".conf",
+    try
+        ok = file:write_file(TmpFile, hocon_pp:do(RawConf, #{})),
+        {ok, LoadedConf} = hocon:load(TmpFile, #{format => map}),
+        ?assertEqual(RawConf, LoadedConf),
+        ok
+    after
+        file:delete(TmpFile)
+    end.

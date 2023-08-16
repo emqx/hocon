@@ -93,7 +93,7 @@ Rules.
 Erlang code.
 
 maybe_include("include", TokenLine)  -> {include, TokenLine};
-maybe_include(TokenChars, TokenLine) -> {string, TokenLine, TokenChars}.
+maybe_include(TokenChars, TokenLine) -> {unqstr, TokenLine, TokenChars}.
 
 get_filename_from_required("required(" ++ Filename) ->
     [$) | FilenameRev] = lists:reverse(Filename),

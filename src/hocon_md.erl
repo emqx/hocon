@@ -17,7 +17,7 @@
 -module(hocon_md).
 
 -export([h/2, link/2, local_link/2, th/1, td/1, ul/1, code/1]).
--export([join/1, indent/2]).
+-export([indent/2]).
 
 h(1, Text) -> format("# ~s~n", [Text]);
 h(2, Text) -> format("## ~s~n", [Text]);
@@ -49,9 +49,6 @@ escape_bar(Str) ->
 
 code(Text) -> ["<code>", Text, "</code>"].
 
-join(Mds) ->
-    lists:join("\n", [Mds]).
-
 indent(N, Lines) when is_list(Lines) ->
     indent(N, unicode:characters_to_binary(infix(Lines, "\n"), utf8));
 indent(N, Lines0) ->
@@ -62,9 +59,8 @@ indent(N, Lines0) ->
 pad(_Pad, <<>>) -> <<>>;
 pad(Pad, Line) -> [Pad, Line].
 
-infix([], _) -> [];
-infix([X], _) -> [X];
-infix([H | T], In) -> [H, In | infix(T, In)].
+infix(List, Sep) ->
+    lists:join(Sep, List).
 
 %% ref: https://gist.github.com/asabaylus/3071099
 %% GitHub flavored markdown likes ':' being removed

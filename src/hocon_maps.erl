@@ -320,9 +320,8 @@ flatten_l([H | T], Opts, Meta, Stack, Acc, [Tag | Tags]) ->
 bin(B) when is_binary(B) -> B;
 bin(I) when is_integer(I) -> integer_to_binary(I).
 
-infix([], _) -> [];
-infix([X], _) -> [X];
-infix([H | T], I) -> [H, I | infix(T, I)].
+infix(List, Sep) ->
+    lists:join(Sep, List).
 
 ensure_plain(M) ->
     case is_richmap(M) of

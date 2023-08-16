@@ -12,7 +12,7 @@ Terminals
   '{' '}' '[' ']' ','
   bool integer float null
   percent bytesize duration
-  string variable
+  unqstr string variable
   endstr endvar endarr endobj
   include key required.
 
@@ -29,6 +29,7 @@ partials -> '[' elements endarr : [make_array(line_of('$1'), '$2')].
 partials -> '{' endobj : [make_object(line_of('$1'), [])].
 partials -> '[' endarr : [make_array(line_of('$1'), [])].
 
+partial -> unqstr : str_to_bin(make_primitive_value('$1')).
 partial -> string : str_to_bin(make_primitive_value('$1')).
 partial -> variable : make_variable('$1').
 partial -> '{' fields '}' : make_object(line_of('$1'), '$2').
@@ -47,8 +48,10 @@ elements -> value ',' elements : ['$1' | '$3'].
 elements -> value elements : ['$1' | '$2'].
 elements -> value : ['$1'].
 
+directive -> include unqstr : make_include('$2', false).
 directive -> include string : make_include('$2', false).
 directive -> include endstr : make_include('$2', false).
+directive -> include required unqstr : make_include('$3', true).
 directive -> include required string : make_include('$3', true).
 directive -> include required endstr : make_include('$3', true).
 
@@ -88,7 +91,7 @@ make_include(String, false) ->  #{'$hcTyp' => include,
 
 make_concat(S) -> #{'$hcTyp' => concat, '$hcVal' => S}.
 
-str_to_bin(#{'$hcTyp' := T, '$hcVal' := V} = M) when T =:= string -> M#{'$hcVal' => bin(V)}.
+str_to_bin(#{'$hcTyp' := T, '$hcVal' := V} = M) when T =:= string orelse T =:= unqstr -> M#{'$hcTyp' := string, '$hcVal' => bin(V)}.
 
 line_of(Token) -> element(2, Token).
 value_of(Token) -> element(3, Token).

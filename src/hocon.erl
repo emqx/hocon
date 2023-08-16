@@ -192,7 +192,12 @@ do_expand([Other | More], Acc) ->
     do_expand(More, [Other | Acc]).
 
 create_nested(#{?HOCON_T := key} = Key, Value) ->
-    do_create_nested(paths(value_of(Key)), Value, Key).
+    case value_of(Key) of
+        {keypath, Path} ->
+            do_create_nested(Path, Value, Key);
+        Path ->
+            do_create_nested([Path], Value, Key)
+    end.
 
 do_create_nested([], Value, _OriginalKey) ->
     Value;
@@ -398,7 +403,7 @@ transform(#{?HOCON_T := object, ?HOCON_V := V}, Opts) ->
 do_transform([], Map, _Opts) ->
     Map;
 do_transform([{Key, Value} | More], Map, Opts) ->
-    [KeyReal] = paths(value_of(Key)),
+    KeyReal = unicode_bin(value_of(Key)),
     ValueReal = unpack(Value, Opts),
     do_transform(More, merge(KeyReal, ValueReal, Map), Opts).
 

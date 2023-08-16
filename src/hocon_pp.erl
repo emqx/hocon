@@ -176,16 +176,16 @@ is_quote_key(K) ->
             true
     end.
 
+%% Return 'true' if a string is to be quoted when formatted as HOCON.
 %% A sequence of characters outside of a quoted string is a string value if:
 %% it does not contain "forbidden characters":
 %% '$', '"', '{', '}', '[', ']', ':', '=', ',', '+', '#', '`', '^', '?', '!', '@', '*',
 %% '&', '' (backslash), or whitespace.
 %% '$"{}[]:=,+#`^?!@*& \\'
-
-is_quote_str(S) ->
+is_to_quote_str(S) ->
     case hocon_scanner:string(S) of
-        {ok, [{string, 1, S}], 1} ->
-            %% contain $"{}[]:=,+#`^?!@*& \\ should be quote
+        {ok, [{Tag, 1, S}], 1} when Tag =:= string orelse Tag =:= unqstr ->
+            %% contain $"{}[]:=,+#`^?!@*& \\ should be quoted
             case re:run(S, "^[^$\"{}\\[\\]:=,+#`\\^?!@*&\\ \\\\]*$") of
                 nomatch -> true;
                 _ -> false
@@ -195,7 +195,7 @@ is_quote_str(S) ->
     end.
 
 maybe_quote_latin1_str(S) ->
-    case is_quote_str(S) of
+    case is_to_quote_str(S) of
         true -> bin(io_lib:format("~0p", [S]));
         false -> S
     end.
@@ -219,9 +219,8 @@ fmt({indent, Block}) ->
 split(Bin) ->
     [Line || Line <- binary:split(Bin, ?NL, [global]), Line =/= <<>>].
 
-infix([], _) -> [];
-infix([One], _) -> [One];
-infix([H | T], Infix) -> [[H, Infix] | infix(T, Infix)].
+infix(List, Sep) ->
+    lists:join(Sep, List).
 
 format_escape_sequences(Str) ->
     bin(lists:map(fun esc/1, Str)).
