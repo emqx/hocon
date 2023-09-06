@@ -985,6 +985,18 @@ no_translation2_test() ->
     Sc = #{roots => [{f1, integer()}]},
     ?assertEqual([], hocon_tconf:translate(Sc, #{}, [])).
 
+translation_unicode_test() ->
+    Sc = #{
+        roots => [
+            {f1, hoconsc:mk(integer())},
+            {f2, hoconsc:mk(string())}
+        ],
+        translations => #{"tr1" => [{"路.径1", fun(_Conf) -> <<"值2"/utf8>> end}]}
+    },
+    {ok, Data} = hocon:binary("f1=12,f2=foo", #{format => richmap}),
+    {Mapped, _Conf} = hocon_tconf:map_translate(Sc, Data, #{}),
+    ?assertEqual([{tr1, [{'路', [{'径1', <<"值2"/utf8>>}]}]}], Mapped).
+
 translation_crash_test() ->
     Sc = #{
         roots => [
