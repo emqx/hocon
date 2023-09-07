@@ -37,7 +37,7 @@ to_ip_port(String) ->
 
 ### Complex types
 
-HOCON schema supports 3 different complext types: `struct`, `array`, and `union`.
+HOCON schema supports 3 different complex types: `struct`, `array`, and `union`.
 NOTE: to make it easier for future extensions, it's recommended to use `hoconsc` module APIs to define schema.
 
 #### Structs
@@ -224,7 +224,7 @@ Environment variables are not parsed as plain string, rather as HOCON values.
 This creates the flexibility for overriding config values in different ways:
 
 * Set individual object paths, for example `export EMQX_MY__KEY__name=zz; export EMQX_MY__KEY__fingers=10`
-* Set the the engire object as escaped HOCON value: `export EMQX_MY__KEY="{name = \"zz\", fingers = 10}"`
+* Set the the entire object as escaped HOCON value: `export EMQX_MY__KEY="{name = \"zz\", fingers = 10}"`
 * Load the object from another file `export EMQX_MY__KEY="{\"include /config/my-key-override.conf\"}"`
 
 Using `{include "path/to/file"}` is extremely useful to override a value with large object or an array.
