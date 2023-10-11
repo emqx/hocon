@@ -351,10 +351,24 @@ find_structs_per_type(Schema, ?UNION(Types0), Acc, Stack, TStack, Opts) ->
         Acc,
         Types
     );
-find_structs_per_type(Schema, ?MAP(Name, Type), Acc, Stack, TStack, Opts) ->
-    find_structs_per_type(Schema, Type, Acc, ["$" ++ str(Name) | Stack], TStack, Opts);
+find_structs_per_type(Schema, ?MAP(NameType, Type), Acc, Stack, TStack, Opts) ->
+    find_structs_per_type(
+        Schema, Type, Acc, ["$" ++ str(get_map_key_type_name(NameType)) | Stack], TStack, Opts
+    );
 find_structs_per_type(_Schema, _Type, Acc, _Stack, _TStack, _Opts) ->
     Acc.
+
+get_map_key_type_name(Fun) when is_function(Fun, 1) ->
+    case Fun(name) of
+        undefined ->
+            name;
+        Name ->
+            Name
+    end;
+get_map_key_type_name(Map) when is_map(Map) ->
+    maps:get(name, Map, name);
+get_map_key_type_name(Name) ->
+    Name.
 
 find_ref(Schema, Name, Acc, Stack, TStack, Opts) ->
     Namespace = namespace(Schema),
@@ -490,10 +504,10 @@ fmt_type(_Ns, ?ENUM(Symbols)) ->
     };
 fmt_type(Ns, ?LAZY(T)) ->
     fmt_type(Ns, T);
-fmt_type(Ns, ?MAP(Name, T)) ->
+fmt_type(Ns, ?MAP(NameType, T)) ->
     #{
         kind => map,
-        name => bin(Name),
+        name => bin(get_map_key_type_name(NameType)),
         values => fmt_type(Ns, T)
     };
 fmt_type(_Ns, Type) when ?IS_TYPEREFL(Type) ->
