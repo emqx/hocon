@@ -551,15 +551,15 @@ map_field_maybe_convert(Type, Schema, Value0, Opts, Converter) ->
             }
     end.
 
-map_field(?MAP(_Name, Type), FieldSchema, Value, Opts) ->
+map_field(?MAP(NameType, Type), FieldSchema, Value, Opts) ->
     %% map type always has string keys
     Keys = maps_keys(unbox(Opts, Value)),
     case [str(K) || K <- Keys] of
         [] ->
             {[], Value};
         FieldNames ->
-            case get_invalid_name(FieldNames) of
-                [] ->
+            case check_map_key_name(NameType, FieldNames) of
+                ok ->
                     %% All objects in this map should share the same schema.
                     NewSc = hocon_schema:override(
                         FieldSchema,
@@ -568,12 +568,10 @@ map_field(?MAP(_Name, Type), FieldSchema, Value, Opts) ->
                     NewFields = [{FieldName, NewSc} || FieldName <- FieldNames],
                     %% start over
                     do_map(NewFields, Value, Opts, NewSc);
-                InvalidNames ->
+                {error, Meta} ->
                     Context =
-                        #{
-                            reason => invalid_map_key,
-                            expected_data_type => ?MAP_KEY_RE,
-                            got => InvalidNames
+                        Meta#{
+                            reason => invalid_map_key
                         },
                     {validation_errs(Opts, Context), Value}
             end
@@ -1302,18 +1300,45 @@ check_index_seq(I, [{Index, V} | Rest], Acc) ->
             }}
     end.
 
-get_invalid_name(Names) ->
-    lists:filter(
-        fun(F) ->
-            nomatch =:=
-                try
-                    re:run(F, ?MAP_KEY_RE)
-                catch
-                    _:_ -> nomatch
-                end
-        end,
-        Names
-    ).
+check_map_key_name(NameType, Names) ->
+    Validator = get_map_key_name_validator(NameType),
+    check_map_key_name2(Validator, Names).
+
+check_map_key_name2(Validator, [Name | T]) ->
+    try Validator(Name) of
+        ok ->
+            check_map_key_name2(Validator, T);
+        {error, _Meta} = Error ->
+            Error
+    catch
+        _:Reason ->
+            {error, #{name => Name, message => Reason}}
+    end;
+check_map_key_name2(_Validator, []) ->
+    ok.
+
+get_map_key_name_validator(Fun) when is_function(Fun, 1) ->
+    case Fun(validator) of
+        undefined ->
+            fun default_map_key_name_validator/1;
+        Validator ->
+            Validator
+    end;
+get_map_key_name_validator(Meta) when is_map(Meta) ->
+    maps:get(validator, Meta, fun default_map_key_name_validator/1);
+get_map_key_name_validator(_NameType) ->
+    fun default_map_key_name_validator/1.
+
+default_map_key_name_validator(Name) ->
+    case re:run(Name, ?MAP_KEY_RE) of
+        nomatch ->
+            {error, #{
+                expected_data_type => ?MAP_KEY_RE,
+                got => Name
+            }};
+        _ ->
+            ok
+    end.
 
 fmt_field_names(Names) ->
     do_fmt_field_names(lists:sort(lists:map(fun str/1, Names))).

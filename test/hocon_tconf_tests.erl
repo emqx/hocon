@@ -391,6 +391,71 @@ map_key_test() ->
     ),
     ok.
 
+fun_map_key_test() ->
+    Key = fun(validator) ->
+        fun(Name) ->
+            case re:run(Name, "[a-z]") of
+                nomatch ->
+                    {error, #{}};
+                _ ->
+                    ok
+            end
+        end
+    end,
+    Sc = #{roots => [{"val", hoconsc:map(Key, string())}]},
+    GoodConf = "val = {good = value}",
+    {ok, GoodMap} = hocon:binary(GoodConf, #{format => map}),
+    ?assertEqual(
+        #{<<"val">> => #{<<"good">> => "value"}},
+        hocon_tconf:check_plain(Sc, GoodMap, #{apply_override_envs => false})
+    ),
+
+    BadConfs = ["val = {Bad = value}", "val = {bad1 = value}"],
+    lists:foreach(
+        fun(BadConf) ->
+            {ok, BadMap} = hocon:binary(BadConf, #{format => map}),
+            ?GEN_VALIDATION_ERR(
+                #{path := "val", reason := invalid_map_key},
+                hocon_tconf:check_plain(Sc, BadMap, #{apply_override_envs => false})
+            )
+        end,
+        BadConfs
+    ),
+    ok.
+
+structural_map_key_test() ->
+    Key = #{
+        validator =>
+            fun(Name) ->
+                case re:run(Name, "[a-z]") of
+                    nomatch ->
+                        {error, #{}};
+                    _ ->
+                        ok
+                end
+            end
+    },
+    Sc = #{roots => [{"val", hoconsc:map(Key, string())}]},
+    GoodConf = "val = {good = value}",
+    {ok, GoodMap} = hocon:binary(GoodConf, #{format => map}),
+    ?assertEqual(
+        #{<<"val">> => #{<<"good">> => "value"}},
+        hocon_tconf:check_plain(Sc, GoodMap, #{apply_override_envs => false})
+    ),
+
+    BadConfs = ["val = {Bad = value}", "val = {bad1 = value}"],
+    lists:foreach(
+        fun(BadConf) ->
+            {ok, BadMap} = hocon:binary(BadConf, #{format => map}),
+            ?GEN_VALIDATION_ERR(
+                #{path := "val", reason := invalid_map_key},
+                hocon_tconf:check_plain(Sc, BadMap, #{apply_override_envs => false})
+            )
+        end,
+        BadConfs
+    ),
+    ok.
+
 generate_compatibility_test() ->
     Conf = [
         {["foo", "setting"], "val"},
