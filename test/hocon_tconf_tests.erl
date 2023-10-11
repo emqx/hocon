@@ -369,92 +369,66 @@ mapping_test_() ->
         )
     ].
 
-map_key_test() ->
-    Sc = #{roots => [{"val", hoconsc:map(key, string())}]},
-    GoodConf = "val = {good_GOOD = value}",
-    {ok, GoodMap} = hocon:binary(GoodConf, #{format => map}),
-    ?assertEqual(
-        #{<<"val">> => #{<<"good_GOOD">> => "value"}},
-        hocon_tconf:check_plain(Sc, GoodMap, #{apply_override_envs => false})
-    ),
+map_key_test_() ->
+    Checker = fun(KeyType, GoodConf, GoodResult, BadConfs) ->
+        Sc = #{roots => [{"val", hoconsc:map(KeyType, string())}]},
+        {ok, GoodMap} = hocon:binary(GoodConf, #{format => map}),
+        ?assertEqual(
+            GoodResult,
+            hocon_tconf:check_plain(Sc, GoodMap, #{apply_override_envs => false})
+        ),
 
-    BadConfs = ["val = {\"_bad\" = value}", "val = {\"bad_-n\" = value}"],
-    lists:foreach(
-        fun(BadConf) ->
-            {ok, BadMap} = hocon:binary(BadConf, #{format => map}),
-            ?GEN_VALIDATION_ERR(
-                #{path := "val", reason := invalid_map_key},
-                hocon_tconf:check_plain(Sc, BadMap, #{apply_override_envs => false})
+        lists:foreach(
+            fun(BadConf) ->
+                {ok, BadMap} = hocon:binary(BadConf, #{format => map}),
+                ?GEN_VALIDATION_ERR(
+                    #{path := "val", reason := invalid_map_key},
+                    hocon_tconf:check_plain(Sc, BadMap, #{apply_override_envs => false})
+                )
+            end,
+            BadConfs
+        )
+    end,
+    Normal =
+        {"map_key_test", fun() ->
+            Checker(
+                key,
+                "val = {good_GOOD = value}",
+                #{<<"val">> => #{<<"good_GOOD">> => "value"}},
+                ["val = {\"_bad\" = value}", "val = {\"bad_-n\" = value}"]
             )
-        end,
-        BadConfs
-    ),
-    ok.
-
-fun_map_key_test() ->
-    Key = fun(validator) ->
-        fun(Name) ->
-            case re:run(Name, "[a-z]") of
-                nomatch ->
-                    {error, #{}};
-                _ ->
-                    ok
-            end
+        end},
+    Validator = fun(Name) ->
+        case re:run(Name, "[a-z]") of
+            nomatch ->
+                {error, #{}};
+            _ ->
+                ok
         end
     end,
-    Sc = #{roots => [{"val", hoconsc:map(Key, string())}]},
-    GoodConf = "val = {good = value}",
-    {ok, GoodMap} = hocon:binary(GoodConf, #{format => map}),
-    ?assertEqual(
-        #{<<"val">> => #{<<"good">> => "value"}},
-        hocon_tconf:check_plain(Sc, GoodMap, #{apply_override_envs => false})
-    ),
-
-    BadConfs = ["val = {Bad = value}", "val = {bad1 = value}"],
-    lists:foreach(
-        fun(BadConf) ->
-            {ok, BadMap} = hocon:binary(BadConf, #{format => map}),
-            ?GEN_VALIDATION_ERR(
-                #{path := "val", reason := invalid_map_key},
-                hocon_tconf:check_plain(Sc, BadMap, #{apply_override_envs => false})
+    Fun =
+        {"fun_map_key_test", fun() ->
+            Checker(
+                fun(validator) ->
+                    Validator
+                end,
+                "val = {good = value}",
+                #{<<"val">> => #{<<"good">> => "value"}},
+                ["val = {Bad = value}", "val = {bad1 = value}"]
             )
-        end,
-        BadConfs
-    ),
-    ok.
-
-structural_map_key_test() ->
-    Key = #{
-        validator =>
-            fun(Name) ->
-                case re:run(Name, "[a-z]") of
-                    nomatch ->
-                        {error, #{}};
-                    _ ->
-                        ok
-                end
-            end
-    },
-    Sc = #{roots => [{"val", hoconsc:map(Key, string())}]},
-    GoodConf = "val = {good = value}",
-    {ok, GoodMap} = hocon:binary(GoodConf, #{format => map}),
-    ?assertEqual(
-        #{<<"val">> => #{<<"good">> => "value"}},
-        hocon_tconf:check_plain(Sc, GoodMap, #{apply_override_envs => false})
-    ),
-
-    BadConfs = ["val = {Bad = value}", "val = {bad1 = value}"],
-    lists:foreach(
-        fun(BadConf) ->
-            {ok, BadMap} = hocon:binary(BadConf, #{format => map}),
-            ?GEN_VALIDATION_ERR(
-                #{path := "val", reason := invalid_map_key},
-                hocon_tconf:check_plain(Sc, BadMap, #{apply_override_envs => false})
+        end},
+    Struct =
+        {"structal_map_key_test", fun() ->
+            Checker(
+                #{
+                    validator => Validator
+                },
+                "val = {good = value}",
+                #{<<"val">> => #{<<"good">> => "value"}},
+                ["val = {Bad = value}", "val = {bad1 = value}"]
             )
-        end,
-        BadConfs
-    ),
-    ok.
+        end},
+    [Normal, Fun, Struct].
 
 generate_compatibility_test() ->
     Conf = [
