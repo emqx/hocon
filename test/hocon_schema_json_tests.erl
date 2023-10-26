@@ -131,7 +131,7 @@ hidden_structs1_test() ->
     ).
 
 hidden_structs2_test() ->
-    Json = gen(demo_schema6),
+    Json = gen(demo_schema6, #{desc_resolver => fun(_) -> undefined end}),
     ?assertMatch(
         [
             #{
@@ -147,5 +147,19 @@ hidden_structs2_test() ->
         Json
     ).
 
+hidden_structs3_test() ->
+    ?assertThrow(
+        #{reason := bad_desc_resolution, resolution := invalid},
+        gen(demo_schema6, #{desc_resolver => fun(_) -> invalid end})
+    ).
+
+bad_desc_test() ->
+    Throw = fun(_) -> throw({foo, ?FUNCTION_NAME}) end,
+    ?assertThrow({foo, ?FUNCTION_NAME}, Throw(a)),
+    ?assertThrow({foo, ?FUNCTION_NAME}, gen(demo_schema6, #{desc_resolver => Throw})).
+
 gen(Schema) ->
     hocon_schema_json:gen(Schema).
+
+gen(Schema, Opts) ->
+    hocon_schema_json:gen(Schema, Opts).

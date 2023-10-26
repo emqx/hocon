@@ -94,8 +94,15 @@ gen_struct(_RootNs, Ns, Name, #{fields := Fields} = Meta, Opts) ->
         fields => fmt_fields(Ns, Fields, Opts)
     },
     case Meta of
-        #{desc := StructDoc} -> S0#{desc => fmt_desc(StructDoc, Opts)};
-        _ -> S0
+        #{desc := StructDoc} ->
+            case fmt_desc(StructDoc, Opts) of
+                undefined ->
+                    S0;
+                Text ->
+                    S0#{desc => Text}
+            end;
+        _ ->
+            S0
     end.
 
 assert_unique_names(FullName, Fields) ->
@@ -173,7 +180,23 @@ fmt_type(Ns, T) ->
     hocon_schema:fmt_type(Ns, T).
 
 fmt_desc(Desc, #{desc_resolver := F}) when Desc =/= undefined ->
-    F(Desc);
+    case F(Desc) of
+        undefined ->
+            undefined;
+        IoData ->
+            try
+                B = unicode:characters_to_binary(IoData, utf8),
+                true = is_binary(B),
+                B
+            catch
+                _:_ ->
+                    throw(#{
+                        reason => bad_desc_resolution,
+                        reference => Desc,
+                        resolution => IoData
+                    })
+            end
+    end;
 fmt_desc(_Desc, _) ->
     %% no resolver, no description needed at all for this schema dump
     undefined.
