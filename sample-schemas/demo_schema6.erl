@@ -4,7 +4,7 @@
 
 -behaviour(hocon_schema).
 
--export([namespace/0, roots/0, fields/1]).
+-export([namespace/0, roots/0, fields/1, desc/1]).
 
 namespace() -> undefined.
 
@@ -18,3 +18,8 @@ fields(foo) ->
     ];
 fields(im_hidden) ->
     [{i_should_be_hidden, integer()}].
+
+desc(foo) ->
+    {foo, invalid};
+desc(_) ->
+    undefined.
