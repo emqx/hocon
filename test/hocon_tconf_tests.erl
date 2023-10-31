@@ -2436,6 +2436,60 @@ map_atom_keys_test_() ->
                     },
                     V
                 )
+            end)},
+        {"key length > 255 bytes (atom_key = true)",
+            ?_test(begin
+                BadKeyStr = lists:duplicate(256, $a),
+                BadKey = list_to_binary(BadKeyStr),
+                BadMap = #{<<"root">> => #{BadKey => #{<<"foo">> => #{}}}},
+                ?assertThrow(
+                    {_, [
+                        #{
+                            kind := validation_error,
+                            got := [BadKeyStr],
+                            reason := invalid_map_key
+                        }
+                    ]},
+                    hocon_tconf:check_plain(
+                        Sc,
+                        BadMap,
+                        #{atom_key => true}
+                    )
+                )
+            end)},
+        {"key length > 255 bytes (atom_key = {true, unsafe})",
+            ?_test(begin
+                BadKeyStr = lists:duplicate(256, $a),
+                BadKey = list_to_binary(BadKeyStr),
+                BadMap = #{<<"root">> => #{BadKey => #{<<"foo">> => #{}}}},
+                ?assertThrow(
+                    {_, [
+                        #{
+                            kind := validation_error,
+                            got := [BadKeyStr],
+                            reason := invalid_map_key
+                        }
+                    ]},
+                    hocon_tconf:check_plain(
+                        Sc,
+                        BadMap,
+                        #{atom_key => {true, unsafe}}
+                    )
+                )
+            end)},
+        {"key length > 255 bytes (atom_key = false)",
+            ?_test(begin
+                BadKeyStr = lists:duplicate(256, $a),
+                BadKey = list_to_binary(BadKeyStr),
+                BadMap = #{<<"root">> => #{BadKey => #{<<"foo">> => #{}}}},
+                ?assertMatch(
+                    #{<<"root">> := #{BadKey := _}},
+                    hocon_tconf:check_plain(
+                        Sc,
+                        BadMap,
+                        #{atom_key => false}
+                    )
+                )
             end)}
     ].
 
