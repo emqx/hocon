@@ -558,7 +558,7 @@ map_field(?MAP(_Name, Type), FieldSchema, Value, Opts) ->
         [] ->
             {[], Value};
         FieldNames ->
-            case get_invalid_name(FieldNames) of
+            case get_invalid_name(FieldNames, Opts) of
                 [] ->
                     %% All objects in this map should share the same schema.
                     NewSc = hocon_schema:override(
@@ -573,6 +573,7 @@ map_field(?MAP(_Name, Type), FieldSchema, Value, Opts) ->
                         #{
                             reason => invalid_map_key,
                             expected_data_type => ?MAP_KEY_RE,
+                            hint => "map keys must have less than 255 bytes",
                             got => InvalidNames
                         },
                     {validation_errs(Opts, Context), Value}
@@ -1302,15 +1303,23 @@ check_index_seq(I, [{Index, V} | Rest], Acc) ->
             }}
     end.
 
-get_invalid_name(Names) ->
+get_invalid_name(Names, Opts) ->
+    AtomKey =
+        case maps:get(atom_key, Opts, false) of
+            true -> true;
+            {true, unsafe} -> true;
+            _ -> false
+        end,
     lists:filter(
         fun(F) ->
-            nomatch =:=
+            DoesNotMatchRE =
                 try
-                    re:run(F, ?MAP_KEY_RE)
+                    nomatch =:= re:run(F, ?MAP_KEY_RE)
                 catch
-                    _:_ -> nomatch
-                end
+                    _:_ -> false
+                end,
+            TooLong = AtomKey andalso string:length(F) > 255,
+            DoesNotMatchRE orelse TooLong
         end,
         Names
     ).
