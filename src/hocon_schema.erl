@@ -71,9 +71,7 @@
 -callback tags() -> [tag()].
 
 -optional_callbacks([
-    namespace/0,
     roots/0,
-    fields/1,
     translations/0,
     translation/1,
     validations/0,
