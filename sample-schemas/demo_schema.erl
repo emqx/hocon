@@ -38,7 +38,7 @@ fields("a_b") ->
     ];
 
 fields("b") ->
-    [ {"u", fun (type) -> {union, ["priv.bool", "priv.int"]};
+    [ {"u", fun (type) -> hoconsc:union(["priv.bool", "priv.int"]);
                 (mapping) -> "app_foo.u";
                 (_) -> undefined end}
     , {"arr", fun (type) -> hoconsc:array("priv.int");

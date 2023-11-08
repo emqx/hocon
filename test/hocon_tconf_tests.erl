@@ -590,7 +590,7 @@ with_envs(Fun, Envs) -> hocon_test_lib:with_envs(Fun, Envs).
 with_envs(Fun, Args, Envs) -> hocon_test_lib:with_envs(Fun, Args, Envs).
 
 union_as_enum_test() ->
-    Sc = #{roots => [{enum, hoconsc:union([a, b, c])}]},
+    Sc = #{roots => [{enum, hoconsc:union([a, b, c], <<"string()">>)}]},
     ?assertEqual(
         #{<<"enum">> => a},
         hocon_tconf:check_plain(Sc, #{<<"enum">> => a})
