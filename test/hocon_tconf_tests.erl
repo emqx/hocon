@@ -847,16 +847,17 @@ type_stack_test() ->
             {f1, hoconsc:array(hoconsc:union([hoconsc:ref("s1")]))}
         ],
         fields => #{
-            "s1" => [{maybe, hoconsc:union([hoconsc:ref("s2")])}],
+            "s1" => [{maybe_v, hoconsc:union([hoconsc:ref("s2")])}],
             "s2" => [
                 {id, hoconsc:mk(integer(), #{required => true})},
                 {name, string()}
             ]
         }
     },
+    Value = #{<<"f1">> => [#{<<"maybe_v">> => #{<<"name">> => "foo"}}]},
     ?VALIDATION_ERR(
-        #{reason := required_field, path := "f1.1.maybe.id", matched_type := "s1/s2"},
-        hocon_tconf:check_plain(Sc, #{<<"f1">> => [#{<<"maybe">> => #{<<"name">> => "foo"}}]}, #{})
+        #{reason := required_field, path := "f1.1.maybe_v.id", matched_type := "s1/s2"},
+        hocon_tconf:check_plain(Sc, Value, #{})
     ),
     ok.
 
@@ -867,7 +868,7 @@ type_stack_cannot_concatenate_test() ->
             {f1, hoconsc:array(hoconsc:union([hoconsc:ref("s1")]))}
         ],
         fields => #{
-            "s1" => [{maybe, hoconsc:union([hoconsc:ref("s2")])}],
+            "s1" => [{maybe_v, hoconsc:union([hoconsc:ref("s2")])}],
             "s2" => [
                 {id, hoconsc:mk(integer(), #{required => true})},
                 {name, hoconsc:mk(string(), #{required => true})}
@@ -876,11 +877,11 @@ type_stack_cannot_concatenate_test() ->
     },
     ?VALIDATION_ERR(
         #{
-            path := "f1.1.maybe",
+            path := "f1.1.maybe_v",
             matched_type := "s1/s2",
             errors := [_ | _]
         },
-        hocon_tconf:check_plain(Sc, #{<<"f1">> => [#{<<"maybe">> => #{}}]}, #{})
+        hocon_tconf:check_plain(Sc, #{<<"f1">> => [#{<<"maybe_v">> => #{}}]}, #{})
     ),
     ok.
 
