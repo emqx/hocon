@@ -90,7 +90,7 @@ fmt_field(
                 case maps:get(examples, Field, #{}) of
                     #{} = Example ->
                         fmt_field_with_example(Path, SubFields, Example, Opts2);
-                    {union, UnionExamples} ->
+                    ?UNION(UnionExamples, _) ->
                         Examples1 = filter_union_example(UnionExamples, SubFields),
                         fmt_field_with_example(Path, SubFields, Examples1, Opts2);
                     {array, ArrayExamples} ->

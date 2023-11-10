@@ -18,7 +18,8 @@
 -define(HOCONSC_TYPES_HRL, true).
 
 -define(ARRAY(OfTYpe), {array, OfTYpe}).
--define(UNION(OfTypes), {union, OfTypes}).
+-define(UNION(OfTypes), {union, OfTypes, undefined}).
+-define(UNION(OfTypes, DisplayName), {union, OfTypes, DisplayName}).
 -define(ENUM(OfSymbols), {enum, OfSymbols}).
 -define(REF(Name), {ref, Name}).
 % remote ref
