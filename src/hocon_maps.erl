@@ -50,6 +50,10 @@
 
 -type flatten_opts() :: #{rich_value => boolean()}.
 
+-elvis([
+    {elvis_style, atom_naming_convention, #{regex => "^([a-z][a-z0-9]*_?)([a-z0-9]*_?)*(_SUITE)?$"}}
+]).
+
 %% @doc put unboxed value to the richmap box
 %% this function is called places where there is no boxing context
 %% so it has to accept unboxed value.
@@ -89,6 +93,8 @@ update_map_field(Opts, Map, FieldName, GoDeep) ->
     Map1 = maps:without([FieldName], Map),
     Map1#{maybe_atom(Opts, FieldName) => FieldV}.
 
+maybe_atom(#{atom_key := true}, Name) when is_binary(Name), size(Name) > 255 ->
+    error({name_longer_than_255_bytes, Name});
 maybe_atom(#{atom_key := true}, Name) when is_binary(Name) ->
     try
         binary_to_existing_atom(Name, utf8)
@@ -96,6 +102,8 @@ maybe_atom(#{atom_key := true}, Name) when is_binary(Name) ->
         _:_ ->
             error({non_existing_atom, Name})
     end;
+maybe_atom(#{atom_key := {true, unsafe}}, Name) when is_binary(Name), size(Name) > 255 ->
+    error({name_longer_than_255_bytes, Name});
 maybe_atom(#{atom_key := {true, unsafe}}, Name) when is_binary(Name) ->
     binary_to_atom(Name, utf8);
 maybe_atom(_Opts, Name) ->

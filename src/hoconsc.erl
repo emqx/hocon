@@ -19,7 +19,7 @@
 
 -export([mk/1, mk/2]).
 -export([ref/1, ref/2]).
--export([array/1, union/1, enum/1]).
+-export([array/1, union/1, union/2, enum/1]).
 -export([lazy/1, map/2]).
 -export([is_schema/1]).
 -export([union_members/1]).
@@ -59,7 +59,11 @@ array(OfType) -> ?ARRAY(OfType).
 %%    `({value, #{<<"kind">> := <<"foo">>}) -> [ref(foo)];'
 %%    `({value, #{<<"kind">> := <<"bar">>}} -> [ref(bar)].'
 -spec union(hocon_schema:union_members()) -> ?UNION(hocon_schema:union_members()).
-union(OfTypes) when is_list(OfTypes) orelse is_function(OfTypes, 1) -> ?UNION(OfTypes).
+union(OfTypes) when is_list(OfTypes) orelse is_function(OfTypes, 1) ->
+    ?UNION(OfTypes, undefined).
+
+union(OfTypes, DisplayName) when is_list(OfTypes) orelse is_function(OfTypes, 1) ->
+    ?UNION(OfTypes, DisplayName).
 
 %% @doc make a enum type.
 enum(OfSymbols) when is_list(OfSymbols) -> ?ENUM(OfSymbols).
@@ -71,7 +75,7 @@ lazy(HintType) -> ?LAZY(HintType).
 map(Name, Type) -> ?MAP(Name, Type).
 
 %% @doc Check Type is a hocon type.
-is_schema(?UNION(Members)) -> lists:all(fun is_schema/1, union_members(Members));
+is_schema(?UNION(Members, _)) -> lists:all(fun is_schema/1, union_members(Members));
 is_schema(?ARRAY(ElemT)) -> is_schema(ElemT);
 is_schema(?LAZY(HintT)) -> is_schema(HintT);
 is_schema(?REF(_)) -> true;
@@ -86,7 +90,7 @@ is_schema(_) -> false.
 assert_type(S) when is_function(S) -> error({expecting_type_but_got_schema, S});
 assert_type(#{type := _} = S) ->
     error({expecting_type_but_got_schema, S});
-assert_type(?UNION(Members)) ->
+assert_type(?UNION(Members, _)) ->
     lists:foreach(fun assert_type/1, union_members(Members));
 assert_type(?ENUM(Symbols)) ->
     lists:foreach(
