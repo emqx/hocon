@@ -2485,8 +2485,7 @@ map_atom_keys_test_() ->
                 ?assertThrow(
                     {_, [
                         #{
-                            kind := validation_error,
-                            got := [BadKeyStr],
+                            got := BadKeyStr,
                             reason := invalid_map_key
                         }
                     ]},
@@ -2505,8 +2504,7 @@ map_atom_keys_test_() ->
                 ?assertThrow(
                     {_, [
                         #{
-                            kind := validation_error,
-                            got := [BadKeyStr],
+                            got := BadKeyStr,
                             reason := invalid_map_key
                         }
                     ]},
@@ -2522,8 +2520,13 @@ map_atom_keys_test_() ->
                 BadKeyStr = lists:duplicate(256, $a),
                 BadKey = list_to_binary(BadKeyStr),
                 BadMap = #{<<"root">> => #{BadKey => #{<<"foo">> => #{}}}},
-                ?assertMatch(
-                    #{<<"root">> := #{BadKey := _}},
+                ?assertThrow(
+                    {_, [
+                        #{
+                            got := BadKeyStr,
+                            reason := invalid_map_key
+                        }
+                    ]},
                     hocon_tconf:check_plain(
                         Sc,
                         BadMap,
