@@ -629,7 +629,7 @@ with_envs(Fun, Envs) -> hocon_test_lib:with_envs(Fun, Envs).
 with_envs(Fun, Args, Envs) -> hocon_test_lib:with_envs(Fun, Args, Envs).
 
 union_as_enum_test() ->
-    Sc = #{roots => [{enum, hoconsc:union([a, b, c])}]},
+    Sc = #{roots => [{enum, hoconsc:union([a, b, c], <<"string()">>)}]},
     ?assertEqual(
         #{<<"enum">> => a},
         hocon_tconf:check_plain(Sc, #{<<"enum">> => a})
@@ -886,16 +886,17 @@ type_stack_test() ->
             {f1, hoconsc:array(hoconsc:union([hoconsc:ref("s1")]))}
         ],
         fields => #{
-            "s1" => [{maybe, hoconsc:union([hoconsc:ref("s2")])}],
+            "s1" => [{maybe_v, hoconsc:union([hoconsc:ref("s2")])}],
             "s2" => [
                 {id, hoconsc:mk(integer(), #{required => true})},
                 {name, string()}
             ]
         }
     },
+    Value = #{<<"f1">> => [#{<<"maybe_v">> => #{<<"name">> => "foo"}}]},
     ?VALIDATION_ERR(
-        #{reason := required_field, path := "f1.1.maybe.id", matched_type := "s1/s2"},
-        hocon_tconf:check_plain(Sc, #{<<"f1">> => [#{<<"maybe">> => #{<<"name">> => "foo"}}]}, #{})
+        #{reason := required_field, path := "f1.1.maybe_v.id", matched_type := "s1/s2"},
+        hocon_tconf:check_plain(Sc, Value, #{})
     ),
     ok.
 
@@ -906,7 +907,7 @@ type_stack_cannot_concatenate_test() ->
             {f1, hoconsc:array(hoconsc:union([hoconsc:ref("s1")]))}
         ],
         fields => #{
-            "s1" => [{maybe, hoconsc:union([hoconsc:ref("s2")])}],
+            "s1" => [{maybe_v, hoconsc:union([hoconsc:ref("s2")])}],
             "s2" => [
                 {id, hoconsc:mk(integer(), #{required => true})},
                 {name, hoconsc:mk(string(), #{required => true})}
@@ -915,11 +916,11 @@ type_stack_cannot_concatenate_test() ->
     },
     ?VALIDATION_ERR(
         #{
-            path := "f1.1.maybe",
+            path := "f1.1.maybe_v",
             matched_type := "s1/s2",
             errors := [_ | _]
         },
-        hocon_tconf:check_plain(Sc, #{<<"f1">> => [#{<<"maybe">> => #{}}]}, #{})
+        hocon_tconf:check_plain(Sc, #{<<"f1">> => [#{<<"maybe_v">> => #{}}]}, #{})
     ),
     ok.
 
@@ -2474,6 +2475,60 @@ map_atom_keys_test_() ->
                         }
                     },
                     V
+                )
+            end)},
+        {"key length > 255 bytes (atom_key = true)",
+            ?_test(begin
+                BadKeyStr = lists:duplicate(256, $a),
+                BadKey = list_to_binary(BadKeyStr),
+                BadMap = #{<<"root">> => #{BadKey => #{<<"foo">> => #{}}}},
+                ?assertThrow(
+                    {_, [
+                        #{
+                            kind := validation_error,
+                            got := [BadKeyStr],
+                            reason := invalid_map_key
+                        }
+                    ]},
+                    hocon_tconf:check_plain(
+                        Sc,
+                        BadMap,
+                        #{atom_key => true}
+                    )
+                )
+            end)},
+        {"key length > 255 bytes (atom_key = {true, unsafe})",
+            ?_test(begin
+                BadKeyStr = lists:duplicate(256, $a),
+                BadKey = list_to_binary(BadKeyStr),
+                BadMap = #{<<"root">> => #{BadKey => #{<<"foo">> => #{}}}},
+                ?assertThrow(
+                    {_, [
+                        #{
+                            kind := validation_error,
+                            got := [BadKeyStr],
+                            reason := invalid_map_key
+                        }
+                    ]},
+                    hocon_tconf:check_plain(
+                        Sc,
+                        BadMap,
+                        #{atom_key => {true, unsafe}}
+                    )
+                )
+            end)},
+        {"key length > 255 bytes (atom_key = false)",
+            ?_test(begin
+                BadKeyStr = lists:duplicate(256, $a),
+                BadKey = list_to_binary(BadKeyStr),
+                BadMap = #{<<"root">> => #{BadKey => #{<<"foo">> => #{}}}},
+                ?assertMatch(
+                    #{<<"root">> := #{BadKey := _}},
+                    hocon_tconf:check_plain(
+                        Sc,
+                        BadMap,
+                        #{atom_key => false}
+                    )
                 )
             end)}
     ].

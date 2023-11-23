@@ -71,9 +71,7 @@
 -callback tags() -> [tag()].
 
 -optional_callbacks([
-    namespace/0,
     roots/0,
-    fields/1,
     translations/0,
     translation/1,
     validations/0,
@@ -97,13 +95,13 @@
     %% array of
     | ?ARRAY(type())
     %% one-of
-    | ?UNION(union_members())
+    | ?UNION(union_members(), _)
     %% one-of atoms, data is allowed to be binary()
     | ?ENUM([atom()]).
 
 -type field_schema() ::
     typerefl:type()
-    | ?UNION(union_members())
+    | ?UNION(union_members(), _)
     | ?ARRAY(type())
     | ?ENUM(type())
     | field_schema_map()
@@ -342,7 +340,7 @@ find_structs_per_type(Schema, ?LAZY(Type), Acc, Stack, TStack, Opts) ->
     find_structs_per_type(Schema, Type, Acc, Stack, TStack, Opts);
 find_structs_per_type(Schema, ?ARRAY(Type), Acc, Stack, TStack, Opts) ->
     find_structs_per_type(Schema, Type, Acc, ["$INDEX" | Stack], TStack, Opts);
-find_structs_per_type(Schema, ?UNION(Types0), Acc, Stack, TStack, Opts) ->
+find_structs_per_type(Schema, ?UNION(Types0, _), Acc, Stack, TStack, Opts) ->
     Types = hoconsc:union_members(Types0),
     lists:foldl(
         fun(T, AccIn) ->
@@ -458,7 +456,7 @@ field_schema(?R_REF(_, _) = Ref, SchemaKey) ->
     field_schema(hoconsc:mk(Ref), SchemaKey);
 field_schema(?ARRAY(_) = Array, SchemaKey) ->
     field_schema(hoconsc:mk(Array), SchemaKey);
-field_schema(?UNION(_) = Union, SchemaKey) ->
+field_schema(?UNION(_, _) = Union, SchemaKey) ->
     field_schema(hoconsc:mk(Union), SchemaKey);
 field_schema(?ENUM(_) = Enum, SchemaKey) ->
     field_schema(hoconsc:mk(Enum), SchemaKey);
@@ -492,10 +490,11 @@ fmt_type(Ns, ?ARRAY(T)) ->
         kind => array,
         elements => fmt_type(Ns, T)
     };
-fmt_type(Ns, ?UNION(Ts)) ->
+fmt_type(Ns, ?UNION(Ts, DisplayName)) ->
     #{
         kind => union,
-        members => [fmt_type(Ns, T) || T <- hoconsc:union_members(Ts)]
+        members => [fmt_type(Ns, T) || T <- hoconsc:union_members(Ts)],
+        display_name => DisplayName
     };
 fmt_type(_Ns, ?ENUM(Symbols)) ->
     #{

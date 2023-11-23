@@ -585,7 +585,7 @@ map_field(?REF(Ref), FieldSchema, Value, #{schema := Schema} = Opts) ->
 map_field(Ref, FieldSchema, Value, #{schema := Schema} = Opts) when is_list(Ref) ->
     Fields = hocon_schema:fields(Schema, Ref),
     do_map(Fields, Value, Opts, FieldSchema);
-map_field(?UNION(Types0), Schema0, Value, Opts) ->
+map_field(?UNION(Types0, _), Schema0, Value, Opts) ->
     try select_union_members(Types0, Value, Opts) of
         Types ->
             F = fun(Type) ->
@@ -896,7 +896,7 @@ is_path(Schema, ?ARRAY(Type), [Name | Path]) ->
         {true, _} -> is_path(Schema, Type, Path);
         false -> false
     end;
-is_path(Schema, ?UNION(Types), Path) ->
+is_path(Schema, ?UNION(Types, _), Path) ->
     lists:any(fun(T) -> is_path(Schema, T, Path) end, hoconsc:union_members(Types));
 is_path(Schema, ?MAP(_, Type), [_ | Path]) ->
     is_path(Schema, Type, Path);
@@ -1337,7 +1337,15 @@ default_map_key_name_validator(Name) ->
                 got => Name
             }};
         _ ->
-            ok
+            case string:length(Name) > 255 of
+                true ->
+                    {error, #{
+                        hint => "map keys must have less than 255 bytes",
+                        got => Name
+                    }};
+                _ ->
+                    ok
+            end
     end.
 
 fmt_field_names(Names) ->
