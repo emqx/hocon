@@ -50,6 +50,9 @@
 ]).
 
 -export_type([
+    type/0,
+    field/0,
+    fields/0,
     field_schema/0,
     name/0,
     schema/0,
