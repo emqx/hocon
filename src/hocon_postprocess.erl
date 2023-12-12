@@ -131,10 +131,13 @@ percent(Other) ->
     Other.
 
 do_percent(Str) ->
-    {ok, MP} = re:compile("([0-9]+)(%)$"),
+    {ok, MP} = re:compile("([0-9.]+)(%)$"),
     case re_run_first(Str, MP) of
         {match, [Val, _Unit]} ->
-            list_to_integer(Val) / 100;
+            case string:to_integer(Val) of
+                {Int, []} -> Int / 100;
+                _ -> round(list_to_float(Val) * 100) / 10000
+            end;
         _ ->
             Str
     end.

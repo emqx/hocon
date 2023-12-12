@@ -1,4 +1,5 @@
 .eunit
+.tool-versions
 *.o
 *.beam
 *.plt
