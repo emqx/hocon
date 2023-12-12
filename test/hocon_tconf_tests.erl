@@ -332,6 +332,18 @@ mapping_test_() ->
             F("foo.numbers=[1,2,3]")
         ),
         ?_assertEqual([{["a_b", "some_int"], 1}, Setting], F("a_b.some_int=1")),
+        ?_assertEqual([{["a_b", "some_percent"], 0.12}, Setting], F("a_b.some_percent=12%")),
+        ?_assertEqual([{["a_b", "some_percent"], 0.123}, Setting], F("a_b.some_percent=\"12.3%\"")),
+        ?_assertEqual(
+            [{["a_b", "some_percent"], 0.1234}, Setting], F("a_b.some_percent=\"12.34%\"")
+        ),
+        %% we only support 2 decimal places
+        ?_assertEqual(
+            [{["a_b", "some_percent"], 0.4321}, Setting], F("a_b.some_percent=\"43.214%\"")
+        ),
+        ?_assertEqual(
+            [{["a_b", "some_percent"], 0.1235}, Setting], F("a_b.some_percent=\"12.345%\"")
+        ),
         ?_assertEqual([Setting], F("foo.ref_x_y={some_int = 1}")),
         ?GEN_VALIDATION_ERR(_, F("foo.ref_x_y={some_int = aaa}")),
         ?_assertEqual(

@@ -7,10 +7,12 @@
 -behaviour(hocon_schema).
 
 -type duration() :: integer().
+-type percent() :: float().
 
 -typerefl_from_string({duration/0, emqx_schema, to_duration}).
+-typerefl_from_string({percent/0, emqx_schema, to_percent}).
 
--reflect_type([duration/0]).
+-reflect_type([duration/0, percent/0]).
 
 -export([roots/0, fields/1, translations/0, translation/1]).
 
@@ -35,6 +37,7 @@ fields("a_b") ->
     [ {"some_int", hoconsc:mk(integer(), #{mapping => "a_b.some_int",
                                            importance => hidden
                                           })}
+    , {"some_percent", fun some_percent/1}
     ];
 
 fields("b") ->
@@ -111,6 +114,10 @@ numbers(_) -> undefined.
 
 priv_duration(type) -> duration();
 priv_duration(_) -> undefined.
+
+some_percent(type) -> percent();
+some_percent(mapping) -> "a_b.some_percent";
+some_percent(_) -> undefined.
 
 priv_bool(type) -> boolean();
 priv_bool(_) -> undefined.
