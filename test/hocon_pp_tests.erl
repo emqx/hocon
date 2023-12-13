@@ -216,3 +216,29 @@ utf8_test() ->
     PP1 = hocon_pp:do(Utf81, #{}),
     {ok, Conf1} = hocon:binary(PP1),
     ?assertEqual(Utf81, Conf1).
+
+wrap_value_test() ->
+    RawConf =
+        #{
+            atom_key => #{atom_key => fun() -> atom_value end},
+            <<"binary_key">> => fun() ->
+                #{
+                    atom_key1 => <<"binary_value">>,
+                    atom_key2 => fun() -> '42wierd_atom_value' end,
+                    atom_key3 => ''
+                }
+            end
+        },
+    PP = hocon_pp:do(RawConf, #{lazy_evaluator => fun(F) -> F() end}),
+    {ok, RawConf2} = hocon:binary(iolist_to_binary(PP)),
+    ?assertEqual(
+        #{
+            <<"atom_key">> => #{<<"atom_key">> => <<"atom_value">>},
+            <<"binary_key">> => #{
+                <<"atom_key1">> => <<"binary_value">>,
+                <<"atom_key2">> => <<"42wierd_atom_value">>,
+                <<"atom_key3">> => <<"">>
+            }
+        },
+        RawConf2
+    ).
