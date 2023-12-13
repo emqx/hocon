@@ -112,7 +112,17 @@ gen(M, Opts) when is_map(M) ->
             true -> "";
             false -> ?NL
         end,
-    [gen_map(M, Opts), NL].
+    [gen_map(M, Opts), NL];
+gen(F, #{lazy_evaluator := Evaluator} = Opts) when is_function(F, 0) ->
+    %% a lazy value, e.g. secret data
+    Value = Evaluator(F),
+    gen(Value, Opts);
+gen(Value, Opts) ->
+    throw(#{
+        reason => unsupported_value,
+        value => Value,
+        options => Opts
+    }).
 
 gen_list(L, Opts) ->
     case is_oneliner(L) of
