@@ -995,6 +995,10 @@ ensure_obfuscate_sensitive(Opts, Schema, Val) ->
             Val
     end.
 
+%% Should not replace 'undefined' with "******" because we want to
+%% be able to tell if value existed or not.
+obfuscate(_Schema, undefined) ->
+    undefined;
 obfuscate(Schema, Value) ->
     case field_schema(Schema, sensitive) of
         true -> <<"******">>;
