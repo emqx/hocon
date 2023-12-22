@@ -35,6 +35,7 @@ fields(bar) ->
     [
         {union_with_default, fun union_with_default/1},
         {field1, fun field1/1},
+        {optional_secret, fun optional_secret/1},
         {host, fun host/1}
     ];
 fields(parent) ->
@@ -68,6 +69,12 @@ field1(type) -> string();
 field1(desc) -> "field1 desc";
 field1(sensitive) -> true;
 field1(_) -> undefined.
+
+optional_secret(type) -> string();
+optional_secret(desc) -> "optional secret";
+optional_secret(sensitive) -> true;
+optional_secret(required) -> false;
+optional_secret(_) -> undefined.
 
 host(type) -> string();
 host(required) -> false;
