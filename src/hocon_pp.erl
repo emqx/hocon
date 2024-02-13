@@ -185,19 +185,19 @@ indent_multiline_str(Chars) ->
     Lines = hocon_scanner:split_lines(Chars),
     indent_str_value_lines(Lines).
 
-%% mark each line for indentation with 'indent_multiline_str'
+%% mark each line for indentation with 'indent'
 %% except for empty lines in the middle of the string
 indent_str_value_lines([[]]) ->
     %% last line being empty
     [?NL];
 indent_str_value_lines([LastLine]) ->
     %% last line is not empty
-    [{indent_multiline_str, bin(LastLine)}];
+    [{indent, bin(LastLine)}];
 indent_str_value_lines([[] | Lines]) ->
     %% do not indent empty line
     [<<"\n">> | indent_str_value_lines(Lines)];
 indent_str_value_lines([Line | Lines]) ->
-    [{indent_multiline_str, bin(Line)} | indent_str_value_lines(Lines)].
+    [{indent, bin(Line)} | indent_str_value_lines(Lines)].
 
 gen_list(L, Opts) ->
     case is_oneliner(L) of
@@ -205,20 +205,20 @@ gen_list(L, Opts) ->
             %% one line
             ["[", infix([gen(I, Opts) || I <- L], ", "), "]"];
         false ->
-            do_gen_list(L, Opts)
+            gen_multiline_list(L, Opts)
     end.
 
-do_gen_list([_ | _] = L, Opts) ->
+gen_multiline_list([_ | _] = L, Opts) ->
     [
-        ["[", ?NL],
-        do_gen_list_loop(L, Opts#{no_obj_nl => true}),
+        ["["],
+        gen_multiline_list_loop(L, Opts#{no_obj_nl => true}),
         ["]", ?NL]
     ].
 
-do_gen_list_loop([I], Opts) ->
+gen_multiline_list_loop([I], Opts) ->
     [{indent, gen(I, Opts)}];
-do_gen_list_loop([H | T], Opts) ->
-    [{indent, [gen(H, Opts), ","]} | do_gen_list_loop(T, Opts)].
+gen_multiline_list_loop([H | T], Opts) ->
+    [{indent, [gen(H, Opts), ","]} | gen_multiline_list_loop(T, Opts)].
 
 is_oneliner(L) when is_list(L) ->
     lists:all(fun(X) -> is_number(X) orelse is_binary(X) orelse is_atom(X) end, L);
@@ -228,7 +228,7 @@ is_oneliner(M) when is_map(M) ->
 gen_map(M, Opts) ->
     case is_oneliner(M) of
         true -> ["{", infix(gen_map_fields(M, Opts, ""), ", "), "}"];
-        false -> [["{", ?NL], {indent, gen_map_fields(M, Opts, ?NL)}, "}"]
+        false -> ["{", {indent, gen_map_fields(M, Opts, ?NL)}, [?NL, "}"]]
     end.
 
 gen_map_fields(M, Opts, NL) ->
@@ -297,11 +297,9 @@ fmt(I) when is_integer(I) -> I;
 fmt(B) when is_binary(B) -> B;
 fmt(L) when is_list(L) ->
     bin(lists:map(fun fmt/1, L));
-fmt({indent_multiline_str, Line}) ->
-    bin([?NL, ?INDENT, Line]);
 fmt({indent, Block}) ->
     FormattedBlock = fmt(Block),
-    bin([[?INDENT, Line, ?NL] || Line <- split(FormattedBlock)]).
+    bin([[?NL, ?INDENT, Line] || Line <- split(FormattedBlock)]).
 
 split(Bin) ->
     [Line || Line <- binary:split(Bin, ?NL, [global]), Line =/= <<>>].
