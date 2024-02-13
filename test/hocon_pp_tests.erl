@@ -115,7 +115,7 @@ pp_quote_test() ->
     ok.
 
 multi_line_str_indent_test() ->
-    Struct = #{<<"a">> => #{<<"b">> => #{<<"c">> => "line1\n\nline2\n\nline3"}}},
+    Struct = #{<<"a">> => #{<<"b">> => #{<<"c">> => "line1\n\nline2\n\nline3\n"}}},
     Expected = <<
         "a {\n"
         "  b {\n"
@@ -124,7 +124,8 @@ multi_line_str_indent_test() ->
         "\n"
         "      line2\n"
         "\n"
-        "      line3~\"\"\"\n"
+        "      line3\n"
+        "    ~\"\"\"\n"
         "  }\n"
         "}\n"
     >>,

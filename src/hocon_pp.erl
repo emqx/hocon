@@ -183,16 +183,21 @@ maybe_indent(Chars) ->
 
 indent_multiline_str(Chars) ->
     Lines = hocon_scanner:split_lines(Chars),
-    lists:map(
-        fun
-            ([]) ->
-                %% do not indent empty line
-                <<"\n">>;
-            (Line) ->
-                {indent_multiline_str, bin(Line)}
-        end,
-        Lines
-    ).
+    indent_str_value_lines(Lines).
+
+%% mark each line for indentation with 'indent_multiline_str'
+%% except for empty lines in the middle of the string
+indent_str_value_lines([[]]) ->
+    %% last line being empty
+    [?NL];
+indent_str_value_lines([LastLine]) ->
+    %% last line is not empty
+    [{indent_multiline_str, bin(LastLine)}];
+indent_str_value_lines([[] | Lines]) ->
+    %% do not indent empty line
+    [<<"\n">> | indent_str_value_lines(Lines)];
+indent_str_value_lines([Line | Lines]) ->
+    [{indent_multiline_str, bin(Line)} | indent_str_value_lines(Lines)].
 
 gen_list(L, Opts) ->
     case is_oneliner(L) of

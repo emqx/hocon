@@ -280,14 +280,20 @@ triple_quote_string_test_() ->
         ?_assertEqual(<<"1\n\n2">>, Parse(<<"~\n    1\n    \n    2">>)),
         ?_assertEqual(<<" 1\n\n2">>, Parse(<<"~\n     1\n    \n    2">>)),
         ?_assertEqual(<<" 1\n\n2\n">>, Parse(<<"~\n     1\n    \n    2\n">>)),
+        ?_assertEqual(<<" 1\n\n2\n">>, Parse(<<"~\n     1\n    \n    2\n    ">>)),
+        ?_assertEqual(<<" 1\n\n2\n">>, Parse(<<"~\n     1\n    \n    2\n    ~">>)),
+        ?_assertEqual(<<" 1\n\n2\n ">>, Parse(<<"~\n     1\n    \n    2\n     ~">>)),
         ?_assertEqual(<<"1\"\"\n2">>, Parse(<<"~\n     1\"\"\n     2">>)),
-        %% escape quotes if it's next to """
+        %% must escape quotes if it's next to """
         ?_assertEqual(<<"1\"">>, Parse(<<"1\\\"">>)),
-        %% escape quotes if it's next to """
+        %% must escape quotes if it's next to """
         ?_assertEqual(<<"\"1">>, Parse(<<"\\\"1">>)),
         %% no need to escape quotes unless it's next to """
         ?_assertEqual(<<"1\"2">>, Parse(<<"1\"2">>)),
-        ?_assertEqual(<<"">>, Parse(<<"~\n">>))
+        %% empty string with closing quote in the next line
+        ?_assertEqual(<<"">>, Parse(<<"~\n">>)),
+        %% empty string with indented closing quote in the next line
+        ?_assertEqual(<<"">>, Parse(<<"~\n    ~">>))
     ].
 
 obj_inside_array_test_() ->
