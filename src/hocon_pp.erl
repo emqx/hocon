@@ -21,6 +21,7 @@
 -include("hocon_private.hrl").
 
 -define(INDENT, "  ").
+-define(TRIPLE_QUOTE, <<"\"\"\"">>).
 
 %% @doc Pretty print HOCON value.
 %% Options are:
@@ -99,10 +100,10 @@ gen(Bin, Opts) when is_binary(Bin) ->
 gen(S, Opts) when is_list(S) ->
     case io_lib:printable_latin1_list(S) of
         true ->
-            maybe_quote_latin1_str(S);
+            gen_str(S, latin1);
         false ->
             case io_lib:printable_unicode_list(S) of
-                true -> <<"\"", (format_escape_sequences(S))/binary, "\"">>;
+                true -> gen_str(S, unicode);
                 false -> gen_list(S, Opts)
             end
     end;
@@ -124,26 +125,100 @@ gen(Value, Opts) ->
         options => Opts
     }).
 
+gen_str(S, Codec) ->
+    case is_triple_quote_str(S) of
+        true ->
+            gen_triple_quote_str(S);
+        false ->
+            gen_single_quote_str(S, Codec)
+    end.
+
+%% If a string requires escaping, it is a triple quote string
+%% with one exception: if the string itself contains triple-quote
+is_triple_quote_str(Chars) ->
+    case has_triple_quotes(Chars) of
+        true ->
+            false;
+        false ->
+            lists:any(fun(C) -> esc(C) =/= C end, Chars)
+    end.
+
+%% Return 'true' if there are three consecutive quotes in a string.
+has_triple_quotes(Chars) ->
+    nomatch =/= string:find(Chars, "\"\"\"").
+
+%% If a string has '\n' in it, it's a multiline.
+%% If it has leading or trailing quotes,
+%% it's a multiline -- so that there is no need to escape the quotes.
+is_multiline([]) ->
+    false;
+is_multiline(Chars) ->
+    lists:member($\n, Chars) orelse is_leading_quote(Chars) orelse is_trailling_quote(Chars).
+
+is_leading_quote([$" | _]) -> true;
+is_leading_quote(_) -> false.
+
+is_trailling_quote(Chars) ->
+    is_leading_quote(lists:reverse(Chars)).
+
+gen_single_quote_str(S, latin1) ->
+    maybe_quote_latin1_str(S);
+gen_single_quote_str(S, unicode) ->
+    <<"\"", (format_escape_sequences(S))/binary, "\"">>.
+
+gen_triple_quote_str(Str) ->
+    [
+        ?TRIPLE_QUOTE,
+        maybe_indent(esc_backslashes(Str)),
+        ?TRIPLE_QUOTE
+    ].
+
+maybe_indent(Chars) ->
+    case is_multiline(Chars) of
+        true ->
+            ["~", indent_multiline_str(Chars), "~"];
+        false ->
+            Chars
+    end.
+
+indent_multiline_str(Chars) ->
+    Lines = hocon_scanner:split_lines(Chars),
+    indent_str_value_lines(Lines).
+
+%% mark each line for indentation with 'indent'
+%% except for empty lines in the middle of the string
+indent_str_value_lines([[]]) ->
+    %% last line being empty
+    [?NL];
+indent_str_value_lines([LastLine]) ->
+    %% last line is not empty
+    [{indent, bin(LastLine)}];
+indent_str_value_lines([[] | Lines]) ->
+    %% do not indent empty line
+    [<<"\n">> | indent_str_value_lines(Lines)];
+indent_str_value_lines([Line | Lines]) ->
+    [{indent, bin(Line)} | indent_str_value_lines(Lines)].
+
 gen_list(L, Opts) ->
     case is_oneliner(L) of
         true ->
             %% one line
             ["[", infix([gen(I, Opts) || I <- L], ", "), "]"];
         false ->
-            do_gen_list(L, Opts)
+            gen_multiline_list(L, Opts)
     end.
 
-do_gen_list([_ | _] = L, Opts) ->
+gen_multiline_list([_ | _] = L, Opts) ->
     [
-        ["[", ?NL],
-        do_gen_list_loop(L, Opts#{no_obj_nl => true}),
+        ["["],
+        gen_multiline_list_loop(L, Opts#{no_obj_nl => true}),
         ["]", ?NL]
     ].
 
-do_gen_list_loop([I], Opts) ->
+gen_multiline_list_loop([I], Opts) ->
     [{indent, gen(I, Opts)}];
-do_gen_list_loop([H | T], Opts) ->
-    [{indent, [gen(H, Opts), ","]} | do_gen_list_loop(T, Opts)].
+gen_multiline_list_loop([H | T], Opts) ->
+    [{indent, [gen(H, Opts), ","]} | gen_multiline_list_loop(T, Opts)].
 
 is_oneliner(L) when is_list(L) ->
     lists:all(fun(X) -> is_number(X) orelse is_binary(X) orelse is_atom(X) end, L);
@@ -153,7 +228,7 @@ is_oneliner(M) when is_map(M) ->
 gen_map(M, Opts) ->
     case is_oneliner(M) of
         true -> ["{", infix(gen_map_fields(M, Opts, ""), ", "), "}"];
-        false -> [["{", ?NL], {indent, gen_map_fields(M, Opts, ?NL)}, "}"]
+        false -> ["{", {indent, gen_map_fields(M, Opts, ?NL)}, [?NL, "}"]]
     end.
 
 gen_map_fields(M, Opts, NL) ->
@@ -224,7 +299,7 @@ fmt(L) when is_list(L) ->
     bin(lists:map(fun fmt/1, L));
 fmt({indent, Block}) ->
     FormattedBlock = fmt(Block),
-    bin([[?INDENT, Line, ?NL] || Line <- split(FormattedBlock)]).
+    bin([[?NL, ?INDENT, Line] || Line <- split(FormattedBlock)]).
 
 split(Bin) ->
     [Line || Line <- binary:split(Bin, ?NL, [global]), Line =/= <<>>].
@@ -256,3 +331,9 @@ esc($\") -> "\\\"";
 % \
 esc($\\) -> "\\\\";
 esc(Char) -> Char.
+
+esc_backslashes(Str) ->
+    lists:map(fun esc_backslash/1, Str).
+
+esc_backslash($\\) -> "\\\\";
+esc_backslash(Char) -> Char.

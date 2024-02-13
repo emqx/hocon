@@ -268,8 +268,33 @@ escape_test_() ->
         )
     ].
 
-multiline_string_test_() ->
-    [].
+triple_quote_string_test_() ->
+    Parse = fun(Str) -> maps:get(<<"a">>, binary(<<"a = \"\"\"", Str/binary, "\"\"\"">>)) end,
+    [
+        ?_assertEqual(<<"1">>, Parse(<<"1">>)),
+        ?_assertEqual(<<"1">>, Parse(<<"~\n1~">>)),
+        ?_assertEqual(<<"1\n">>, Parse(<<"~\n1\n~">>)),
+        ?_assertEqual(<<"1\r\n">>, Parse(<<"~\r\n1\r\n">>)),
+        ?_assertEqual(<<"1\n\n2">>, Parse(<<"~\n1\n\n2">>)),
+        ?_assertEqual(<<"1\n\n2">>, Parse(<<"~\n    1\n\n    2">>)),
+        ?_assertEqual(<<"1\n\n2">>, Parse(<<"~\n    1\n    \n    2">>)),
+        ?_assertEqual(<<" 1\n\n2">>, Parse(<<"~\n     1\n    \n    2">>)),
+        ?_assertEqual(<<" 1\n\n2\n">>, Parse(<<"~\n     1\n    \n    2\n">>)),
+        ?_assertEqual(<<" 1\n\n2\n">>, Parse(<<"~\n     1\n    \n    2\n    ">>)),
+        ?_assertEqual(<<" 1\n\n2\n">>, Parse(<<"~\n     1\n    \n    2\n    ~">>)),
+        ?_assertEqual(<<" 1\n\n2\n ">>, Parse(<<"~\n     1\n    \n    2\n     ~">>)),
+        ?_assertEqual(<<"1\"\"\n2">>, Parse(<<"~\n     1\"\"\n     2">>)),
+        %% must escape quotes if it's next to """
+        ?_assertEqual(<<"1\"">>, Parse(<<"1\\\"">>)),
+        %% must escape quotes if it's next to """
+        ?_assertEqual(<<"\"1">>, Parse(<<"\\\"1">>)),
+        %% no need to escape quotes unless it's next to """
+        ?_assertEqual(<<"1\"2">>, Parse(<<"1\"2">>)),
+        %% empty string with closing quote in the next line
+        ?_assertEqual(<<"">>, Parse(<<"~\n">>)),
+        %% empty string with indented closing quote in the next line
+        ?_assertEqual(<<"">>, Parse(<<"~\n    ~">>))
+    ].
 
 obj_inside_array_test_() ->
     [

@@ -81,7 +81,7 @@ Rules.
 {Integer}         : {token, {integer, TokenLine, list_to_integer(TokenChars)}}.
 {Float}           : {token, {float, TokenLine, to_float(TokenChars)}}.
 {String}          : {token, {string, TokenLine, unquote(TokenChars, force_escape)}}.
-{MultilineString} : {token, {string, TokenLine, unquote(TokenChars, allow_unescaped)}}.
+{MultilineString} : {token, {string, TokenLine, unindent(unquote(TokenChars, allow_unescaped))}}.
 {Bytesize}        : {token, {string, TokenLine, TokenChars}}.
 {Percent}         : {token, {string, TokenLine, TokenChars}}.
 {Duration}        : {token, {string, TokenLine, TokenChars}}.
@@ -91,6 +91,8 @@ Rules.
 
 
 Erlang code.
+
+-export([split_lines/1]).
 
 maybe_include("include", TokenLine)  -> {include, TokenLine};
 maybe_include(TokenChars, TokenLine) -> {unqstr, TokenLine, TokenChars}.
@@ -110,6 +112,68 @@ strip_surrounded_quotes([$" | Rem]) ->
     lists:reverse(strip_surrounded_quotes(lists:reverse(Rem)));
 strip_surrounded_quotes(Str) ->
     Str.
+
+unindent([$~, $\r, $\n | Chars]) ->
+    do_unindent(Chars);
+unindent([$~, $\n | Chars]) ->
+    do_unindent(Chars);
+unindent(Chars) ->
+    Chars.
+
+do_unindent(Chars) ->
+    Lines = split_lines(Chars),
+    Indent = min_indent(Lines),
+    NewLines = lists:map(fun(Line) -> trim_indents(Line, Indent) end, Lines),
+    lists:flatten(lists:join($\n, NewLines)).
+
+split_lines(Chars) ->
+    split_lines(Chars, "", []).
+
+%% Split multiline strings like
+%% """~
+%%    line1
+%%    line2
+%% ~"""
+%% into ["line1\n", "line2\n"]
+split_lines([], LastLineR, Lines) ->
+    %% if the last line ends with '-' drop it
+    LastLine = case LastLineR of
+        [$~ | Rest] ->
+            lists:reverse(Rest);
+        _ ->
+            lists:reverse(LastLineR)
+    end,
+    lists:reverse([LastLine | Lines]);
+split_lines([$\n | Chars], Line, Lines) ->
+    split_lines(Chars, [], [lists:reverse(Line) | Lines]);
+split_lines([Char | Chars], Line, Lines) ->
+    split_lines(Chars, [Char | Line], Lines).
+
+min_indent(Lines) ->
+    Indents0 = lists:map(fun indent_level/1, Lines),
+    case lists:filter(fun erlang:is_integer/1, Indents0) of
+        [] ->
+            0;
+        Indents ->
+            lists:min(Indents)
+    end.
+
+indent_level("") ->
+    ignore;
+indent_level(Line) ->
+    indent_level(Line, 0).
+
+indent_level([$\s | Chars], Count) ->
+    indent_level(Chars, Count + 1);
+indent_level(_, Count) ->
+    Count.
+
+trim_indents([], _Indent) ->
+    [];
+trim_indents(Chars, 0) ->
+    Chars;
+trim_indents([$\s | Chars], Indent) when Indent > 0 ->
+    trim_indents(Chars, Indent - 1).
 
 % the first clause is commented out on purpose
 % meaning below two escape sequence (in a hocon file)
