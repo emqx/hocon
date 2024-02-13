@@ -65,16 +65,6 @@ do(File) ->
     ?assertEqual(Conf, Conf3),
     file:delete(TmpFile).
 
-pp_escape_to_file_test() ->
-    File = "etc/unescape.conf",
-    {ok, Conf} = hocon:load(File),
-    PP = hocon_pp:do(Conf, #{}),
-    TmpFile = File ++ ".pp",
-    file:write_file(TmpFile, [PP]),
-    ?assertEqual(file:read_file(File), file:read_file(TmpFile)),
-    file:delete(TmpFile),
-    ok.
-
 pp_quote_test() ->
     Fun = fun(Map, ExpectBin) ->
         Bin = iolist_to_binary(hocon_pp:do(Map, #{})),
@@ -100,14 +90,15 @@ pp_quote_test() ->
     Fun(#{<<"$d_dfdk2f">> => <<"12">>}, <<"\"$d_dfdk2f\" = \"12\"\n">>),
 
     %% backslash
-    Fun(#{<<"test_backslash">> => <<"\\emqx">>}, <<"test_backslash = \"\\\\emqx\"\n">>),
-    Fun(#{<<"test_backslash">> => <<"emqx\\emqx">>}, <<"test_backslash = \"emqx\\\\emqx\"\n">>),
-    Fun(#{<<"test_backslash">> => <<"emqx\\">>}, <<"test_backslash = \"emqx\\\\\"\n">>),
+    Fun(#{<<"a">> => <<"\\emqx">>}, <<"a = \"\"\"\\\\emqx\"\"\"\n">>),
+    Fun(#{<<"b">> => <<"emqx\\emqx">>}, <<"b = \"\"\"emqx\\\\emqx\"\"\"\n">>),
+    Fun(#{<<"c">> => <<"emqx\\">>}, <<"c = \"\"\"emqx\\\\\"\"\"\n">>),
 
     %% quote
-    Fun(#{<<"test_quote">> => <<"\"emqx">>}, <<"test_quote = \"\\\"emqx\"\n">>),
-    Fun(#{<<"test_quote">> => <<"emqx\"emqx">>}, <<"test_quote = \"emqx\\\"emqx\"\n">>),
-    Fun(#{<<"test_quote">> => <<"emqx\"">>}, <<"test_quote = \"emqx\\\"\"\n">>),
+    Fun(#{<<"A">> => <<"\"emqx">>}, <<"A = \"\"\"~\n  \"emqx~\"\"\"\n">>),
+    Fun(#{<<"B">> => <<"emqx\"emqx">>}, <<"B = \"\"\"emqx\"emqx\"\"\"\n">>),
+    Fun(#{<<"C">> => <<"emqx\"">>}, <<"C = \"\"\"~\n  emqx\"~\"\"\"\n">>),
+    Fun(#{<<"D">> => <<"emqx\"\"\"">>}, <<"D = \"emqx\\\"\\\"\\\"\"\n">>),
 
     %% '${}[]:=,+#`^?!@*& ' should quote
     lists:foreach(
@@ -115,12 +106,29 @@ pp_quote_test() ->
             Header = list_to_binary([Char | "emqx"]),
             Tail = list_to_binary("emqx" ++ [Char]),
             Middle = <<Tail/binary, "emqx">>,
-            Fun(#{<<"test_key">> => Header}, <<"test_key = \"", Header/binary, "\"\n">>),
-            Fun(#{<<"test_key">> => Tail}, <<"test_key = \"", Tail/binary, "\"\n">>),
-            Fun(#{<<"test_key">> => Middle}, <<"test_key = \"", Middle/binary, "\"\n">>)
+            Fun(#{<<"D">> => Header}, <<"D = \"", Header/binary, "\"\n">>),
+            Fun(#{<<"E">> => Tail}, <<"E = \"", Tail/binary, "\"\n">>),
+            Fun(#{<<"F">> => Middle}, <<"F = \"", Middle/binary, "\"\n">>)
         end,
         "'${}[]:=,+#`^?!@*& "
     ),
+    ok.
+
+multi_line_str_indent_test() ->
+    Struct = #{<<"a">> => #{<<"b">> => #{<<"c">> => "line1\n\nline2\n\nline3"}}},
+    Expected = <<
+        "a {\n"
+        "  b {\n"
+        "    c = \"\"\"~\n"
+        "      line1\n"
+        "\n"
+        "      line2\n"
+        "\n"
+        "      line3~\"\"\"\n"
+        "  }\n"
+        "}\n"
+    >>,
+    ?assertEqual(Expected, iolist_to_binary(hocon_pp:do(Struct, #{}))),
     ok.
 
 load_file_pp_test() ->

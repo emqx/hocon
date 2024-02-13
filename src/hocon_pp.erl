@@ -21,6 +21,7 @@
 -include("hocon_private.hrl").
 
 -define(INDENT, "  ").
+-define(TRIPLE_QUOTE, <<"\"\"\"">>).
 
 %% @doc Pretty print HOCON value.
 %% Options are:
@@ -99,10 +100,10 @@ gen(Bin, Opts) when is_binary(Bin) ->
 gen(S, Opts) when is_list(S) ->
     case io_lib:printable_latin1_list(S) of
         true ->
-            maybe_quote_latin1_str(S);
+            gen_str(S, latin1);
         false ->
             case io_lib:printable_unicode_list(S) of
-                true -> <<"\"", (format_escape_sequences(S))/binary, "\"">>;
+                true -> gen_str(S, unicode);
                 false -> gen_list(S, Opts)
             end
     end;
@@ -123,6 +124,75 @@ gen(Value, Opts) ->
         value => Value,
         options => Opts
     }).
+
+gen_str(S, Codec) ->
+    case is_triple_quote_str(S) of
+        true ->
+            gen_triple_quote_str(S);
+        false ->
+            gen_single_quote_str(S, Codec)
+    end.
+
+%% If a string requires escaping, it is a triple quote string
+%% with one exception: if the string itself contains triple-quote
+is_triple_quote_str(Chars) ->
+    case has_triple_quotes(Chars) of
+        true ->
+            false;
+        false ->
+            lists:any(fun(C) -> esc(C) =/= C end, Chars)
+    end.
+
+%% Return 'true' if there are three consecutive quotes in a string.
+has_triple_quotes(Chars) ->
+    nomatch =/= string:find(Chars, "\"\"\"").
+
+%% If a string has '\n' in it, it's a multiline.
+%% If it has leading or trailing quotes,
+%% it's a multiline -- so that there is no need to escape the quotes.
+is_multiline([]) ->
+    false;
+is_multiline(Chars) ->
+    lists:member($\n, Chars) orelse is_leading_quote(Chars) orelse is_trailling_quote(Chars).
+
+is_leading_quote([$" | _]) -> true;
+is_leading_quote(_) -> false.
+
+is_trailling_quote(Chars) ->
+    is_leading_quote(lists:reverse(Chars)).
+
+gen_single_quote_str(S, latin1) ->
+    maybe_quote_latin1_str(S);
+gen_single_quote_str(S, unicode) ->
+    <<"\"", (format_escape_sequences(S))/binary, "\"">>.
+
+gen_triple_quote_str(Str) ->
+    [
+        ?TRIPLE_QUOTE,
+        maybe_indent(esc_backslashes(Str)),
+        ?TRIPLE_QUOTE
+    ].
+
+maybe_indent(Chars) ->
+    case is_multiline(Chars) of
+        true ->
+            ["~", indent_multiline_str(Chars), "~"];
+        false ->
+            Chars
+    end.
+
+indent_multiline_str(Chars) ->
+    Lines = hocon_scanner:split_lines(Chars),
+    lists:map(
+        fun
+            ([]) ->
+                %% do not indent empty line
+                <<"\n">>;
+            (Line) ->
+                {indent_multiline_str, bin(Line)}
+        end,
+        Lines
+    ).
 
 gen_list(L, Opts) ->
     case is_oneliner(L) of
@@ -222,6 +292,8 @@ fmt(I) when is_integer(I) -> I;
 fmt(B) when is_binary(B) -> B;
 fmt(L) when is_list(L) ->
     bin(lists:map(fun fmt/1, L));
+fmt({indent_multiline_str, Line}) ->
+    bin([?NL, ?INDENT, Line]);
 fmt({indent, Block}) ->
     FormattedBlock = fmt(Block),
     bin([[?INDENT, Line, ?NL] || Line <- split(FormattedBlock)]).
@@ -256,3 +328,9 @@ esc($\") -> "\\\"";
 % \
 esc($\\) -> "\\\\";
 esc(Char) -> Char.
+
+esc_backslashes(Str) ->
+    lists:map(fun esc_backslash/1, Str).
+
+esc_backslash($\\) -> "\\\\";
+esc_backslash(Char) -> Char.
