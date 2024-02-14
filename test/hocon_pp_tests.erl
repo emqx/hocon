@@ -333,3 +333,28 @@ no_triple_quote_string_when_oneliner_test_() ->
         ),
         ?_assertEqual([<<"root {a = \"a\\nb\"}">>], hocon_pp:do(Value, #{newline => <<>>}))
     ].
+
+crlf_multiline_test_() ->
+    Value = #{<<"root">> => #{<<"x">> => <<"\r\n\r\na\r\nb\n">>}},
+    CRLF = <<"\r\n">>,
+    IndentCRLF = <<"    \r\n">>,
+    Hocon = fun(NewLine) ->
+        [
+            <<"root {\r\n">>,
+            <<"  x = \"\"\"~\r\n">>,
+            NewLine,
+            NewLine,
+            <<"    a\r\n">>,
+            %% the last newline is just \n, should not be replaced
+            <<"    b\n">>,
+            <<"  ~\"\"\"\r\n">>,
+            <<"}\r\n">>
+        ]
+    end,
+    Expected = Hocon(CRLF),
+    Variant = Hocon(IndentCRLF),
+    [
+        ?_assertEqual(Expected, hocon_pp:do(Value, #{newline => "\r\n"})),
+        ?_assertEqual({ok, Value}, hocon:binary(Expected)),
+        ?_assertEqual({ok, Value}, hocon:binary(Variant))
+    ].

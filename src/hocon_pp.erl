@@ -20,7 +20,12 @@
 
 -include("hocon_private.hrl").
 
+%% either '\n' or '\r\n' depending on the `newline` option in the `Opts` map.
 -define(NL, newline).
+%% '\n' for triple quote string, not used anywhere else.
+-define(LF, lf).
+%% '\r\n' for triple quote string, not used anywhere else.
+-define(CRLF, crlf).
 -define(TRIPLE_QUOTE, <<"\"\"\"">>).
 -define(INDENT_STEP, 2).
 
@@ -179,31 +184,51 @@ gen_triple_quote_str(Str, Opts) ->
 maybe_indent(Chars, Opts) ->
     case is_multiline(Chars) of
         true ->
-            ["~", indent_multiline_str(Chars, indent_inc(Opts)), "~"];
+            ["~", ?NL, indent_multiline_str(Chars, indent_inc(Opts)), "~"];
         false ->
             Chars
     end.
 
 indent_multiline_str(Chars, Opts) ->
-    Lines = hocon_scanner:split_lines(Chars),
+    Lines = split_lines(Chars),
     indent_str_value_lines(Lines, Opts).
+
+%% Split the lines with '\n' and and remove the trailing '\n' from each line.
+%% Keep '\r' as a a part of the line because `\n` will be added back.
+split_lines(Chars) ->
+    split_lines(Chars, [], []).
+
+split_lines([], LastLineR, Lines) ->
+    LastLine = lists:reverse(LastLineR),
+    lists:reverse([LastLine | Lines]);
+split_lines([$\n | Chars], Line, Lines) ->
+    split_lines(Chars, [], [lists:reverse(Line) | Lines]);
+split_lines([Char | Chars], Line, Lines) ->
+    split_lines(Chars, [Char | Line], Lines).
 
 real_nl() ->
     io_lib:nl().
 
-%% mark each line for indentation with 'indent'
-%% except for empty lines in the middle of the string
+%% Mark each line for indentation with 'indent'
+%% except for empty lines in the middle of the string.
+%% Insert '\n', but not real_nl() because '\r' is treated as value when splitted.
 indent_str_value_lines([[]], Opts) ->
-    %% last line being empty, no need to indent
-    [nl_indent(indent_dec(Opts))];
-indent_str_value_lines([LastLine], Opts) ->
-    %% last line is not empty
-    [nl_indent(Opts), (bin(LastLine))];
+    %% last line being empty, indent less for the closing triple-quote
+    [indent(indent_dec(Opts))];
+indent_str_value_lines([[$\r]], Opts) ->
+    %% last line being empty, indent less for the closing triple-quote
+    [indent(indent_dec(Opts))];
 indent_str_value_lines([[] | Lines], Opts) ->
     %% do not indent empty line
-    [real_nl() | indent_str_value_lines(Lines, Opts)];
+    [?LF | indent_str_value_lines(Lines, Opts)];
+indent_str_value_lines([[$\r] | Lines], Opts) ->
+    %% do not indent empty line
+    [?CRLF | indent_str_value_lines(Lines, Opts)];
+indent_str_value_lines([LastLine], Opts) ->
+    %% last line is not empty
+    [indent(Opts), LastLine];
 indent_str_value_lines([Line | Lines], Opts) ->
-    [nl_indent(Opts), (bin(Line)) | indent_str_value_lines(Lines, Opts)].
+    [indent(Opts), Line, ?LF | indent_str_value_lines(Lines, Opts)].
 
 gen_list(L, Opts) ->
     case is_oneliner(L, Opts) of
@@ -352,6 +377,12 @@ opts_nl(Opts) ->
 
 render_nl([], LastLine, Lines, _NL) ->
     lists:reverse(add_line_r(lists:reverse(LastLine), Lines));
+render_nl([?CRLF | Rest], Line0, Lines, NL) ->
+    Line = lists:reverse([$\n, $\r | Line0]),
+    render_nl(Rest, [], add_line_r(Line, Lines), NL);
+render_nl([?LF | Rest], Line0, Lines, NL) ->
+    Line = lists:reverse([$\n | Line0]),
+    render_nl(Rest, [], add_line_r(Line, Lines), NL);
 render_nl([?NL | Rest], Line0, Lines, NL) ->
     Line = lists:reverse([NL | Line0]),
     render_nl(Rest, [], add_line_r(Line, Lines), NL);
@@ -373,6 +404,10 @@ flatten([B | T]) when is_binary(B) ->
     [B | flatten(T)];
 flatten([L | T]) when is_list(L) ->
     flatten(L ++ T);
+flatten([?CRLF | T]) ->
+    [?CRLF | flatten(T)];
+flatten([?LF | T]) ->
+    [?LF | flatten(T)];
 flatten([?NL | T]) ->
     [?NL | dedup_nl(flatten(T))];
 flatten(B) when is_binary(B) ->

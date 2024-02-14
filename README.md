@@ -31,13 +31,14 @@ HOCON spec for reference: https://lightbend.github.io/config/
     * Or add `~` around the string value: `"""~a"~"""` (see below).
 - Multiline strings allow indentation (spaces, not tabs).
   If `~\n` (or `~\r\n`) are the only characters following the opening triple-quote, then it's a multiline string with indentation:
-    * The first line `~\n` is ignored;
-    * The indentation spaces of the following lines are trimed;
+    * The first line `~\n` is discarded;
+    * The closing triple-quote can be either `"""` or `~"""` (`~` allows the string to end with `"` without escaping).
     * Indentation is allowed but not required for empty lines;
     * Indentation level is determined by the least number of leading spaces among the non-empty lines;
+    * If the closing triple-quote takes the whole line, it's allowed to be indented less than other lines,
+      but if it's indented more than other lines, the spaces are treated as part of the string.
     * Backslashes are treated as escape characters, i.e. should be escaped with another backslash;
-    * There is no need to escape quotes in multiline strings, but it's allowed;
-    * The closing triple-quote can be either `"""` or `~"""` (`~` allows the string to end with `"` without escaping).
+    * There is no need to escape quotes in multiline strings, but it's allowed.
 
 ## Schema
 
