@@ -92,8 +92,6 @@ Rules.
 
 Erlang code.
 
--export([split_lines/1]).
-
 maybe_include("include", TokenLine)  -> {include, TokenLine};
 maybe_include(TokenChars, TokenLine) -> {unqstr, TokenLine, TokenChars}.
 
@@ -136,7 +134,7 @@ split_lines(Chars) ->
 %% ~"""
 %% into ["line1\n", "line2\n"]
 split_lines([], LastLineR, Lines) ->
-    %% if the last line ends with '-' drop it
+    %% if the last line ends with '~' drop it
     LastLine = case LastLineR of
         [$~ | Rest] ->
             lists:reverse(Rest);
@@ -149,16 +147,35 @@ split_lines([$\n | Chars], Line, Lines) ->
 split_lines([Char | Chars], Line, Lines) ->
     split_lines(Chars, [Char | Line], Lines).
 
-min_indent(Lines) ->
+min_indent([LastLine]) ->
+    case indent_level(LastLine) of
+        ignore ->
+            0;
+        Indent ->
+            Indent
+    end;
+min_indent(Lines0) ->
+    [LastLine | Lines] = lists:reverse(Lines0),
+    LastLineIndent = indent_level(LastLine),
     Indents0 = lists:map(fun indent_level/1, Lines),
-    case lists:filter(fun erlang:is_integer/1, Indents0) of
+    MinIndent = case lists:filter(fun erlang:is_integer/1, Indents0) of
         [] ->
             0;
         Indents ->
             lists:min(Indents)
+    end,
+    %% If last line is all space, use the minimum indent of the preceding lines,
+    %% because the last line is allowed to indent less than other lines.
+    case LastLine =/= [] andalso lists:all(fun(I) -> I =:= $\s end, LastLine) of
+        true ->
+            MinIndent;
+        false ->
+            min(LastLineIndent, MinIndent)
     end.
 
-indent_level("") ->
+indent_level([]) ->
+    ignore;
+indent_level([$\r]) ->
     ignore;
 indent_level(Line) ->
     indent_level(Line, 0).
@@ -170,6 +187,8 @@ indent_level(_, Count) ->
 
 trim_indents([], _Indent) ->
     [];
+trim_indents([$\r], _Indent) ->
+    [$\r];
 trim_indents(Chars, 0) ->
     Chars;
 trim_indents([$\s | Chars], Indent) when Indent > 0 ->

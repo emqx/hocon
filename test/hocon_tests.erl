@@ -293,7 +293,11 @@ triple_quote_string_test_() ->
         %% empty string with closing quote in the next line
         ?_assertEqual(<<"">>, Parse(<<"~\n">>)),
         %% empty string with indented closing quote in the next line
-        ?_assertEqual(<<"">>, Parse(<<"~\n    ~">>))
+        ?_assertEqual(<<"">>, Parse(<<"~\n    ~">>)),
+        %% last line is space only, must indent more than other non-space-only lines
+        ?_assertEqual(<<"a\n  ">>, Parse(<<"~\n  a\n    ~">>)),
+        %% last line is space only, ignored if it indents less than other non-space-only lines
+        ?_assertEqual(<<"a\n">>, Parse(<<"~\n    a\n  ~">>))
     ].
 
 obj_inside_array_test_() ->
