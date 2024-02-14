@@ -9,8 +9,9 @@
 
 -reflect_type([endpoint/0, verify/0]).
 
--export([roots/0, fields/1, translations/0, translation/1]).
+-export([roots/0, fields/1, translations/0, translation/1, namespace/0]).
 
+namespace() -> "management".
 roots() -> ["management"].
 
 fields("management") ->

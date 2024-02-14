@@ -74,7 +74,6 @@
 -callback tags() -> [tag()].
 
 -optional_callbacks([
-    roots/0,
     translations/0,
     translation/1,
     validations/0,
@@ -226,10 +225,7 @@ override(Base, OnTop) ->
 namespace(Schema) ->
     case is_atom(Schema) of
         true ->
-            case erlang:function_exported(Schema, namespace, 0) of
-                true -> Schema:namespace();
-                false -> undefined
-            end;
+            Schema:namespace();
         false ->
             maps:get(namespace, Schema, undefined)
     end.
