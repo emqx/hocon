@@ -115,7 +115,16 @@ pp_quote_test() ->
     ok.
 
 multi_line_str_indent_test() ->
-    Struct = #{<<"a">> => #{<<"b">> => #{<<"c">> => "line1\n\nline2\n\nline3\n"}}},
+    Struct = #{
+        <<"a">> => #{
+            <<"b">> => #{
+                <<"c">> => <<"line1\n\nline2\n\nline3\n">>,
+                <<"d">> => 1
+            },
+            <<"e">> => 2,
+            <<"emptystring">> => <<>>
+        }
+    },
     Expected = <<
         "a {\n"
         "  b {\n"
@@ -126,8 +135,39 @@ multi_line_str_indent_test() ->
         "\n"
         "      line3\n"
         "    ~\"\"\"\n"
+        "    d = 1\n"
         "  }\n"
+        "  e = 2\n"
+        "  emptystring = \"\"\n"
         "}\n"
+    >>,
+    ?assertEqual(Expected, iolist_to_binary(hocon_pp:do(Struct, #{}))),
+    ok.
+
+array_elements_indent_test() ->
+    Struct = #{
+        <<"a">> => [
+            #{
+                <<"b">> => #{
+                    <<"c">> => <<"not a simple string because of '#'">>,
+                    <<"d">> => 1
+                }
+            },
+            #{<<"e">> => 2}
+        ],
+        <<"b">> => <<"x">>
+    },
+    Expected = <<
+        "a = [\n"
+        "  {\n"
+        "    b {\n"
+        "      c = \"not a simple string because of '#'\"\n"
+        "      d = 1\n"
+        "    }\n"
+        "  },\n"
+        "  {e = 2}\n"
+        "]\n"
+        "b = x\n"
     >>,
     ?assertEqual(Expected, iolist_to_binary(hocon_pp:do(Struct, #{}))),
     ok.
