@@ -24,6 +24,8 @@
 -define(TRIPLE_QUOTE, <<"\"\"\"">>).
 -define(INDENT_STEP, 2).
 
+-type line() :: binary().
+
 %% @doc Pretty print HOCON value.
 %% Options are:
 %% `embedded': boolean, to indicate if the given value is an embedded part
@@ -34,7 +36,9 @@
 %%
 %% `no_obj_nl': boolean, default to `false'. When set to `true' no new line
 %% is added after objects.
--spec do(term(), map()) -> iodata().
+%%
+%% Return a list of binary strings, each list element is a line.
+-spec do(term(), map()) -> [line()].
 do(Value, Opts0) when is_map(Value) ->
     Opts = Opts0#{indent => 0},
     %% Root level map should not have outer '{' '}' pair
@@ -60,7 +64,7 @@ pp_flat([]) ->
     [];
 pp_flat([{Path, Value} | Rest]) ->
     [
-        [Path, " = ", pp_flat_value(Value), "\n"]
+        [Path, " = ", pp_flat_value(Value), real_nl()]
         | pp_flat(Rest)
     ].
 
@@ -125,7 +129,7 @@ gen(Value, Opts) ->
     }).
 
 gen_str(S, Codec, Opts) ->
-    case is_triple_quote_str(S) of
+    case (not is_oneliner_opt(Opts)) andalso is_triple_quote_str(S) of
         true ->
             gen_triple_quote_str(S, Opts);
         false ->
@@ -184,6 +188,9 @@ indent_multiline_str(Chars, Opts) ->
     Lines = hocon_scanner:split_lines(Chars),
     indent_str_value_lines(Lines, Opts).
 
+real_nl() ->
+    io_lib:nl().
+
 %% mark each line for indentation with 'indent'
 %% except for empty lines in the middle of the string
 indent_str_value_lines([[]], Opts) ->
@@ -194,12 +201,12 @@ indent_str_value_lines([LastLine], Opts) ->
     [nl_indent(Opts), (bin(LastLine))];
 indent_str_value_lines([[] | Lines], Opts) ->
     %% do not indent empty line
-    [<<"\n">> | indent_str_value_lines(Lines, Opts)];
+    [real_nl() | indent_str_value_lines(Lines, Opts)];
 indent_str_value_lines([Line | Lines], Opts) ->
     [nl_indent(Opts), (bin(Line)) | indent_str_value_lines(Lines, Opts)].
 
 gen_list(L, Opts) ->
-    case is_oneliner(L) of
+    case is_oneliner(L, Opts) of
         true ->
             %% one line
             ["[", infix([gen(I, Opts) || I <- L], ", "), "]"];
@@ -219,25 +226,43 @@ gen_multiline_list_loop([I], Opts) ->
 gen_multiline_list_loop([H | T], Opts) ->
     [nl_indent(Opts), gen(H, Opts), "," | gen_multiline_list_loop(T, Opts)].
 
+is_oneliner_opt(Opts) ->
+    NL = opts_nl(Opts),
+    NL =:= "" orelse NL =:= <<>>.
+
+is_oneliner(Value, Opts) ->
+    is_oneliner_opt(Opts) orelse is_oneliner(Value).
+
 is_oneliner(L) when is_list(L) ->
-    lists:all(fun(X) -> is_number(X) orelse is_simple_string(X) orelse is_atom(X) end, L);
+    lists:all(
+        fun(X) ->
+            is_number(X) orelse
+                is_atom(X) orelse
+                is_simple_short_string(X)
+        end,
+        L
+    );
 is_oneliner(M) when is_map(M) ->
     maps:size(M) < 3 andalso is_oneliner(maps:values(M)).
 
-%% contain $"{}[]:=,+#`^?!@*& \\ should be quoted
-is_simple_string(Str) ->
+is_simple_short_string(X) ->
     try
-        case re:run(Str, "^[^$\"{}\\[\\]:=,+#`\\^?!@*&\\ \\\\\n]*$") of
-            nomatch -> false;
-            _ -> true
-        end
+        Str = bin(X),
+        size(Str) =< 40 andalso is_simple_string(Str)
     catch
         _:_ ->
             false
     end.
 
+%% contain $"{}[]:=,+#`^?!@*& \\ should be quoted
+is_simple_string(Str) ->
+    case re:run(Str, "^[^$\"{}\\[\\]:=,+#`\\^?!@*&\\ \\\\\n]*$") of
+        nomatch -> false;
+        _ -> true
+    end.
+
 gen_map(M, Opts) ->
-    case is_oneliner(M) of
+    case is_oneliner(M, Opts) of
         true ->
             ["{", infix(gen_map_fields(M, Opts, oneline), ", "), "}"];
         false ->
@@ -251,11 +276,15 @@ gen_map(M, Opts) ->
     end.
 
 gen_map_fields(M, Opts, oneline) ->
-    [gen_map_field(K, V, Opts) || {K, V} <- maps:to_list(M)];
+    [gen_map_field(K, V, Opts) || {K, V} <- map_to_list(M)];
 gen_map_fields(M, Opts, multiline) ->
-    Fields = maps:to_list(M),
+    Fields = map_to_list(M),
     F = fun({K, V}) -> [indent(Opts), gen_map_field(K, V, Opts), ?NL] end,
     lists:map(F, Fields).
+
+%% sort the map fields by key
+map_to_list(M) ->
+    lists:keysort(1, [{bin(K), V} || {K, V} <- maps:to_list(M)]).
 
 gen_map_field(K, V, Opts) when is_map(V) ->
     [maybe_quote_key(K), " ", gen(V, Opts)];
@@ -304,6 +333,8 @@ maybe_quote_latin1_str(S) ->
         false -> S
     end.
 
+bin(A) when is_atom(A) ->
+    atom_to_binary(A);
 bin(IoData) ->
     try unicode:characters_to_binary(IoData, utf8) of
         Bin when is_binary(Bin) -> Bin;
@@ -313,27 +344,38 @@ bin(IoData) ->
     end.
 
 fmt(Tokens, Opts) ->
-    NewLine = maps:get(newline, Opts, $\n),
-    Flat = flatten(Tokens, 2),
-    lists:map(
-        fun
-            (?NL) -> NewLine;
-            (X) -> X
-        end,
-        Flat
-    ).
+    Flatten = flatten(Tokens),
+    render_nl(Flatten, [], [], opts_nl(Opts)).
 
-flatten([], _Indent) ->
+opts_nl(Opts) ->
+    maps:get(newline, Opts, real_nl()).
+
+render_nl([], LastLine, Lines, _NL) ->
+    lists:reverse(add_line_r(lists:reverse(LastLine), Lines));
+render_nl([?NL | Rest], Line0, Lines, NL) ->
+    Line = lists:reverse([NL | Line0]),
+    render_nl(Rest, [], add_line_r(Line, Lines), NL);
+render_nl([Token | Rest], Line, Lines, NL) ->
+    render_nl(Rest, [Token | Line], Lines, NL).
+
+add_line_r(Line, Lines) when is_list(Line) ->
+    add_line_r(bin(Line), Lines);
+add_line_r(<<>>, Lines) ->
+    Lines;
+add_line_r(Line, Lines) ->
+    [Line | Lines].
+
+flatten([]) ->
     [];
-flatten([I | T], Indent) when is_integer(I) ->
-    [I | flatten(T, Indent)];
-flatten([B | T], Indent) when is_binary(B) ->
-    [B | flatten(T, Indent)];
-flatten([L | T], Indent) when is_list(L) ->
-    flatten(L ++ T, Indent);
-flatten([?NL | T], Indent) ->
-    dedup_nl([?NL | flatten(T, Indent)]);
-flatten(B, _Indent) when is_binary(B) ->
+flatten([I | T]) when is_integer(I) ->
+    [I | flatten(T)];
+flatten([B | T]) when is_binary(B) ->
+    [B | flatten(T)];
+flatten([L | T]) when is_list(L) ->
+    flatten(L ++ T);
+flatten([?NL | T]) ->
+    [?NL | dedup_nl(flatten(T))];
+flatten(B) when is_binary(B) ->
     [B].
 
 indent_dec(#{indent := Level} = Opts) ->
@@ -355,8 +397,8 @@ nl_indent(Level) ->
     [?NL, indent(Level)].
 
 %% The inserted ?NL tokens might be redundant due to the lack of "look ahead" when generating.
-dedup_nl([?NL, ?NL | T]) ->
-    dedup_nl([?NL | T]);
+dedup_nl([?NL | T]) ->
+    dedup_nl(T);
 dedup_nl(Tokens) ->
     Tokens.
 
