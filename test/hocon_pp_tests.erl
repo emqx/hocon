@@ -317,3 +317,19 @@ long_string_makes_multiline_map_test_() ->
         ),
         ?_assertEqual([<<"root {a = ", ShortString/binary, ", b = 1}\n">>], PP(Value2))
     ].
+
+no_triple_quote_string_when_oneliner_test_() ->
+    Value = #{root => #{<<"a">> => <<"a\nb">>}},
+    [
+        ?_assertEqual(
+            [
+                <<"root {\n">>,
+                <<"  a = \"\"\"~\n">>,
+                <<"    a\n">>,
+                <<"    b~\"\"\"\n">>,
+                <<"}\n">>
+            ],
+            hocon_pp:do(Value, #{})
+        ),
+        ?_assertEqual([<<"root {a = \"a\\nb\"}">>], hocon_pp:do(Value, #{newline => <<>>}))
+    ].

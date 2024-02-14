@@ -129,7 +129,7 @@ gen(Value, Opts) ->
     }).
 
 gen_str(S, Codec, Opts) ->
-    case is_triple_quote_str(S) of
+    case (not is_oneliner_opt(Opts)) andalso is_triple_quote_str(S) of
         true ->
             gen_triple_quote_str(S, Opts);
         false ->
@@ -226,8 +226,12 @@ gen_multiline_list_loop([I], Opts) ->
 gen_multiline_list_loop([H | T], Opts) ->
     [nl_indent(Opts), gen(H, Opts), "," | gen_multiline_list_loop(T, Opts)].
 
+is_oneliner_opt(Opts) ->
+    NL = opts_nl(Opts),
+    NL =:= "" orelse NL =:= <<>>.
+
 is_oneliner(Value, Opts) ->
-    bin(opts_nl(Opts)) =:= <<>> orelse is_oneliner(Value).
+    is_oneliner_opt(Opts) orelse is_oneliner(Value).
 
 is_oneliner(L) when is_list(L) ->
     lists:all(
