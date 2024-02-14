@@ -171,10 +171,8 @@ examples(FieldSchema) ->
 fmt_default(undefined) ->
     undefined;
 fmt_default(Value) ->
-    case hocon_pp:do(Value, #{newline => "", embedded => true}) of
-        [OneLine] -> #{oneliner => true, hocon => bin(OneLine)};
-        Lines -> #{oneliner => false, hocon => bin([[L, "\n"] || L <- Lines])}
-    end.
+    OneLine = hocon_pp:do(Value, #{newline => "", embedded => true}),
+    #{oneliner => true, hocon => bin(OneLine)}.
 
 fmt_type(Ns, T) ->
     hocon_schema:fmt_type(Ns, T).

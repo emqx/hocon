@@ -291,3 +291,29 @@ wrap_value_test() ->
         },
         RawConf2
     ).
+
+oneliner_test_() ->
+    PP = fun(Value) -> hocon_pp:do(Value, #{newline => "", embedded => true}) end,
+    [
+        ?_assertEqual([<<"{a = 1, b = 2, c = 3, d = 4}">>], PP(#{a => 1, b => 2, c => 3, d => 4})),
+        ?_assertEqual([<<"{a = [1, 2, 3, 4]}">>], PP(#{a => [1, 2, 3, 4]}))
+    ].
+
+long_string_makes_multiline_map_test_() ->
+    LongString = iolist_to_binary(lists:duplicate(100, <<"b">>)),
+    ShortString = iolist_to_binary(lists:duplicate(40, <<"b">>)),
+    Value1 = #{<<"a">> => LongString, b => 1},
+    Value2 = #{<<"a">> => ShortString, b => 1},
+    PP = fun(V) -> hocon_pp:do(#{root => V}, #{}) end,
+    [
+        ?_assertEqual(
+            [
+                <<"root {\n">>,
+                <<"  a = ", LongString/binary, "\n">>,
+                <<"  b = 1\n">>,
+                <<"}\n">>
+            ],
+            PP(Value1)
+        ),
+        ?_assertEqual([<<"root {a = ", ShortString/binary, ", b = 1}\n">>], PP(Value2))
+    ].
