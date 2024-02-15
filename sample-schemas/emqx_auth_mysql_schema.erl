@@ -4,10 +4,11 @@
 
 -behaviour(hocon_schema).
 
--export([roots/0, fields/1, translations/0, translation/1]).
+-export([roots/0, fields/1, translations/0, translation/1, namespace/0]).
 
 roots() -> ["auth"].
 
+namespace() -> "auth_mysql".
 fields("auth") ->
     [ {"mysql", emqx_schema:ref("mysql")}];
 

@@ -14,10 +14,11 @@
 
 -reflect_type([duration/0, percent/0]).
 
--export([roots/0, fields/1, translations/0, translation/1]).
+-export([roots/0, fields/1, translations/0, translation/1, namespace/0]).
 
 -define(FIELD(NAME, TYPE), hoconsc:mk(TYPE, #{mapping => NAME})).
 
+namespace() -> "demo".
 roots() -> [foo, {"a_b", hoconsc:mk(hoconsc:ref("a_b"), #{importance => hidden})}, "b", person, "vm"].
 translations() -> ["app_foo"].
 

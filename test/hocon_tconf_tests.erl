@@ -20,7 +20,7 @@
 -include("hocon_private.hrl").
 -include("hoconsc.hrl").
 
--export([roots/0, fields/1, validations/0, desc/1]).
+-export([roots/0, fields/1, validations/0, desc/1, namespace/0]).
 
 -define(GEN_VALIDATION_ERR(Reason, Expr),
     ?_assertThrow({_, [Reason]}, Expr)
@@ -29,6 +29,7 @@
     ?assertThrow({_, [Reason]}, Expr)
 ).
 
+namespace() -> bar.
 roots() -> [bar].
 
 fields(bar) ->
