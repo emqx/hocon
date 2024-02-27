@@ -132,7 +132,7 @@
         %% deprecated field can not be removed due to compatibility reasons.
         %% The value will be dropped,
         %% Deprecated fields are treated as required => {false, recursively}
-        deprecated => {since, binary()} | false,
+        deprecated => {since, binary() | string()} | false,
         %% Other names to reference this field.
         %% this can be useful when we need to rename some filed names
         %% while keeping backward compatibility.
