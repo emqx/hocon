@@ -25,20 +25,31 @@ HOCON spec for reference: https://lightbend.github.io/config/
     * `key={a: 1}\n{b: 2}`
     * `key={a=1, b=2}`
 - `url()/file()/classpath()` includes are not supported
-- Quotes next to triple-quotes needs to be escaped, otherwise they are discarded.
-  Meaning `"""a""""` is parsed as `a` but not `a"`, to crrectly express `a"`, it must be one of below:
-    * Escape the last `"`: `"""a\""""`;
-    * Or add `~` around the string value: `"""~a"~"""` (see below).
+- Immediate quote before triple-quote is invalid sytax.
+    * `""""a""""` is invalid because there are 4 closing quotes instead of three.
+    * As a workaround, `"""~"a"~""" is valid, see below for more details.
 - Multiline strings allow indentation (spaces, not tabs).
   If `~\n` (or `~\r\n`) are the only characters following the opening triple-quote, then it's a multiline string with indentation:
-    * The first line `~\n` is discarded;
+    * The first line `~\n` is discarded.
     * The closing triple-quote can be either `"""` or `~"""` (`~` allows the string to end with `"` without escaping).
-    * Indentation is allowed but not required for empty lines;
-    * Indentation level is determined by the least number of leading spaces among the non-empty lines;
+    * Indentation is allowed but not required for empty lines.
+    * Indentation level is determined by the least number of leading spaces among the non-empty lines.
     * If the closing triple-quote takes the whole line, it's allowed to be indented less than other lines,
       but if it's indented more than other lines, the spaces are treated as part of the string.
-    * Backslashes are treated as escape characters, i.e. should be escaped with another backslash;
-    * There is no need to escape quotes in multiline strings, but it's allowed.
+    * Backslash is NOT a escape character.
+    * If a string has three consecutive quotes, there are two workarounds:
+        - Make use of string concatenation, and only escape the triple-quotes. e.g.
+          ```
+          a = """~
+                  line1
+              ~"""
+              "line2\"\"\"\n"
+              """~
+                  line3
+              ~"""
+          ```
+        - Use normal string with escape sequence.
+          For example: `a = "line1\nline2\"\"\"\nline3\n"`
 
 ## Schema
 

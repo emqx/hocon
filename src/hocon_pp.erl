@@ -177,7 +177,7 @@ gen_single_quote_str(S, unicode) ->
 gen_triple_quote_str(Str, Opts) ->
     [
         ?TRIPLE_QUOTE,
-        maybe_indent(esc_backslashes(Str), Opts),
+        maybe_indent(Str, Opts),
         ?TRIPLE_QUOTE
     ].
 
@@ -464,9 +464,3 @@ esc($\") -> "\\\"";
 % \
 esc($\\) -> "\\\\";
 esc(Char) -> Char.
-
-esc_backslashes(Str) ->
-    lists:map(fun esc_backslash/1, Str).
-
-esc_backslash($\\) -> "\\\\";
-esc_backslash(Char) -> Char.
