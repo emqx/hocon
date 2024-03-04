@@ -26,8 +26,7 @@ HOCON spec for reference: https://lightbend.github.io/config/
     * `key={a=1, b=2}`
 - `url()/file()/classpath()` includes are not supported
 - Immediate quote before triple-quote is invalid sytax.
-    * `""""a""""` is invalid because there are 4 closing quotes instead of three.
-    * As a workaround, `"""~"a"~""" is valid, see below for more details.
+    * `""""a""""` is invalid because there are 4 closing quotes instead of three. See workarounds below.
 - Multiline strings allow indentation (spaces, not tabs).
   If `~\n` (or `~\r\n`) are the only characters following the opening triple-quote, then it's a multiline string with indentation:
     * The first line `~\n` is discarded.
