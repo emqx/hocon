@@ -81,7 +81,7 @@ Rules.
 {Integer}         : {token, {integer, TokenLine, list_to_integer(TokenChars)}}.
 {Float}           : {token, {float, TokenLine, to_float(TokenChars)}}.
 {String}          : {token, {string, TokenLine, unquote(TokenChars, force_escape)}}.
-{MultilineString} : {token, {string, TokenLine, unindent(unquote(TokenChars, allow_unescaped))}}.
+{MultilineString} : {token, {string, TokenLine, unindent(strip_quotes(TokenChars, 3, TokenLine))}}.
 {Bytesize}        : {token, {string, TokenLine, TokenChars}}.
 {Percent}         : {token, {string, TokenLine, TokenChars}}.
 {Duration}        : {token, {string, TokenLine, TokenChars}}.
@@ -91,6 +91,8 @@ Rules.
 
 
 Erlang code.
+
+-export([unindent/1]).
 
 maybe_include("include", TokenLine)  -> {include, TokenLine};
 maybe_include(TokenChars, TokenLine) -> {unqstr, TokenLine, TokenChars}.
@@ -102,13 +104,24 @@ get_filename_from_required("required(" ++ Filename) ->
 bool("true")  -> true;
 bool("false") -> false.
 
-unquote(Str, Allow) ->
-    Str1 = strip_surrounded_quotes(Str),
-    unescape(Str1, Allow).
+unquote([$\" | Str0], Allow) ->
+    [$\" | StrR] = lists:reverse(Str0),
+    unescape(lists:reverse(StrR), Allow).
 
-strip_surrounded_quotes([$" | Rem]) ->
-    lists:reverse(strip_surrounded_quotes(lists:reverse(Rem)));
-strip_surrounded_quotes(Str) ->
+%% strip the given number of quotes from both ends of the string.
+strip_quotes(Str, N, Line) ->
+    Str1 = strip_quotes_loop(Str, N),
+    case strip_quotes_loop(lists:reverse(Str1), N) of
+        [$\", $\\ | _] ->
+            throw({scan_error, #{reason => four_closing_quotes, line => Line}});
+        StrR ->
+            lists:reverse(StrR)
+    end.
+
+%% strip the leading quotes and return the remaining chars
+strip_quotes_loop([$" | Rem], N) when N > 0 ->
+    strip_quotes_loop(Rem, N - 1);
+strip_quotes_loop(Str, _) ->
     Str.
 
 unindent([$~, $\r, $\n | Chars]) ->

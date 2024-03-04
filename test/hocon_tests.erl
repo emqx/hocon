@@ -231,20 +231,24 @@ escape_test_() ->
             #{<<"k">> => <<"a\"cd\"x">>},
             binary(<<"k=\"\"\"a\"cd\"x\"\"\"">>)
         ),
-        %% " is also allowed between """...""" with escaping
+        %% " immediately after opening """ is a value
         ?_assertEqual(
-            #{<<"k">> => <<"a\"cd\"x">>},
-            binary(<<"k=\"\"\"a\\\"cd\\\"x\"\"\"">>)
+            #{<<"k">> => <<"\"1">>},
+            binary(<<"k=\"\"\"\"1\"\"\"">>)
         ),
-        %% " immediately beofre """ should be escaped, otherwise scan_error
         ?_assertMatch(
             {error, {scan_error, _}},
             hocon:binary(<<"k=\"\"\"a\"cd\"\"\"\"">>)
         ),
-        %% " immediately beofre """ should be escaped
-        ?_assertEqual(
-            #{<<"k">> => <<"a\"cd\"">>},
-            binary(<<"k=\"\"\"a\"cd\\\"\"\"\"">>)
+        %% " immediately beofre closing """ is scan_error
+        ?_assertMatch(
+            {error, {scan_error, _}},
+            hocon:binary(<<"k=\"\"\"a\"cd\"\"\"\"">>)
+        ),
+        %% \" immediately beofre closing """ is also scan_error
+        ?_assertMatch(
+            {error, {scan_error, _}},
+            hocon:binary(<<"k=\"\"\"a\"cd\\\"\"\"\"">>)
         ),
         %% \n is parsed as \n between """..."""
         ?_assertEqual(
@@ -256,9 +260,9 @@ escape_test_() ->
             {error, {scan_error, _}},
             hocon:binary(<<"k=\"a\nd\"">>)
         ),
-        %% \\n parsed as \n between """..."""
+        %% \\n parsed as \\n between """..."""
         ?_assertEqual(
-            #{<<"k">> => <<"a\nd">>},
+            #{<<"k">> => <<"a\\nd">>},
             binary(<<"k=\"\"\"a\\nd\"\"\"">>)
         ),
         %% \\n parsed as \n between "..."
@@ -284,10 +288,14 @@ triple_quote_string_test_() ->
         ?_assertEqual(<<" 1\n\n2\n">>, Parse(<<"~\n     1\n    \n    2\n    ~">>)),
         ?_assertEqual(<<" 1\n\n2\n ">>, Parse(<<"~\n     1\n    \n    2\n     ~">>)),
         ?_assertEqual(<<"1\"\"\n2">>, Parse(<<"~\n     1\"\"\n     2">>)),
-        %% must escape quotes if it's next to """
-        ?_assertEqual(<<"1\"">>, Parse(<<"1\\\"">>)),
-        %% must escape quotes if it's next to """
-        ?_assertEqual(<<"\"1">>, Parse(<<"\\\"1">>)),
+        %% leading """" is OK, the last quote is considered value
+        ?_assertEqual(<<"\"1">>, Parse(<<"\"1">>)),
+        %% " as value
+        ?_assertEqual(<<"\"">>, Parse(<<"~\n\"~">>)),
+        %% edning with """" is NOT OK, it's a syntax error
+        ?_assertError({scan_error, _}, Parse(<<"1\"">>)),
+        %% ending with \"""" tricks the scanner, but caught by hand crafted Erlang code
+        ?_assertError({scan_error, _}, Parse(<<"1\\\"">>)),
         %% no need to escape quotes unless it's next to """
         ?_assertEqual(<<"1\"2">>, Parse(<<"1\"2">>)),
         %% empty string with closing quote in the next line
@@ -299,6 +307,11 @@ triple_quote_string_test_() ->
         %% last line is space only, ignored if it indents less than other non-space-only lines
         ?_assertEqual(<<"a\n">>, Parse(<<"~\n    a\n  ~">>))
     ].
+
+triple_quote_inside_tripe_quote_test() ->
+    {ok, Map} = hocon:load("etc/triple-quotes.conf"),
+    ?assertEqual(maps:get(<<"a">>, Map), maps:get(<<"b">>, Map)),
+    ?assertEqual(maps:get(<<"a">>, Map), maps:get(<<"c">>, Map)).
 
 obj_inside_array_test_() ->
     [
@@ -887,8 +900,12 @@ re_error(Filename0) ->
     lists:map(fun([V, L, F]) -> [V, L, filename:basename(F)] end, VLFs).
 
 binary(B) when is_binary(B) ->
-    {ok, R} = hocon:binary(B),
-    R;
+    case hocon:binary(B) of
+        {ok, R} ->
+            R;
+        {error, Reason} ->
+            error(Reason)
+    end;
 binary(IO) ->
     binary(iolist_to_binary(IO)).
 
