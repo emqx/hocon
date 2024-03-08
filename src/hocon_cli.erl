@@ -47,6 +47,7 @@ cli_options() ->
         {schema_file, $i, "schema_file", string, "the file name of schema module"},
         {schema_module, $s, "schema_module", atom, "the name of schema module"},
         {conf_file, $c, "conf_file", string, "hocon conf file, multiple files allowed"},
+        {roots, $r, "roots", string, "comma separated names to filter roots"},
         {log_level, $l, "log_level", {string, "notice"}, "log level"},
         {max_history, $m, "max_history", {integer, 3},
             "the maximum number of generated config files to keep"},
@@ -241,7 +242,16 @@ load_conf(ParsedArgs, LogFunc) ->
             LogFunc(error, "~0p~n", [E]),
             stop_deactivate();
         {ok, Conf} ->
-            Conf
+            filter_roots(Conf, ParsedArgs)
+    end.
+
+filter_roots(Conf, ParsedArgs) ->
+    case proplists:get_value(roots, ParsedArgs) of
+        undefined ->
+            Conf;
+        Roots0 ->
+            Roots = lists:map(fun erlang:iolist_to_binary/1, string:tokens(Roots0, ", ")),
+            maps:with(Roots, Conf)
     end.
 
 -spec writable_destination_path([proplists:property()]) -> file:filename() | error.
