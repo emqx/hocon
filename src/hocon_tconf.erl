@@ -1108,7 +1108,7 @@ user_defined_validators(Schema) ->
     validators(field_schema(Schema, validator)).
 
 builtin_validators(?ENUM(Symbols)) ->
-    [fun(Value) -> check_enum_sybol(Value, Symbols) end];
+    [fun(Value) -> check_enum_symbol(Value, Symbols) end];
 builtin_validators(Type) ->
     TypeChecker = fun(Value) ->
         case typerefl:typecheck(Type, Value) of
@@ -1122,12 +1122,12 @@ builtin_validators(Type) ->
     end,
     [TypeChecker].
 
-check_enum_sybol(Value, Symbols) when is_atom(Value); is_integer(Value) ->
+check_enum_symbol(Value, Symbols) when is_atom(Value); is_integer(Value) ->
     case lists:member(Value, Symbols) of
         true -> ok;
         false -> {error, not_a_enum_symbol}
     end;
-check_enum_sybol(_Value, _Symbols) ->
+check_enum_symbol(_Value, _Symbols) ->
     {error, unable_to_convert_to_enum_symbol}.
 
 validate(Opts, Schema, Value, Validators) ->
