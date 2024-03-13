@@ -155,13 +155,16 @@ bytesize(Other) ->
     Other.
 
 do_bytesize(Str) ->
-    {ok, MP} = re:compile("^\s*([0-9]+)(kb|KB|mb|MB|gb|GB)$"),
+    {ok, MP} = re:compile("^\s*([0-9]+)(b|B|kb|KB|mb|MB|gb|GB)$"),
     case re_run_first(Str, MP) of
         {match, [Val, Unit]} ->
             do_bytesize(list_to_integer(Val), Unit);
         _ ->
             Str
     end.
+
+do_bytesize(Val, "b") -> Val;
+do_bytesize(Val, "B") -> Val;
 do_bytesize(Val, "kb") -> Val * ?KILOBYTE;
 do_bytesize(Val, "KB") -> Val * ?KILOBYTE;
 do_bytesize(Val, "mb") -> Val * ?MEGABYTE;
