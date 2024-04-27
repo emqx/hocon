@@ -37,7 +37,7 @@
 %% of a wrapping object, when `true', `{' and `}' are wrapped around the fields.
 %%
 %% `newline': string, by default `"\n"' is used, for generating web-content
-%% it should be `"<br>"' instead.
+%% it should be `"<br/>"' instead.
 %%
 %% `no_obj_nl': boolean, default to `false'. When set to `true' no new line
 %% is added after objects.
@@ -279,9 +279,15 @@ is_simple_short_string(X) ->
             false
     end.
 
-%% contain $"{}[]:=,+#`^?!@*& \\ should be quoted
+%% Contain $"{}[]:=,+#`^?!@*& \ should be quoted
+%% And .- are allowed per spec, but considered not-simple per our standard
+%% Also strings start with a digit is not-simple
+is_simple_string(<<D, _/binary>>) when D >= $0 andalso D =< $9 ->
+    false;
+is_simple_string([D | _]) when D >= $0 andalso D =< $9 ->
+    false;
 is_simple_string(Str) ->
-    case re:run(Str, "^[^$\"{}\\[\\]:=,+#`\\^?!@*&\\ \\\\\n]*$") of
+    case re:run(Str, "^[^$\"{}\\[\\]:=,+#`\\^?!@*&\\ \\\\\n\\.\\-]*$") of
         nomatch -> false;
         _ -> true
     end.
@@ -344,6 +350,9 @@ is_quote_key(K) ->
 %% '$', '"', '{', '}', '[', ']', ':', '=', ',', '+', '#', '`', '^', '?', '!', '@', '*',
 %% '&', '' (backslash), or whitespace.
 %% '$"{}[]:=,+#`^?!@*& \\'
+%% NOTE '.' and '-' are not forbidden characters, but we decide to quote such strings anyway.
+%% This is because lib implemented in other languages (e.g. GoLang) cannot handle unquoted
+%% strings like `tlsv1.3`
 is_to_quote_str(S) ->
     case hocon_scanner:string(S) of
         {ok, [{Tag, 1, S}], 1} when Tag =:= string orelse Tag =:= unqstr ->
@@ -464,3 +473,32 @@ esc($\") -> "\\\"";
 % \
 esc($\\) -> "\\\\";
 esc(Char) -> Char.
+
+-include_lib("eunit/include/eunit.hrl").
+-ifdef(TEST).
+simple_string_test_() ->
+    [
+        ?_assert(is_simple_string("")),
+        ?_assert(is_simple_string("simpleText")),
+        ?_assert(is_simple_string("simpleText123")),
+        ?_assertNot(is_simple_string("896KB")),
+        ?_assertNot(is_simple_string(<<"896KB">>)),
+        ?_assertNot(is_simple_string("123")),
+        ?_assertNot(is_simple_string("tlsv1.3")),
+        ?_assertNot(is_simple_string("price${amount}")),
+        ?_assertNot(is_simple_string("text with space")),
+        ?_assertNot(is_simple_string("line1\nline2")),
+        ?_assertNot(is_simple_string("non-simple")),
+        ?_assertNot(is_simple_string("non.simple")),
+        ?_assertNot(is_simple_string("user@example.com")),
+        ?_assertNot(is_simple_string("escaped\\character")),
+        ?_assertNot(is_simple_string("Hello, World!"))
+    ].
+
+gen_str_test_() ->
+    [
+        {"empty-string", ?_assertEqual(<<"\"\"">>, gen(<<"">>, #{}))},
+        {"empty-array", ?_assertEqual(<<"[]">>, gen([], #{}))}
+    ].
+
+-endif.
