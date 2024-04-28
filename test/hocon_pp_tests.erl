@@ -73,9 +73,9 @@ pp_quote_test() ->
         ?assertEqual(Map, Map2)
     end,
     %% normal without quote
-    Fun(#{<<"d_dfdk2f">> => <<"19%">>}, <<"d_dfdk2f = 19%\n">>),
+    Fun(#{<<"d_dfdk2f">> => <<"19%">>}, <<"d_dfdk2f = \"19%\"\n">>),
     %% key begin with integer should be quote
-    Fun(#{<<"1f">> => <<"1d">>}, <<"\"1f\" = 1d\n">>),
+    Fun(#{<<"1f">> => <<"1d">>}, <<"\"1f\" = \"1d\"\n">>),
     %% key begin with _ should be quote
     Fun(#{<<"_f">> => 12}, <<"\"_f\" = 12\n">>),
     %% value contain special char should be quote
