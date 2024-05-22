@@ -2505,6 +2505,7 @@ map_atom_keys_test_() ->
                 ?assertThrow(
                     {_, [
                         #{
+                            kind := validation_error,
                             got := BadKeyStr,
                             reason := invalid_map_key
                         }

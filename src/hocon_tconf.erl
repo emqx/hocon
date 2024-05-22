@@ -1315,8 +1315,8 @@ check_map_key_name2(Validator, [Name | T]) ->
         {error, _Meta} = Error ->
             Error
     catch
-        _:Reason ->
-            {error, #{name => Name, message => Reason}}
+        throw:Reason ->
+            {error, #{name => Name, cause => Reason}}
     end;
 check_map_key_name2(_Validator, []) ->
     ok.
