@@ -60,6 +60,8 @@ fields("example") ->
             )},
         {map_key1, ?HOCON(hoconsc:map(map_name1, ?REF("map_name")), #{example1s => MapExample})},
         {map_key2, ?HOCON(hoconsc:map(map_name2, ?REF("map_name")), #{})},
+        {map_key3, ?HOCON(hoconsc:map(fun(name) -> map_name3 end, ?REF("map_name")), #{})},
+        {map_key4, ?HOCON(hoconsc:map(#{name => map_key4}, ?REF("map_name")), #{})},
         {union_key, ?HOCON(Union, #{examples => UnionExample})},
         {union_key2, Union},
         {array_key, hoconsc:array(?R_REF(emqx_schema, "mcast"))},
