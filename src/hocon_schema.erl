@@ -275,11 +275,14 @@ fields(Sc, Name) ->
 -spec fields_and_meta(schema(), name()) -> fields().
 fields_and_meta(Mod, Name) when is_atom(Mod) ->
     Meta =
-        case Mod:fields(Name) of
+        try Mod:fields(Name) of
             Fields when is_list(Fields) ->
                 maybe_add_desc(Mod, Name, #{fields => Fields});
             Fields ->
                 ensure_struct_meta(Fields)
+        catch
+            K:E:S ->
+                throw(#{kind => K, reason => E, stacktrace => S})
         end,
     Meta#{tags => tags(Mod)};
 fields_and_meta(#{fields := Fields}, Name) when is_function(Fields) ->
@@ -290,11 +293,14 @@ fields_and_meta(#{fields := Fields}, Name) when is_map(Fields) ->
 maybe_add_desc(Mod, Name, Meta) ->
     case erlang:function_exported(Mod, desc, 1) of
         true ->
-            case Mod:desc(Name) of
+            try Mod:desc(Name) of
                 undefined ->
                     Meta;
                 Desc ->
                     Meta#{desc => Desc}
+            catch
+                K:E:S ->
+                    throw(#{kind => K, reason => E, stacktrace => S})
             end;
         false ->
             Meta
