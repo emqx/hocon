@@ -282,7 +282,16 @@ fields_and_meta(Mod, Name) when is_atom(Mod) ->
                 ensure_struct_meta(Fields)
         catch
             K:E:S ->
-                erlang:raise(K, #{error => "failed to resolve schema", cause => E, schema_module => Mod, struct_name => Name}, S)
+                erlang:raise(
+                    K,
+                    #{
+                        error => "failed to resolve schema",
+                        cause => E,
+                        schema_module => Mod,
+                        struct_name => Name
+                    },
+                    S
+                )
         end,
     Meta#{tags => tags(Mod)};
 fields_and_meta(#{fields := Fields}, Name) when is_function(Fields) ->
@@ -300,7 +309,16 @@ maybe_add_desc(Mod, Name, Meta) ->
                     Meta#{desc => Desc}
             catch
                 K:E:S ->
-                    erlang:raise(K, #{error => "failed to resolve struct description", cause => E, schema_module => Mod, struct_name => Name}, S)
+                    erlang:raise(
+                        K,
+                        #{
+                            error => "failed to resolve struct description",
+                            cause => E,
+                            schema_module => Mod,
+                            struct_name => Name
+                        },
+                        S
+                    )
             end;
         false ->
             Meta
