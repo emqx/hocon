@@ -1334,7 +1334,7 @@ get_map_key_name_validator(_NameType) ->
     fun default_map_key_name_validator/1.
 
 default_map_key_name_validator(Name) ->
-    case re:run(Name, ?MAP_KEY_RE) of
+    case re_run(Name, ?MAP_KEY_RE) of
         nomatch ->
             {error, #{
                 expected_data_type => ?MAP_KEY_RE,
@@ -1351,6 +1351,9 @@ default_map_key_name_validator(Name) ->
                     ok
             end
     end.
+
+re_run(Str, Pattern) ->
+    re:run(unicode:characters_to_binary(Str, utf8), Pattern).
 
 fmt_field_names(Names) ->
     do_fmt_field_names(lists:sort(lists:map(fun str/1, Names))).
