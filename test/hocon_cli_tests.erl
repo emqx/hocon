@@ -121,6 +121,32 @@ now_time_test() ->
     end).
 
 generate_with_env_logging_test() ->
+    Envs = [
+        {"ZZZ_FOO", "{min: 1, max: 2}"},
+        {"ZZZ_FOO__MIN", "42"},
+        {"ZZZ_FOO__MAX", "43"},
+        {"ZZZ_FOO__NUMBERS", "[1,2]"},
+        {"HOCON_ENV_OVERRIDE_PREFIX", "ZZZ_"}
+    ],
+    Expects = [
+        <<"ZZZ_FOO [foo]: {...}">>,
+        <<"ZZZ_FOO__MAX [foo.max]: 43">>,
+        <<"ZZZ_FOO__MIN [foo.min]: 42">>,
+        <<"ZZZ_FOO__NUMBERS [foo.numbers]: [...]">>
+    ],
+    test_generate_with_env_logging(Envs, Expects).
+
+generate_with_env_logging_empty_array_test() ->
+    Envs = [
+        {"ZZZ_FOO__NUMBERS", "[]"},
+        {"HOCON_ENV_OVERRIDE_PREFIX", "ZZZ_"}
+    ],
+    Expects = [
+        <<"ZZZ_FOO__NUMBERS [foo.numbers]: []">>
+    ],
+    test_generate_with_env_logging(Envs, Expects).
+
+test_generate_with_env_logging(Envs, Expects) ->
     ?CAPTURING(begin
         Time = now_time(),
         with_envs(
@@ -139,20 +165,11 @@ generate_with_env_logging_test() ->
                     "generate"
                 ]
             ],
-            [
-                {"ZZZ_FOO", "{min: 1, max: 2}"},
-                {"ZZZ_FOO__MIN", "42"},
-                {"ZZZ_FOO__MAX", "43"},
-                {"HOCON_ENV_OVERRIDE_PREFIX", "ZZZ_"}
-            ]
+            Envs
         ),
         {ok, Stdout} = cuttlefish_test_group_leader:get_output(),
         ?assertEqual(
-            [
-                <<"ZZZ_FOO [foo]: {...}">>,
-                <<"ZZZ_FOO__MAX [foo.max]: 43">>,
-                <<"ZZZ_FOO__MIN [foo.min]: 42">>
-            ],
+            Expects,
             lists:sort(
                 binary:split(
                     iolist_to_binary(Stdout),

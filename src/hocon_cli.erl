@@ -428,6 +428,8 @@ log_env_override(Var, Path, Value) ->
         case Value of
             V when is_binary(V) -> V;
             V when is_map(V) -> "{...}";
+            [] -> "[]";
+            [_ | _] -> "[...]";
             V -> io_lib:format("~0p", [V])
         end,
     ?STDOUT("~s [~s]: ~s", [Var, Path, ValueStr]).
