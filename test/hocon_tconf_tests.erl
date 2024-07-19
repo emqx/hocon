@@ -1638,18 +1638,28 @@ no_default_value_fill_for_hidden_fields_test() ->
                         hoconsc:mk(
                             hoconsc:array(integer()),
                             #{default => [$d]}
+                        )},
+                    {"e",
+                        hoconsc:mk(
+                            hoconsc:array(integer()), #{
+                                default => [$e],
+                                importance => ?IMPORTANCE_NO_DOC
+                            }
                         )}
                 ]
         }
     },
     ?assertEqual(#{}, hocon_tconf:make_serializable(Sc, #{}, #{})),
-    C1 = #{<<"a">> => #{<<"d">> => [1]}},
+    C1 = #{<<"a">> => #{<<"d">> => [1], <<"e">> => [$e]}},
     ?assertEqual(C1, hocon_tconf:make_serializable(Sc, C1, #{})),
-    C2 = #{<<"a">> => #{<<"c">> => 2, <<"d">> => [1]}},
+    C2 = #{<<"a">> => #{<<"c">> => 2, <<"d">> => [1], <<"e">> => [$e]}},
     ?assertEqual(C2, hocon_tconf:make_serializable(Sc, C2, #{})),
     C3 = #{<<"a">> => #{<<"c">> => 2}},
-    C4 = #{<<"a">> => #{<<"c">> => 2, <<"d">> => [$d]}},
+    C4 = #{<<"a">> => #{<<"c">> => 2, <<"d">> => [$d], <<"e">> => [$e]}},
     ?assertEqual(C4, hocon_tconf:make_serializable(Sc, C3, #{})),
+    C5 = #{<<"a">> => #{<<"e">> => [3]}},
+    C6 = #{<<"a">> => #{<<"d">> => [$d], <<"e">> => [3]}},
+    ?assertEqual(C6, hocon_tconf:make_serializable(Sc, C5, #{})),
     ok.
 
 root_array_test_() ->

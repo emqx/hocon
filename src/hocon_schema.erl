@@ -88,7 +88,12 @@
 -type desc() :: iodata() | {desc, module(), desc_id()}.
 -type union_selector() :: fun((all_union_members | {value, _}) -> type() | [type()]).
 -type union_members() :: [type()] | union_selector().
--type importance() :: ?IMPORTANCE_HIGH | ?IMPORTANCE_MEDIUM | ?IMPORTANCE_LOW | ?IMPORTANCE_HIDDEN.
+-type importance() ::
+    ?IMPORTANCE_HIGH
+    | ?IMPORTANCE_MEDIUM
+    | ?IMPORTANCE_LOW
+    | ?IMPORTANCE_NO_DOC
+    | ?IMPORTANCE_HIDDEN.
 %% primitive (or complex, but terminal) type
 -type type() ::
     typerefl:type()
@@ -572,6 +577,7 @@ is_hidden(Schema, Opts) ->
     importance_num(DefinedImprotance) < importance_num(NeededImportance).
 
 importance_num(?IMPORTANCE_HIDDEN) -> 0;
+importance_num(?IMPORTANCE_NO_DOC) -> 5;
 importance_num(?IMPORTANCE_LOW) -> 7;
 importance_num(?IMPORTANCE_MEDIUM) -> 8;
 importance_num(?IMPORTANCE_HIGH) -> 9.
