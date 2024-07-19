@@ -26,6 +26,8 @@
 -define(IMPORTANCE_MEDIUM, medium).
 %% not important, usually only for advanced users
 -define(IMPORTANCE_LOW, low).
+%% hidden from documentation, but still returned by HTTP APIs and raw config
+-define(IMPORTANCE_NO_DOC, no_doc).
 %% hidden for normal users, only experts should need to care
 -define(IMPORTANCE_HIDDEN, hidden).
 
@@ -33,6 +35,6 @@
 -define(DEFAULT_IMPORTANCE, ?IMPORTANCE_HIGH).
 %% The default minimum importance level when dumping config schema
 %% or filling config default values.
--define(DEFAULT_INCLUDE_IMPORTANCE_UP_FROM, ?IMPORTANCE_LOW).
+-define(DEFAULT_INCLUDE_IMPORTANCE_UP_FROM, ?IMPORTANCE_NO_DOC).
 
 -endif.
