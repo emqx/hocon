@@ -358,3 +358,21 @@ crlf_multiline_test_() ->
         ?_assertEqual({ok, Value}, hocon:binary(Expected)),
         ?_assertEqual({ok, Value}, hocon:binary(Variant))
     ].
+
+%% Checks that if the string `"null"' is used as a map key, it's correctly serialized and
+%% then deserialized.
+null_map_key_test_() ->
+    Roundtrip = fun(NVal) ->
+        Value = #{<<"root">> => #{NVal => 1}},
+        IOList = hocon_pp:do(Value, #{}),
+        ?assertEqual({ok, Value}, hocon:binary(IOList))
+    end,
+    [
+        ?_test(Roundtrip(Value))
+     || Value <- [
+            <<"null">>,
+            <<"Null">>,
+            <<"NULL">>,
+            <<"nUlL">>
+        ]
+    ].
