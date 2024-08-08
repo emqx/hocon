@@ -332,6 +332,10 @@ maybe_quote_key(K0) ->
             K0
     end.
 
+is_quote_key("null") ->
+    %% `null' is a primitive value in hocon, so if a `"null"' string is used as a map key,
+    %% it must be quoted to avoid confusion with the `null' primitive.
+    true;
 is_quote_key(K) ->
     case io_lib:printable_latin1_list(K) of
         true ->
