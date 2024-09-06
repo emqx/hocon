@@ -2571,3 +2571,18 @@ random_key() ->
     Bytes = crypto:strong_rand_bytes(10),
     Key0 = base64:encode(Bytes),
     iolist_to_binary(re:replace(Key0, <<"[^-a-zA-Z0-9_]">>, <<>>, [global])).
+
+map_type_with_alias_test() ->
+    Sc = #{
+        roots => [
+            {"root", hoconsc:mk(hoconsc:map(name, hoconsc:ref(foo)), #{aliases => [foo]})}
+        ],
+        fields =>
+            #{foo => [{bar, hoconsc:mk(integer(), #{})}]}
+    },
+    MapValue = #{<<"foo">> => #{<<"bar">> => 0}},
+    NormalRecord = #{<<"root">> => MapValue},
+    AliasedRecord = #{<<"foo">> => MapValue},
+    ?assertEqual(NormalRecord, hocon_tconf:check_plain(Sc, NormalRecord)),
+    ?assertEqual(NormalRecord, hocon_tconf:check_plain(Sc, AliasedRecord)),
+    ok.
