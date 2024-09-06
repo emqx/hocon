@@ -561,9 +561,16 @@ map_field(?MAP(NameType, Type), FieldSchema, Value, Opts) ->
             case check_map_key_name(NameType, FieldNames) of
                 ok ->
                     %% All objects in this map should share the same schema.
+                    %% And each fake 'field' should not have any alias
+                    %% because the alias belongs to the parent field
                     NewSc = hocon_schema:override(
                         FieldSchema,
-                        #{type => Type, mapping => undefined, converter => undefined}
+                        #{
+                            type => Type,
+                            mapping => undefined,
+                            converter => undefined,
+                            aliases => []
+                        }
                     ),
                     NewFields = [{FieldName, NewSc} || FieldName <- FieldNames],
                     %% start over
