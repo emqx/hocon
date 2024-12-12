@@ -49,6 +49,7 @@ HOCON spec for reference: https://lightbend.github.io/config/
           ```
         - Use normal string with escape sequence.
           For example: `a = "line1\nline2\"\"\"\nline3\n"`
+- Environment variable interpolation is not supported.
 
 ## Schema
 
