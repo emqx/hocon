@@ -69,9 +69,6 @@
 -type name() :: hocon_schema:name().
 -type schema() :: hocon_schema:schema().
 
--define(VALIDATION_ERRS(Context), [Context#{kind => validation_error}]).
--define(TRANSLATION_ERRS(Context), [Context#{kind => translation_error}]).
-
 -define(DEFAULT_REQUIRED, false).
 
 -define(META_BOX(Tag, Metadata), #{?METADATA => #{Tag => Metadata}}).
@@ -148,21 +145,21 @@ do_translate([{MappedField, Translator} | More], TrNamespace, Conf, Acc) ->
     catch
         throw:Reason ->
             Error =
-                {error,
-                    ?TRANSLATION_ERRS(#{
-                        reason => Reason,
-                        path => MappedField0
-                    })},
+                {error, #{
+                    kind => translation_error,
+                    reason => Reason,
+                    path => MappedField0
+                }},
             do_translate(More, TrNamespace, Conf, [Error | Acc]);
         Exception:Reason:St ->
             Error =
-                {error,
-                    ?TRANSLATION_ERRS(#{
-                        reason => Reason,
-                        stacktrace => St,
-                        path => MappedField0,
-                        exception => Exception
-                    })},
+                {error, #{
+                    kind => translation_error,
+                    reason => Reason,
+                    stacktrace => St,
+                    path => MappedField0,
+                    exception => Exception
+                }},
             do_translate(More, TrNamespace, Conf, [Error | Acc])
     end.
 
@@ -189,13 +186,13 @@ assert_integrity(Schema, [{Name, Validator} | Rest], Conf, Acc) ->
             assert_integrity_failure(Schema, Rest, Conf, Name, Reason);
         Exception:Reason:St ->
             Error =
-                {error,
-                    ?VALIDATION_ERRS(#{
-                        reason => integrity_validation_crash,
-                        validation_name => Name,
-                        exception => {Exception, Reason},
-                        stacktrace => St
-                    })},
+                {error, #{
+                    kind => validation_error,
+                    reason => integrity_validation_crash,
+                    validation_name => Name,
+                    exception => {Exception, Reason},
+                    stacktrace => St
+                }},
             assert_integrity(Schema, Rest, Conf, [Error | Acc])
     end.
 
@@ -205,12 +202,12 @@ assert_integrity_failure(Schema, Rest, Conf, Name, Reason) ->
         Rest,
         Conf,
         [
-            {error,
-                ?VALIDATION_ERRS(#{
-                    reason => integrity_validation_failure,
-                    validation_name => Name,
-                    result => Reason
-                })}
+            {error, #{
+                kind => validation_error,
+                reason => integrity_validation_failure,
+                validation_name => Name,
+                result => Reason
+            }}
         ]
     ).
 
@@ -1181,9 +1178,9 @@ validation_errs(Opts, Reason, Value) ->
         end,
     validation_errs(Opts, Err).
 
-validation_errs(Opts, Context) ->
-    ContextWithPath = ensure_path(Opts, Context),
-    [{error, ?VALIDATION_ERRS(ContextWithPath)}].
+validation_errs(Opts, ContextIn) ->
+    Context = ContextIn#{kind => validation_error},
+    [{error, ensure_path(Opts, Context)}].
 
 ensure_path(_Opts, #{path := _} = Context) -> Context;
 ensure_path(Opts, Context) -> Context#{path => path(Opts)}.
