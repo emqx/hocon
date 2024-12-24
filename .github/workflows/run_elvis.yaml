@@ -7,11 +7,9 @@ jobs:
     runs-on: ubuntu-latest
 
     container:
-      image: erlang:25.3
+      image: erlang:26
 
     steps:
-      - uses: actions/checkout@v1
-      - run: |
-          ./scripts/elvis-check.sh $GITHUB_BASE_REF
-      - run: |
-          make erlfmt-check
+      - uses: actions/checkout@v4
+      - run: ./scripts/elvis-check.sh $GITHUB_BASE_REF
+      - run: make erlfmt-check

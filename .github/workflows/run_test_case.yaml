@@ -7,12 +7,15 @@ jobs:
   run_test_case:
 
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        erlang-vsn: ['26', '27']
 
     container:
-      image: erlang:25.3
+      image: erlang:${{ matrix.erlang-vsn }}
 
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v4
       - name: Code dialyzer
         run: |
           make dialyzer
@@ -24,5 +27,5 @@ jobs:
           make cover
       - uses: actions/upload-artifact@v4
         with:
-          name: cover
+          name: cover-${{ matrix.erlang-vsn }}
           path: _build/test/cover
