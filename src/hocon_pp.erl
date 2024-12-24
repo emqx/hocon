@@ -478,8 +478,9 @@ esc($\") -> "\\\"";
 esc($\\) -> "\\\\";
 esc(Char) -> Char.
 
--include_lib("eunit/include/eunit.hrl").
 -ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
 simple_string_test_() ->
     [
         ?_assert(is_simple_string("")),

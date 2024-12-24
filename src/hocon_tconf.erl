@@ -1191,7 +1191,7 @@ validation_errs(Opts, ContextIn) ->
 ensure_path(_Opts, #{path := _} = Context) -> Context;
 ensure_path(Opts, Context) -> Context#{path => path(Opts)}.
 
--spec plain_put(opts(), [binary()], term(), hocon:confing()) -> hocon:config().
+-spec plain_put(opts(), [binary()], term(), hocon:config()) -> hocon:config().
 plain_put(_Opts, [], Value, _Old) ->
     Value;
 plain_put(Opts, [Name | Path], Value, Conf0) ->
