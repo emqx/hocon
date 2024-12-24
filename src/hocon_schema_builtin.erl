@@ -53,8 +53,8 @@ convert(Str, Type) when is_list(Str) ->
             case typerefl:from_string(Type, Str) of
                 {ok, V} ->
                     V;
-                {error, _} ->
-                    Str
+                {error, Reason} ->
+                    throw({?MODULE, Reason})
             end;
         false ->
             Str

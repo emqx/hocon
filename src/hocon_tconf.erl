@@ -650,11 +650,17 @@ map_field(Type, Schema, Value0, Opts) ->
     %% primitive type
     Value = unbox(Opts, Value0),
     PlainValue = ensure_plain(Value),
-    ConvertedValue = eval_builtin_converter(PlainValue, Type, Opts),
-    Validators = get_validators(Schema, Type, Opts),
-    ValidationResult = validate(Opts, Schema, ConvertedValue, Validators),
-    Value1 = boxit(Opts, ConvertedValue, Value0),
-    {ValidationResult, ensure_obfuscate_sensitive(Opts, Schema, Value1)}.
+    try
+        ConvertedValue = eval_builtin_converter(PlainValue, Type, Opts),
+        Validators = get_validators(Schema, Type, Opts),
+        ValidationResult = validate(Opts, Schema, ConvertedValue, Validators),
+        Value1 = boxit(Opts, ConvertedValue, Value0),
+        {ValidationResult, ensure_obfuscate_sensitive(Opts, Schema, Value1)}
+    catch
+        {hocon_schema_builtin, Error} ->
+            ValidationErrors = validation_errs(Opts, Error, obfuscate(Schema, PlainValue)),
+            {ValidationErrors, ensure_obfuscate_sensitive(Opts, Schema, Value0)}
+    end.
 
 eval_builtin_converter(PlainValue, Type, Opts) ->
     case is_make_serializable(Opts) of
