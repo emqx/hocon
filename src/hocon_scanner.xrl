@@ -86,7 +86,7 @@ Rules.
 {Percent}         : {token, {string, TokenLine, TokenChars}}.
 {Duration}        : {token, {string, TokenLine, TokenChars}}.
 {Variable}        : {token, {variable, TokenLine, var_ref_name(TokenChars)}}.
-{MaybeVar}        : {token, {variable, TokenLine, {maybe, maybe_var_ref_name(TokenChars)}}}.
+{MaybeVar}        : {token, {variable, TokenLine, {'maybe', maybe_var_ref_name(TokenChars)}}}.
 {Required}        : {token, {required, TokenLine}, get_filename_from_required(TokenChars)}.
 
 

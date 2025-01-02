@@ -75,7 +75,7 @@ make_array(Line, Array) -> #{'$hcTyp' => array, '$hcVal' => Array, '$hcMeta' => 
 make_primitive_value({endstr, Line, Value}) -> #{'$hcTyp' => string, '$hcVal' => Value, '$hcMeta' => #{line => Line}};
 make_primitive_value({T, Line, Value}) -> #{'$hcTyp' => T, '$hcVal' => Value, '$hcMeta' => #{line => Line}}.
 
-make_variable({V, Line, {maybe, Value}}) when V =:= variable orelse V =:= endvar ->
+make_variable({V, Line, {'maybe', Value}}) when V =:= variable orelse V =:= endvar ->
     #{'$hcTyp' => variable, '$hcVal' => Value, name => Value, '$hcMeta' => #{line => Line}, required => false};
 make_variable({V, Line, Value}) when V =:= variable orelse V =:= endvar ->
     #{'$hcTyp' => variable, '$hcVal' => Value, name => Value, '$hcMeta' => #{line => Line}, required => true}.

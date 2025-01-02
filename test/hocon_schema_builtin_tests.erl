@@ -14,6 +14,7 @@
 %% limitations under the License.
 %%--------------------------------------------------------------------
 -module(hocon_schema_builtin_tests).
+-feature(maybe_expr, enable).
 
 -include_lib("typerefl/include/types.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -42,32 +43,35 @@ builtin_check_test() ->
     ?assertEqual(#{<<"listener">> => #{<<"bind">> => 65535}}, check_plain(Conf2)),
     BadConf1 = "listener.bind = 65536",
     ?assertThrow(
-        #{
-            exception := "port_number_too_large",
-            field := <<"bind">>,
-            path := "listener",
-            reason := failed_to_check_field
-        },
+        {?MODULE, [
+            #{
+                kind := validation_error,
+                reason := "port_number_too_large",
+                path := "listener.bind"
+            }
+        ]},
         check_plain(BadConf1)
     ),
     BadConf2 = "listener.bind = -1",
     ?assertThrow(
-        #{
-            exception := "port_number_must_be_positive",
-            field := <<"bind">>,
-            path := "listener",
-            reason := failed_to_check_field
-        },
+        {?MODULE, [
+            #{
+                kind := validation_error,
+                reason := "port_number_must_be_positive",
+                path := "listener.bind"
+            }
+        ]},
         check_plain(BadConf2)
     ),
     BadConf3 = "listener.bind = 1883d",
     ?assertThrow(
-        #{
-            exception := "bad_port_number",
-            field := <<"bind">>,
-            path := "listener",
-            reason := failed_to_check_field
-        },
+        {?MODULE, [
+            #{
+                kind := validation_error,
+                reason := "bad_port_number",
+                path := "listener.bind"
+            }
+        ]},
         check_plain(BadConf3)
     ),
     ok.
@@ -80,13 +84,14 @@ to_ip_port(Str) ->
     case split_ip_port(Str) of
         {"", Port} ->
             %% this is a local address
-            {ok, parse_port(Port)};
+            parse_port(Port);
         {MaybeIp, Port} ->
-            PortVal = parse_port(Port),
-            case inet:parse_address(MaybeIp) of
-                {ok, IpTuple} ->
-                    {ok, {IpTuple, PortVal}};
-                _ ->
+            maybe
+                {ok, PortVal} ?= parse_port(Port),
+                {ok, IpTuple} ?= inet:parse_address(MaybeIp),
+                {ok, {IpTuple, PortVal}}
+            else
+                {error, _} ->
                     {error, bad_ip_port}
             end;
         _ ->
@@ -115,8 +120,8 @@ split_ip_port(Str0) ->
 
 parse_port(Port) ->
     case string:to_integer(string:strip(Port)) of
-        {P, ""} when P < 0 -> throw("port_number_must_be_positive");
-        {P, ""} when P > 65535 -> throw("port_number_too_large");
-        {P, ""} -> P;
-        _ -> throw("bad_port_number")
+        {P, ""} when P < 0 -> {error, "port_number_must_be_positive"};
+        {P, ""} when P > 65535 -> {error, "port_number_too_large"};
+        {P, ""} -> {ok, P};
+        _ -> {error, "bad_port_number"}
     end.

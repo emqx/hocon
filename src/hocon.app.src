@@ -5,6 +5,7 @@
     {applications, [
         kernel,
         stdlib,
+        compiler,
         getopt,
         typerefl
     ]},
