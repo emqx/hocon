@@ -19,6 +19,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -include("hocon_private.hrl").
 -include("hoconsc.hrl").
+-include("hocon.hrl").
 
 -export([roots/0, fields/1, validations/0, desc/1, namespace/0]).
 
@@ -2585,4 +2586,178 @@ map_type_with_alias_test() ->
     AliasedRecord = #{<<"foo">> => MapValue},
     ?assertEqual(NormalRecord, hocon_tconf:check_plain(Sc, NormalRecord)),
     ?assertEqual(NormalRecord, hocon_tconf:check_plain(Sc, AliasedRecord)),
+    ok.
+
+computed_fields_test() ->
+    Size = 3,
+    Counter = counters:new(Size, []),
+    Reset = fun() ->
+        lists:foreach(
+            fun(Ix) ->
+                counters:put(Counter, Ix, 0)
+            end,
+            lists:seq(1, Size)
+        )
+    end,
+    ComputedRoot = fun
+        (
+            #{<<"bag">> := #{?COMPUTED := ComputedBag}, <<"baz">> := #{?COMPUTED := ComputedBaz}},
+            _HoconOpts
+        ) ->
+            counters:add(Counter, 1, 1),
+            [ComputedBag, ComputedBaz];
+        (#{bag := #{?COMPUTED := ComputedBag}, baz := #{?COMPUTED := ComputedBaz}}, _HoconOpts) ->
+            counters:add(Counter, 1, 1),
+            [ComputedBaz, ComputedBag]
+    end,
+    ComputedBaz = fun
+        (#{<<"quux">> := Val}, _HoconOpts) ->
+            counters:add(Counter, 2, 1),
+            Val + 333;
+        (#{quux := Val}, _HoconOpts) ->
+            counters:add(Counter, 2, 1),
+            Val - 333
+    end,
+    %% This one is an open map without schema, so keys are not converted to atoms.
+    ComputedBag = fun(#{<<"key">> := Val}, _HoconOpts) ->
+        counters:add(Counter, 3, 1),
+        <<"computed ", Val/binary>>
+    end,
+    BadComputed = fun(X, _HoconOpts) -> error({shouldnt_be_called, X}) end,
+    QuuxValidator = fun(X) -> X > 300 end,
+    Sc = #{
+        roots => [
+            {"root", hoconsc:mk(hoconsc:ref(foo), #{computed => ComputedRoot})}
+        ],
+        fields =>
+            #{
+                foo => [
+                    {bar, hoconsc:mk(integer(), #{computed => BadComputed})},
+                    {baz, hoconsc:mk(hoconsc:ref(qux), #{computed => ComputedBaz})},
+                    {bag, hoconsc:mk(map(), #{computed => ComputedBag})}
+                ],
+                qux => [
+                    {quux,
+                        hoconsc:mk(integer(), #{
+                            computed => BadComputed,
+                            validator => QuuxValidator
+                        })}
+                ]
+            }
+    },
+    Data = #{
+        <<"root">> =>
+            #{
+                <<"bar">> => 123,
+                <<"baz">> =>
+                    #{<<"quux">> => 666},
+                <<"bag">> => #{<<"key">> => <<"value">>}
+            }
+    },
+    Res1 = hocon_tconf:check_plain(Sc, Data, #{}),
+    ?assertMatch(
+        #{
+            <<"root">> :=
+                #{
+                    ?COMPUTED := [<<"computed value">>, 999],
+                    <<"bar">> := 123,
+                    <<"baz">> :=
+                        #{
+                            ?COMPUTED := 999,
+                            <<"quux">> := 666
+                        },
+                    <<"bag">> :=
+                        #{
+                            ?COMPUTED := <<"computed value">>,
+                            <<"key">> := <<"value">>
+                        }
+                }
+        },
+        Res1
+    ),
+    ?assertEqual(1, counters:get(Counter, 1)),
+    ?assertEqual(1, counters:get(Counter, 2)),
+    ?assertEqual(1, counters:get(Counter, 3)),
+    Reset(),
+    Res2 = hocon_tconf:check_plain(Sc, Data, #{atom_key => true}),
+    ?assertMatch(
+        #{
+            root :=
+                #{
+                    ?COMPUTED := [333, <<"computed value">>],
+                    bar := 123,
+                    baz :=
+                        #{
+                            ?COMPUTED := 333,
+                            quux := 666
+                        },
+                    bag :=
+                        #{
+                            ?COMPUTED := <<"computed value">>,
+                            <<"key">> := <<"value">>
+                        }
+                }
+        },
+        Res2
+    ),
+    ?assertEqual(1, counters:get(Counter, 1)),
+    ?assertEqual(1, counters:get(Counter, 2)),
+    ?assertEqual(1, counters:get(Counter, 3)),
+    Reset(),
+    %% Tests that fail validation/type check do not trigger computation
+    BadData1 = #{
+        <<"root">> =>
+            #{
+                <<"bar">> => 123,
+                <<"baz">> =>
+                    #{
+                        <<"quux">> =>
+                            %% bad value: fails validation
+                            200
+                    },
+                <<"bag">> => #{<<"key">> => <<"value">>}
+            }
+    },
+    ?assertThrow(
+        {_, [
+            #{
+                reason := returned_false,
+                kind := validation_error,
+                path := "root.baz.quux"
+            }
+        ]},
+        hocon_tconf:check_plain(Sc, BadData1, #{})
+    ),
+    %% Root is not called
+    ?assertEqual(0, counters:get(Counter, 1)),
+    %% Baz is not called
+    ?assertEqual(0, counters:get(Counter, 2)),
+    %% Bag is called
+    ?assertEqual(1, counters:get(Counter, 3)),
+    Reset(),
+    BadData2 = #{
+        <<"root">> =>
+            #{
+                <<"bar">> => 123,
+                <<"baz">> =>
+                    #{<<"quux">> => <<"wrong type">>},
+                <<"bag">> => #{<<"key">> => <<"value">>}
+            }
+    },
+    ?assertThrow(
+        {_, [
+            #{
+                reason := "Unable to parse integer value",
+                kind := validation_error,
+                path := "root.baz.quux"
+            }
+        ]},
+        hocon_tconf:check_plain(Sc, BadData2, #{})
+    ),
+    %% Root is not called
+    ?assertEqual(0, counters:get(Counter, 1)),
+    %% Baz is not called
+    ?assertEqual(0, counters:get(Counter, 2)),
+    %% Bag is called
+    ?assertEqual(1, counters:get(Counter, 3)),
     ok.

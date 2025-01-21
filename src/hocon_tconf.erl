@@ -30,6 +30,7 @@
 
 -include("hoconsc.hrl").
 -include("hocon_private.hrl").
+-include("hocon.hrl").
 
 -export_type([opts/0]).
 
@@ -486,7 +487,9 @@ map_one_field_non_hidden(FieldType, FieldSchema, FieldValue0, Opts) ->
     IsMakeSerializable = is_make_serializable(Opts),
     {MaybeLog, FieldValue} = resolve_field_value(FieldSchema, FieldValue0, Opts),
     Converter = upgrade_converter(field_schema(FieldSchema, converter)),
-    {Acc0, NewValue} = map_field_maybe_convert(FieldType, FieldSchema, FieldValue, Opts, Converter),
+    {Acc0, NewValue0} = map_field_maybe_convert(
+        FieldType, FieldSchema, FieldValue, Opts, Converter
+    ),
     Acc = MaybeLog ++ Acc0,
     Validators =
         case IsMakeSerializable orelse is_primitive_type(FieldType) of
@@ -500,7 +503,7 @@ map_one_field_non_hidden(FieldType, FieldSchema, FieldValue0, Opts) ->
         end,
     case find_errors(Acc) of
         ok ->
-            Pv = ensure_plain(NewValue),
+            Pv = ensure_plain(NewValue0),
             ValidationResult = validate(Opts, FieldSchema, Pv, Validators),
             Mapping =
                 case is_make_serializable(Opts) of
@@ -510,13 +513,25 @@ map_one_field_non_hidden(FieldType, FieldSchema, FieldValue0, Opts) ->
             case ValidationResult of
                 [] ->
                     Mapped = maybe_mapping(Mapping, Pv),
+                    NewValue = maybe_computed(FieldSchema, NewValue0, Opts),
                     {Acc ++ Mapped, NewValue};
                 Errors ->
-                    {Acc ++ Errors, NewValue}
+                    {Acc ++ Errors, NewValue0}
             end;
         _ ->
             {Acc, FieldValue}
     end.
+
+maybe_computed(FieldSchema, #{} = CheckedValue, Opts) ->
+    case field_schema(FieldSchema, computed) of
+        Fn when is_function(Fn, 2) ->
+            Computed = Fn(CheckedValue, Opts),
+            CheckedValue#{?COMPUTED => Computed};
+        _ ->
+            CheckedValue
+    end;
+maybe_computed(_FieldSchema, CheckedValue, _Opts) ->
+    CheckedValue.
 
 map_field_maybe_convert(Type, Schema, Value0, Opts, undefined) ->
     map_field(Type, Schema, Value0, Opts);
