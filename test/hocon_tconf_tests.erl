@@ -2760,4 +2760,27 @@ computed_fields_test() ->
     ?assertEqual(0, counters:get(Counter, 2)),
     %% Bag is called
     ?assertEqual(1, counters:get(Counter, 3)),
+
+    %% Computed values shouldn't show up in raw configurations to be serialized.
+    AssertNoComputed = fun
+        Rec(M) when is_map(M) ->
+            case is_map_key(?COMPUTED, M) of
+                true ->
+                    error({should_not_have_computed, M});
+                false ->
+                    maps:foreach(fun(_K, V) -> Rec(V) end, M)
+            end;
+        Rec(Xs) when is_list(Xs) ->
+            lists:foreach(Rec, Xs);
+        Rec(_X) ->
+            ok
+    end,
+    Res3 = #{} = hocon_tconf:check_plain(Sc, Data, #{make_serializable => true}),
+    AssertNoComputed(Res3),
+    %% Computed values shouldn't show up when handling rich maps
+    BinaryHocon = hocon_pp:do(Data, #{}),
+    {ok, RichmapData} = hocon:binary(BinaryHocon, #{format => richmap}),
+    Res4 = #{} = hocon_tconf:check_plain(Sc, RichmapData, #{format => richmap}),
+    AssertNoComputed(Res4),
+
     ok.
