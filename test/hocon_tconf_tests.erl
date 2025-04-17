@@ -2783,4 +2783,24 @@ computed_fields_test() ->
     Res4 = #{} = hocon_tconf:check_plain(Sc, RichmapData, #{format => richmap}),
     AssertNoComputed(Res4),
 
+    %% Option to not compute computed fields.
+    Res5 = hocon_tconf:check_plain(Sc, Data, #{computed_fields => false}),
+    ?assertEqual(
+        #{
+            <<"root">> =>
+                #{
+                    <<"bar">> => 123,
+                    <<"baz">> =>
+                        #{
+                            <<"quux">> => 666
+                        },
+                    <<"bag">> =>
+                        #{
+                            <<"key">> => <<"value">>
+                        }
+                }
+        },
+        Res5
+    ),
+
     ok.
