@@ -524,6 +524,8 @@ map_one_field_non_hidden(FieldType, FieldSchema, FieldValue0, Opts) ->
 
 maybe_computed(_FieldSchema, CheckedValue, #{make_serializable := true}) ->
     CheckedValue;
+maybe_computed(_FieldSchema, CheckedValue, #{computed_fields := false}) ->
+    CheckedValue;
 maybe_computed(FieldSchema, #{} = CheckedValue, #{format := map} = Opts) ->
     case field_schema(FieldSchema, computed) of
         Fn when is_function(Fn, 2) ->
