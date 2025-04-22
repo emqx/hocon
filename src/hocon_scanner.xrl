@@ -50,11 +50,14 @@ Float               = {Integer}?{Fraction}|{Integer}{Fraction}{Exponent}
 
 %% String
 Hex                 = [0-9A-Fa-f]
-Escape              = ["\\bfnrt]
+EscapeNoQuote       = [\\bfnrt]
+Escape              = "|{EscapeNoQuote}
 UnicodeEscape       = u{Hex}{Hex}{Hex}{Hex}
 Char                = ([^\"{LineFeed}]|\\{Escape}|\\{UnicodeEscape})
 String              = "{Char}*"
-MultilineChar       = ([^"]|"[^"]|""[^"]|\\{Escape}|\\{UnicodeEscape})
+%% Special handling for trailing quote: if we don't assert it's not followed by two other
+%% quotes, `{Escape}` would "eat" one of the quotes in the triple quote...
+MultilineChar       = (\\"[^"][^"]|[^"]|"[^"]|""[^"]|\\{EscapeNoQuote}|\\{UnicodeEscape})
 MultilineString     = """{MultilineChar}*"""
 
 %% Bytesize and Duration
