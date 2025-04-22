@@ -334,6 +334,31 @@ no_triple_quote_string_when_oneliner_test_() ->
         ?_assertEqual([<<"root {a = \"a\\nb\"}">>], hocon_pp:do(Value, #{newline => <<>>}))
     ].
 
+%% Tests that having an one liner with characters that should be escaped do not interfere
+%% badly with other values which are triple quoted with indentation.
+%%
+%% At the time of writing, the below example does not trigger the original bug if only
+%% root2 is present and expected.  Also, if the trailing backslash in root1 is removed, it
+%% also does not trigger the bug.
+triple_quote_string_ending_in_backslash_test() ->
+    Raw = #{
+        <<"root1">> => #{<<"x">> => <<"\t\"\\\"\\t\\">>},
+        <<"root2">> => #{<<"x">> => <<"select \n from\n \"hello\" ">>}
+    },
+    Sc = #{
+        roots => [root1, root2],
+        fields => #{
+            root1 => [{"x", hoconsc:mk(binary())}],
+            root2 => [{"x", hoconsc:mk(binary())}]
+        }
+    },
+    %% Parses fine.
+    Raw = hocon_tconf:check_plain(Sc, Raw, #{}),
+    PP = hocon_pp:do(Raw, #{}),
+    %% Roundtrip: must read back the same thing.
+    ?assertEqual({ok, Raw}, hocon:binary(PP)),
+    ok.
+
 crlf_multiline_test_() ->
     Value = #{<<"root">> => #{<<"x">> => <<"\r\n\r\na\r\nb\n">>}},
     CRLF = <<"\r\n">>,
