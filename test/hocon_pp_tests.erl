@@ -342,7 +342,7 @@ no_triple_quote_string_when_oneliner_test_() ->
 %% also does not trigger the bug.
 triple_quote_string_ending_in_backslash_test() ->
     Raw = #{
-        <<"root1">> => #{<<"x">> => <<"\t\"\\t\\">>},
+        <<"root1">> => #{<<"x">> => <<"\t\"\\\"\\t\\">>},
         <<"root2">> => #{<<"x">> => <<"select \n from\n \"hello\" ">>}
     },
     Sc = #{

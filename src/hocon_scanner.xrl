@@ -57,7 +57,7 @@ Char                = ([^\"{LineFeed}]|\\{Escape}|\\{UnicodeEscape})
 String              = "{Char}*"
 %% Special handling for trailing quote: if we don't assert it's not followed by two other
 %% quotes, `{Escape}` would "eat" one of the quotes in the triple quote...
-MultilineChar       = (\\"[^"][^"]|[^"]|"[^"]|""[^"]|\\{EscapeNoQuote}|\\{UnicodeEscape})
+MultilineChar       = ([^"]|"[^"]|""[^"]|\\{EscapeNoQuote}|\\{UnicodeEscape})
 MultilineString     = """{MultilineChar}*"""
 
 %% Bytesize and Duration
