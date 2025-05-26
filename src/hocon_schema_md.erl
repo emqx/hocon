@@ -64,7 +64,7 @@ fmt_struct(
         fmt_paths(Paths),
         fmt_envs(Paths, Opts),
         "\n\n**Fields**\n\n",
-        lists:map(fun(F) -> fmt_field(F, Opts) end, Fields)
+        lists:map(fun(F) -> fmt_field(F) end, Fields)
     ].
 
 fmt_paths([]) ->
@@ -95,8 +95,7 @@ fmt_field(
     #{
         name := Name,
         type := Type
-    } = Field,
-    _Opts
+    } = Field
 ) ->
     Default = fmt_default(maps:get(default, Field, undefined)),
     Desc = maps:get(desc, Field, ""),

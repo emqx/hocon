@@ -16,6 +16,8 @@
 
 -module(hocon_schema_aliases_tests).
 
+-hank([{unnecessary_function_arguments, [{incr, 2}]}]).
+
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("typerefl/include/types.hrl").
 -include_lib("hocon/include/hoconsc.hrl").
