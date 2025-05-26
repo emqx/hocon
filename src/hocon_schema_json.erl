@@ -55,10 +55,10 @@ gen(Schema, Opts) ->
     {RootNs, RootFields, Structs} = hocon_schema:find_structs(Schema, Opts),
     Json =
         [
-            gen_struct(RootNs, RootNs, "Root Config Keys", #{fields => RootFields}, Opts)
+            gen_struct(RootNs, "Root Config Keys", #{fields => RootFields}, Opts)
             | lists:map(
                 fun({Ns, Name, Meta}) ->
-                    case gen_struct(RootNs, Ns, Name, Meta, Opts) of
+                    case gen_struct(Ns, Name, Meta, Opts) of
                         #{fields := []} = Meta1 ->
                             error(
                                 {struct_with_no_fields, #{
@@ -79,7 +79,7 @@ gen(Schema, Opts) ->
         ],
     Json.
 
-gen_struct(_RootNs, Ns, Name, #{fields := Fields} = Meta, Opts) ->
+gen_struct(Ns, Name, #{fields := Fields} = Meta, Opts) ->
     Paths =
         case Meta of
             #{paths := Ps} -> lists:sort(maps:keys(Ps));
