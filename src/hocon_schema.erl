@@ -115,43 +115,48 @@
     | field_schema_fun().
 
 -type field_schema_fun() :: fun((_) -> _).
--type field_schema_map() ::
-    #{
-        type := type(),
-        default => term(),
-        examples => term(),
-        mapping => undefined | string(),
-        converter => undefined | translationfunc(),
-        validator => undefined | validationfun(),
-        %% set false if a field is allowed to be `undefined`
-        %% NOTE: has no point setting it to `true` if field has a default value
 
-        % default = false
-        required => boolean() | {false, recursively},
-        %% for sensitive data obfuscation (password, token)
-        sensitive => boolean(),
-        desc => desc(),
-        %% hide it from doc generation
-        importance => importance(),
-        %% Set to {since, Version} to mark field as deprecated.
-        %% deprecated field can not be removed due to compatibility reasons.
-        %% The value will be dropped,
-        %% Deprecated fields are treated as required => {false, recursively}
-        deprecated => {since, binary() | string()} | false,
-        %% Other names to reference this field.
-        %% this can be useful when we need to rename some filed names
-        %% while keeping backward compatibility.
-        %% For one struct, no duplication is allowed in the collection of
-        %% all field names and aliases.
-        %% The no-duplication assertion is made when dumping the schema to JSON.
-        %% see `hocon_schema_json'.
-        %% When checking values against the schema, the look up is first
-        %% done with the current field name, if not found, try the aliases
-        %% in the defined order until one is found (i.e. first match wins).
-        aliases => [name()],
-        %% transparent metadata
-        extra => map()
-    }.
+-define(FIELD_SCHEMA_MAP(TYPE_KV), #{
+    TYPE_KV,
+    default => term(),
+    examples => term(),
+    mapping => undefined | string(),
+    converter => undefined | translationfunc(),
+    validator => undefined | validationfun(),
+    %% set false if a field is allowed to be `undefined`
+    %% NOTE: has no point setting it to `true` if field has a default value
+
+    % default = false
+    required => boolean() | {false, recursively},
+    %% for sensitive data obfuscation (password, token)
+    sensitive => boolean(),
+    desc => desc(),
+    %% hide it from doc generation
+    importance => importance(),
+    %% Set to {since, Version} to mark field as deprecated.
+    %% deprecated field can not be removed due to compatibility reasons.
+    %% The value will be dropped,
+    %% Deprecated fields are treated as required => {false, recursively}
+    deprecated => {since, binary() | string()} | false,
+    %% Other names to reference this field.
+    %% this can be useful when we need to rename some filed names
+    %% while keeping backward compatibility.
+    %% For one struct, no duplication is allowed in the collection of
+    %% all field names and aliases.
+    %% The no-duplication assertion is made when dumping the schema to JSON.
+    %% see `hocon_schema_json'.
+    %% When checking values against the schema, the look up is first
+    %% done with the current field name, if not found, try the aliases
+    %% in the defined order until one is found (i.e. first match wins).
+    aliases => [name()],
+    %% transparent metadata
+    extra => map()
+}).
+
+-type field_schema_map() :: ?FIELD_SCHEMA_MAP(type := type()).
+
+%% Same as `field_schema_map/0`, but `type` is optional when overriding...
+-type field_schema_map_override() :: ?FIELD_SCHEMA_MAP(type => type()).
 
 -type field() :: {name(), typefunc() | field_schema()}.
 -type fields() ::
@@ -216,7 +221,7 @@ validations(Sc) ->
     maps:get(validations, Sc, []).
 
 %% @doc Make a higher order schema by overriding `Base' with `OnTop'
--spec override(field_schema(), field_schema_map()) -> field_schema_fun().
+-spec override(field_schema(), field_schema_map_override()) -> field_schema_fun().
 override(Base, OnTop) ->
     fun(SchemaKey) ->
         case maps:is_key(SchemaKey, OnTop) of
