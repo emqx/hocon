@@ -20,6 +20,9 @@ jobs:
         run: |
           make dialyzer
           rm -f rebar.lock
+      - name: Detect dead code
+        run: |
+          make hank
       - name: Run tests
         run: |
           make eunit
