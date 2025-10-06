@@ -132,14 +132,17 @@ get(Path, Config, Default) ->
         V -> V
     end.
 
-%% @doc get a child node from richmap, return value also a richmap.
-%% `undefined' is returned if no value path.
-%% Key (first arg) can be "foo.bar.baz" or ["foo.bar", "baz"] or ["foo", "bar", "baz"].
--spec deep_get(name() | [name()], config()) -> config() | undefined.
+%% @doc Get a child node from richmap, return value may also be a richmap.
+%% `undefined' is returned if no value found for the path.
+%% `Path' can be `"foo.bar.baz"', `["foo.bar", "baz"]' or `["foo", "bar", "baz"]'.
+-spec deep_get(name() | [name()], config()) -> term().
 deep_get(Path, Conf) ->
     deep_get(Path, Conf, richmap).
 
--spec deep_get(name() | [name()], config(), richmap | map) -> config() | undefined.
+%% @doc Get a child node from map | richmap, return value may also be a map | richmap.
+%% `undefined' is returned if no value found for the path.
+%% `Path' can be `"foo.bar.baz"', `["foo.bar", "baz"]' or `["foo", "bar", "baz"]'.
+-spec deep_get(name() | [name()], config(), richmap | map) -> term().
 deep_get(Path, Conf, Format) ->
     do_get(hocon_util:split_path(Path), Conf, Format).
 
