@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        erlang-vsn: ['26', '27']
+        erlang-vsn: ['27', '28']
 
     container:
       image: erlang:${{ matrix.erlang-vsn }}
