@@ -15,6 +15,7 @@
 %%--------------------------------------------------------------------
 
 -module(hocon_schema_example).
+-compile({no_auto_import, [link/2]}).
 -include_lib("hocon/include/hoconsc.hrl").
 
 -elvis([{elvis_style, dont_repeat_yourself, disable}]).
