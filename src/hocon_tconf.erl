@@ -983,7 +983,7 @@ apply_env(Ns, [{VarName, V} | More], RootNames, Conf, Opts) ->
     %% match [_ | _] here because the name is already validated
     [_ | _] = Path0 = env_name_to_path(Ns, VarName),
     NewConf =
-        case Path0 =/= [] andalso lists:member(bin(hd(Path0)), RootNames) of
+        case lists:member(bin(hd(Path0)), RootNames) of
             true ->
                 Path = lists:flatten(string:join(Path0, ".")),
                 do_apply_env(VarName, V, Path, Conf, Opts);
