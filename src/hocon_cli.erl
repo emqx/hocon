@@ -407,6 +407,8 @@ stringify(undefined) ->
 stringify(VMArgsProplist) ->
     [stringify_line(K, V) || {K, V} <- VMArgsProplist].
 
+stringify_line('-setcookie', V) ->
+    lists:flatten(["-setcookie ", io_lib:format("~0p", [list_to_atom(V)])]);
 stringify_line(K, V) when is_list(V) ->
     io_lib:format("~s ~s", [K, V]);
 stringify_line(K, V) ->
