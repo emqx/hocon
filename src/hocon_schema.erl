@@ -30,6 +30,7 @@
     find_structs/2,
     override/2,
     namespace/1,
+    root_converter/2,
     resolve_struct_name/2,
     root_names/1,
     field_schema/2,
@@ -72,13 +73,15 @@
 -callback validations() -> [validation()].
 -callback desc(name()) -> desc() | undefined.
 -callback tags() -> [tag()].
+-callback root_converter(term()) -> term().
 
 -optional_callbacks([
     translations/0,
     translation/1,
     validations/0,
     desc/1,
-    tags/0
+    tags/0,
+    root_converter/1
 ]).
 
 -include("hoconsc.hrl").
@@ -238,6 +241,37 @@ namespace(Schema) ->
             Schema:namespace();
         false ->
             maps:get(namespace, Schema, undefined)
+    end.
+
+root_converter(Schema, Ref) ->
+    case is_atom(Schema) of
+        true ->
+            _ = code:ensure_loaded(Schema),
+            case erlang:function_exported(Schema, root_converter, 1) of
+                true ->
+                    try Schema:root_converter(Ref) of
+                        undefined ->
+                            undefined;
+                        Converter when is_function(Converter, 2) ->
+                            Converter;
+                        BadConverter ->
+                            throw({bad_root_converter, BadConverter})
+                    catch
+                        _:_ ->
+                            undefined
+                    end;
+                false ->
+                    undefined
+            end;
+        false ->
+            case Schema of
+                #{root_converter := #{Ref := Converter}} when is_function(Converter, 2) ->
+                    Converter;
+                #{root_converter := #{Ref := BadConverter}} ->
+                    throw({bad_root_converter, BadConverter});
+                _ ->
+                    undefined
+            end
     end.
 
 %% @doc Resolve struct name from a guess.

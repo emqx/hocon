@@ -285,15 +285,16 @@ map(Schema, Conf, RootNames) ->
 map(Schema, Conf, all, Opts) ->
     map(Schema, Conf, hocon_schema:root_names(Schema), Opts);
 map(Schema, Conf0, Roots0, Opts0) ->
-    Opts = merge_opts(
+    Opts1 = merge_opts(
         #{
             schema => Schema,
             format => richmap
         },
         Opts0
     ),
+    Opts = ensure_stack(Opts1),
     Conf1 = ensure_format(Conf0, Opts),
-    Roots = resolve_root_types(hocon_schema:roots(Schema), Roots0),
+    Roots = resolve_root_types(hocon_schema:roots(Schema), Roots0, Schema),
     Conf2 = filter_by_roots(Opts, Conf1, Roots),
     Conf3 = apply_envs(Schema, Conf2, Opts, Roots),
     {Mapped0, Conf4} = do_map(Roots, Conf3, Opts, ?MAGIC_SCHEMA),
@@ -320,7 +321,7 @@ merge_env_overrides(Schema, Conf0, all, Opts) ->
 merge_env_overrides(Schema, Conf0, Roots0, Opts0) ->
     %% force
     Opts = Opts0#{apply_override_envs => true},
-    Roots = resolve_root_types(hocon_schema:roots(Schema), Roots0),
+    Roots = resolve_root_types(hocon_schema:roots(Schema), Roots0, Schema),
     Conf1 = filter_by_roots(Opts, Conf0, Roots),
     apply_envs(Schema, Conf1, Opts, Roots).
 
@@ -363,15 +364,25 @@ filter_by_roots(Opts, Conf, Roots) ->
     Names = names_and_aliases(Roots),
     boxit(Opts, maps:with(Names, unbox(Opts, Conf)), Conf).
 
-resolve_root_types(_Roots, []) ->
+resolve_root_types(_Roots, [], _Schema) ->
     [];
-resolve_root_types(Roots, [Name | Rest]) ->
+resolve_root_types(Roots, [Name | Rest], Schema) ->
     case lists:keyfind(bin(Name), 1, Roots) of
-        {_, {OrigName, Sc}} ->
-            [{OrigName, Sc} | resolve_root_types(Roots, Rest)];
+        {_, {OrigName, Sc0}} ->
+            Sc = maybe_override_root_converter(Schema, OrigName, Sc0),
+            [{OrigName, Sc} | resolve_root_types(Roots, Rest, Schema)];
         false ->
             %% maybe a private struct which is not exposed in roots/0
-            [{Name, hoconsc:ref(Name)} | resolve_root_types(Roots, Rest)]
+            Sc = maybe_override_root_converter(Schema, Name, hoconsc:ref(Name)),
+            [{Name, Sc} | resolve_root_types(Roots, Rest, Schema)]
+    end.
+
+maybe_override_root_converter(Schema, Name, FieldSc) ->
+    case hocon_schema:root_converter(Schema, Name) of
+        undefined ->
+            FieldSc;
+        Converter ->
+            hocon_schema:override(FieldSc, #{converter => Converter})
     end.
 
 str(A) when is_atom(A) -> str(atom_to_binary(A, utf8));
@@ -599,15 +610,30 @@ map_field(?MAP(NameType, Type), FieldSchema, Value, Opts) ->
                     {validation_errs(Opts, Context), Value}
             end
     end;
-map_field(?R_REF(Module, Ref), FieldSchema, Value, Opts) ->
+map_field(?R_REF(Module, Ref), FieldSchema, Value0, Opts) ->
     %% Switching to another module, good luck.
-    do_map(hocon_schema:fields(Module, Ref), Value, Opts#{schema := Module}, FieldSchema);
-map_field(?REF(Ref), FieldSchema, Value, #{schema := Schema} = Opts) ->
-    Fields = hocon_schema:fields(Schema, Ref),
-    do_map(Fields, Value, Opts, FieldSchema);
-map_field(Ref, FieldSchema, Value, #{schema := Schema} = Opts) when is_list(Ref) ->
-    Fields = hocon_schema:fields(Schema, Ref),
-    do_map(Fields, Value, Opts, FieldSchema);
+    case eval_root_converter(Module, Ref, Value0, Opts) of
+        {ok, Value} ->
+            do_map(hocon_schema:fields(Module, Ref), Value, Opts#{schema := Module}, FieldSchema);
+        Errors ->
+            Errors
+    end;
+map_field(?REF(Ref), FieldSchema, Value0, #{schema := Schema} = Opts) ->
+    case eval_root_converter(Schema, Ref, Value0, Opts) of
+        {ok, Value} ->
+            Fields = hocon_schema:fields(Schema, Ref),
+            do_map(Fields, Value, Opts, FieldSchema);
+        Errors ->
+            Errors
+    end;
+map_field(Ref, FieldSchema, Value0, #{schema := Schema} = Opts) when is_list(Ref) ->
+    case eval_root_converter(Schema, Ref, Value0, Opts) of
+        {ok, Value} ->
+            Fields = hocon_schema:fields(Schema, Ref),
+            do_map(Fields, Value, Opts, FieldSchema);
+        Errors ->
+            Errors
+    end;
 map_field(?UNION(Types0, _), Schema0, Value, Opts) ->
     try select_union_members(Types0, Value, Opts) of
         Types ->
@@ -688,6 +714,45 @@ eval_builtin_converter(PlainValue, Type, Opts) ->
         false ->
             hocon_schema_builtin:convert(PlainValue, Type)
     end.
+
+eval_root_converter(Schema, Ref, Value0, Opts) ->
+    case hocon_schema:root_converter(Schema, Ref) of
+        undefined ->
+            {ok, Value0};
+        Converter when is_function(Converter, 2) ->
+            Value1 = ensure_plain(Value0),
+            try Converter(Value1, Opts) of
+                Value2 ->
+                    Box =
+                        case Value0 of
+                            undefined ->
+                                ?META_BOX(from_converter, Converter);
+                            _ ->
+                                Value0
+                        end,
+                    {ok, maybe_mkrich(Opts, Value2, Box)}
+            catch
+                throw:Reason ->
+                    {validation_errs(ensure_stack(Opts), #{reason => Reason}), Value0};
+                C:E:St ->
+                    {
+                        validation_errs(ensure_stack(Opts), #{
+                            reason => root_converter_crashed,
+                            exception => {C, E},
+                            stacktrace => St
+                        }),
+                        Value0
+                    }
+            end
+    end.
+
+ensure_stack(#{stack := _} = Opts) ->
+    Opts;
+ensure_stack(#{} = Opts) ->
+    Opts#{stack => []};
+ensure_stack(Opts) ->
+    %% Impossible?
+    Opts.
 
 get_validators(Schema, Type, Opts) ->
     case is_make_serializable(Opts) of
