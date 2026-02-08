@@ -467,6 +467,7 @@ str(A) when is_atom(A) -> atom_to_list(A);
 str(S) when is_list(S) -> S.
 
 bin(A) when is_atom(A) -> atom_to_binary(A, utf8);
+bin(I) when is_integer(I) -> integer_to_binary(I);
 bin(S) -> unicode:characters_to_binary(S, utf8).
 
 %% get type validation stack.

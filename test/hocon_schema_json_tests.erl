@@ -66,6 +66,61 @@ unique_field_names_test() ->
         gen(Sc)
     ).
 
+enum_test() ->
+    Structs = #{
+        foo => [
+            {number, hoconsc:mk(hoconsc:enum([1, 2]), #{default => 1})},
+            {atom, hoconsc:mk(hoconsc:enum([test1, test2]), #{default => test2})}
+        ]
+    },
+    Sc = #{
+        roots => [{"root", hoconsc:mk(hoconsc:ref(foo), #{required => false})}],
+        fields => Structs
+    },
+    Json = gen(Sc),
+    ?assertMatch(
+        [
+            #{
+                fields :=
+                    [
+                        #{
+                            name := <<"root">>,
+                            type := #{kind := struct}
+                        }
+                    ]
+            },
+            #{
+                fields :=
+                    [
+                        #{
+                            default := #{hocon := <<"1">>},
+                            name := <<"number">>,
+                            type :=
+                                #{
+                                    symbols := [<<"1">>, <<"2">>],
+                                    kind := enum
+                                },
+                            raw_default := 1
+                        },
+                        #{
+                            default :=
+                                #{hocon := <<"test2">>},
+                            name := <<"atom">>,
+                            type :=
+                                #{
+                                    symbols := [<<"test1">>, <<"test2">>],
+                                    kind := enum
+                                },
+                            raw_default := test2
+                        }
+                    ],
+                paths := [<<"root">>],
+                full_name := <<"foo">>
+            }
+        ],
+        Json
+    ).
+
 unique_field_name_with_aliases_test() ->
     Structs = #{
         foo => [
