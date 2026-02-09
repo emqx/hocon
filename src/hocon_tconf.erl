@@ -749,10 +749,7 @@ eval_root_converter(Schema, Ref, Value0, Opts) ->
 ensure_stack(#{stack := _} = Opts) ->
     Opts;
 ensure_stack(#{} = Opts) ->
-    Opts#{stack => []};
-ensure_stack(Opts) ->
-    %% Impossible?
-    Opts.
+    Opts#{stack => []}.
 
 get_validators(Schema, Type, Opts) ->
     case is_make_serializable(Opts) of
@@ -831,9 +828,7 @@ maybe_mapping(_, undefined) -> [];
 maybe_mapping(MappedPath, PlainValue) -> [{string:tokens(MappedPath, "."), PlainValue}].
 
 push_stack(#{stack := Stack} = X, New) ->
-    X#{stack := [New | Stack]};
-push_stack(X, New) ->
-    X#{stack => [New]}.
+    X#{stack := [New | Stack]}.
 
 %% get type validation stack.
 path(#{stack := Stack}) ->
