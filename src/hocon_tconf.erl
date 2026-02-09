@@ -551,6 +551,15 @@ maybe_computed(_FieldSchema, CheckedValue, _Opts) ->
 map_field_maybe_convert(Type, Schema, Value0, Opts, undefined) ->
     map_field(Type, Schema, Value0, Opts);
 map_field_maybe_convert(Type, Schema, Value0, Opts, Converter) ->
+    case do_apply_converter(Converter, Value0, Opts) of
+        {ok, Value1} ->
+            {Mapped, Value2} = map_field(Type, Schema, Value1, Opts),
+            {Mapped, ensure_obfuscate_sensitive(Opts, Schema, Value2)};
+        Errors ->
+            Errors
+    end.
+
+do_apply_converter(Converter, Value0, Opts) ->
     Value1 = ensure_plain(Value0),
     try Converter(Value1, Opts) of
         Value2 ->
@@ -561,15 +570,13 @@ map_field_maybe_convert(Type, Schema, Value0, Opts, Converter) ->
                     _ ->
                         Value0
                 end,
-            Value3 = maybe_mkrich(Opts, Value2, Box),
-            {Mapped, Value4} = map_field(Type, Schema, Value3, Opts),
-            {Mapped, ensure_obfuscate_sensitive(Opts, Schema, Value4)}
+            {ok, maybe_mkrich(Opts, Value2, Box)}
     catch
         throw:Reason ->
-            {validation_errs(Opts, #{reason => Reason}), Value0};
+            {validation_errs(ensure_stack(Opts), #{reason => Reason}), Value0};
         C:E:St ->
             {
-                validation_errs(Opts, #{
+                validation_errs(ensure_stack(Opts), #{
                     reason => converter_crashed,
                     exception => {C, E},
                     stacktrace => St
@@ -720,30 +727,7 @@ eval_root_converter(Schema, Ref, Value0, Opts) ->
         undefined ->
             {ok, Value0};
         Converter when is_function(Converter, 2) ->
-            Value1 = ensure_plain(Value0),
-            try Converter(Value1, Opts) of
-                Value2 ->
-                    Box =
-                        case Value0 of
-                            undefined ->
-                                ?META_BOX(from_converter, Converter);
-                            _ ->
-                                Value0
-                        end,
-                    {ok, maybe_mkrich(Opts, Value2, Box)}
-            catch
-                throw:Reason ->
-                    {validation_errs(ensure_stack(Opts), #{reason => Reason}), Value0};
-                C:E:St ->
-                    {
-                        validation_errs(ensure_stack(Opts), #{
-                            reason => root_converter_crashed,
-                            exception => {C, E},
-                            stacktrace => St
-                        }),
-                        Value0
-                    }
-            end
+            do_apply_converter(Converter, Value0, Opts)
     end.
 
 ensure_stack(#{stack := _} = Opts) ->
