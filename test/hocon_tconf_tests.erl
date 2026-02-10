@@ -2804,3 +2804,51 @@ computed_fields_test() ->
     ),
 
     ok.
+
+%% Smoke tests for using the `root_converter/1` callback (map schema).
+root_converter_test() ->
+    RootConverter1 = fun(X, _) -> X#{<<"new_key">> => true} end,
+    RootConverter2 = fun(N, _) -> N + 10 end,
+    Sc = #{
+        roots => [
+            {"root1", hoconsc:mk(map(), #{})},
+            {root2, hoconsc:mk(binary(), #{})},
+            {root3, hoconsc:mk(integer(), #{})}
+        ],
+        root_converter => #{"root1" => RootConverter1, root3 => RootConverter2}
+    },
+    Conf = #{<<"root1">> => #{}, <<"root2">> => <<"unaltered">>, <<"root3">> => 1},
+    ?assertEqual(
+        #{
+            <<"root1">> => #{<<"new_key">> => true},
+            <<"root2">> => <<"unaltered">>,
+            <<"root3">> => 11
+        },
+        hocon_tconf:check_plain(Sc, Conf)
+    ),
+    ok.
+
+%% Smoke tests for using the `root_converter/1` callback (module schema).
+root_converter_module_test() ->
+    Conf = #{
+        <<"foo">> => #{
+            <<"myfoo">> => #{
+                <<"int">> => 1,
+                <<"baz">> => <<"hey">>,
+                <<"quux">> => #{<<"int">> => 2}
+            }
+        }
+    },
+    ?assertEqual(
+        #{
+            <<"foo">> => #{
+                <<"myfoo">> => #{
+                    <<"int">> => 11,
+                    <<"baz">> => <<"hey">>,
+                    <<"quux">> => #{<<"int">> => 2}
+                }
+            }
+        },
+        hocon_tconf:check_plain(demo_schema7, Conf)
+    ),
+    ok.
