@@ -232,7 +232,54 @@ unesc([$\\, $t | T]) -> {$\t, T};
 unesc([$\\, $r | T]) -> {$\r, T};
 unesc([$\\, $b | T]) -> {$\b, T};
 unesc([$\\, $f | T]) -> {$\f, T};
+unesc([$\\, $u | T]) -> unescapeu(T);
 unesc([H | T]) -> {H, T}.
+
+-define(unescapeu_invalid(ESC), ?unescapeu_invalid(invalid_uescape, ESC)).
+-define(unescapeu_invalid(R, ESC),
+    throw({scan_error, #{reason => R, escape => ESC}})
+).
+
+unescapeu([E1, E2, E3, E4 | T]) ->
+    try hex_to_int(E1, E2, E3, E4) of
+        CP when CP >= 16#D800, CP =< 16#DBFF ->
+            unescape_surrogate(T, CP);
+        CP ->
+            try <<CP/utf8>> of
+                _ -> {CP, T}
+            catch
+                _:_ -> ?unescapeu_invalid([$u, E1, E2, E3, E4])
+            end
+    catch
+        _:_ ->
+            ?unescapeu_invalid([$u, E1, E2, E3, E4])
+    end;
+unescapeu(Esc) ->
+    ?unescapeu_invalid([$u | Esc]).
+
+unescape_surrogate([$\\, $u, E1, E2, E3, E4 | T], Hi) ->
+    try hex_to_int(E1, E2, E3, E4) of
+        Lo when Lo >= 16#DC00, Lo =< 16#DFFF ->
+            CP = 16#10000 + ((Hi band 16#3FF) bsl 10) + (Lo band 16#3FF),
+            try <<CP/utf8>> of
+                _ -> {CP, T}
+            catch
+                _:_ -> ?unescapeu_invalid(invalid_uescape_surrogate, [$u, E1, E2, E3, E4])
+            end;
+        _ ->
+            ?unescapeu_invalid(invalid_uescape_surrogate, [$u, E1, E2, E3, E4])
+    catch
+        _:_ -> ?unescapeu_invalid([$u, E1, E2, E3, E4])
+    end;
+unescape_surrogate(Esc, _Hi) ->
+    ?unescapeu_invalid([$u | Esc]).
+
+hex_to_int(H1, H2, H3, H4) ->
+    hex_digit(H4) + 16 * (hex_digit(H3) + 16 * (hex_digit(H2) + 16 * hex_digit(H1))).
+
+hex_digit(C) when C >= $a, C =< $f -> C - $a + 10;
+hex_digit(C) when C >= $A, C =< $F -> C - $A + 10;
+hex_digit(C) when C >= $0, C =< $9 -> C - $0.
 
 maybe_var_ref_name("${?" ++ Name_CR) ->
     [$} | NameRev] = lists:reverse(Name_CR),
