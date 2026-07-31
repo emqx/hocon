@@ -328,6 +328,20 @@ unicode_escape_test_() ->
             ?_assertMatch(
                 {error, {scan_error, _}},
                 hocon:binary(<<"k = \"\\u123\"">>)
+            )},
+        {"triple-quoted strings preserve quoting verbatim",
+            ?_assertEqual(
+                #{<<"k">> => <<"\\u00e5\\u4F60\\t">>},
+                binary(<<"k = \"\"\"\\u00e5\\u4F60\\t\"\"\"">>)
+            )},
+        {"triple-quoted indented strings preserve quoting verbatim",
+            ?_assertEqual(
+                #{<<"k">> => <<"\\u00e5\\u4F60\\t\n">>},
+                binary(<<
+                    "k = \"\"\"~\n"
+                    "    \\u00e5\\u4F60\\t\n"
+                    "~\"\"\""
+                >>)
             )}
     ].
 
