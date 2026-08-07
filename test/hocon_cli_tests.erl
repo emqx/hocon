@@ -17,6 +17,7 @@
 -module(hocon_cli_tests).
 
 -include_lib("eunit/include/eunit.hrl").
+-include_lib("kernel/include/file.hrl").
 
 -define(assertPrinted(___Text),
     (fun() ->
@@ -112,6 +113,23 @@ generate_multiple_input_config_test() ->
     ?assertEqual("yaa", proplists:get_value(setting, Plist)).
 
 generate_opts(T) -> ["-t", T, "-d", out(), "generate"].
+
+generate_with_schema_opts(Time, MaxHistory, Dir) ->
+    generate_with_schema_opts(Time, MaxHistory, Dir, []).
+
+generate_with_schema_opts(Time, MaxHistory, Dir, ExtraOpts) ->
+    [
+        "-c",
+        etc("demo-schema-example-1.conf"),
+        "-s",
+        "demo_schema",
+        "-t",
+        Time,
+        "-m",
+        integer_to_list(MaxHistory),
+        "-d",
+        Dir
+    ] ++ ExtraOpts ++ ["generate"].
 
 now_time_test() ->
     ?CAPTURING(begin
@@ -336,6 +354,290 @@ prune_test() ->
     NewAppConfigs = lists:sort(filelib:wildcard("app.*.config", out())),
     % check if old one has been deleted, not new one
     ?assertEqual(lists:nth(1, NewAppConfigs), lists:nth(2, AppConfigs)).
+
+generation_with_older_timestamp_keeps_current_files_test() ->
+    Dir = filename:join(out(), atom_to_list(?FUNCTION_NAME)),
+    ok = filelib:ensure_dir(filename:join(Dir, "dummy")),
+    CurrentTime = "2000.01.01.00.00.00",
+    ExistingTimes = ["2000.01.01.00.00.01", "2000.01.01.00.00.02"],
+    ExistingFiles =
+        [
+            filename:join(Dir, Prefix ++ "." ++ Time ++ "." ++ Extension)
+         || {Prefix, Extension} <- [{"app", "config"}, {"vm", "args"}],
+            Time <- ExistingTimes
+        ],
+    lists:foreach(fun(Filename) -> ok = file:write_file(Filename, <<"old">>) end, ExistingFiles),
+    CurrentAppConfig = filename:join(Dir, "app." ++ CurrentTime ++ ".config"),
+    CurrentVMArgs = filename:join(Dir, "vm." ++ CurrentTime ++ ".args"),
+    try
+        ok = hocon_cli:main(generate_with_schema_opts(CurrentTime, 2, Dir)),
+        ?assert(filelib:is_regular(CurrentAppConfig)),
+        ?assert(filelib:is_regular(CurrentVMArgs)),
+        ?assertEqual(
+            lists:sort([
+                CurrentAppConfig,
+                filename:join(Dir, "app.2000.01.01.00.00.02.config")
+            ]),
+            lists:sort(filelib:wildcard(filename:join(Dir, "app.*.config")))
+        ),
+        ?assertEqual(
+            lists:sort([
+                CurrentVMArgs,
+                filename:join(Dir, "vm.2000.01.01.00.00.02.args")
+            ]),
+            lists:sort(filelib:wildcard(filename:join(Dir, "vm.*.args")))
+        )
+    after
+        cleanup_dir(Dir)
+    end.
+
+generation_prunes_only_matching_dest_file_test() ->
+    Dir = filename:join(out(), atom_to_list(?FUNCTION_NAME)),
+    ok = filelib:ensure_dir(filename:join(Dir, "dummy")),
+    OldCustomConfig = filename:join(Dir, "app.custom.1999.01.01.00.00.00.config"),
+    OtherConfig = filename:join(Dir, "app.other.1999.01.01.00.00.00.config"),
+    ManualConfig = filename:join(Dir, "app.manual.config"),
+    OtherTmp = OtherConfig ++ ".123.1.tmp",
+    ManualTmp = filename:join(Dir, "app.custom.1999.01.01.00.00.00.config.backup.manual.tmp"),
+    UnrelatedFiles = [OldCustomConfig, OtherConfig, ManualConfig] ++ [OtherTmp, ManualTmp],
+    lists:foreach(
+        fun(Filename) -> ok = file:write_file(Filename, <<"unrelated">>) end,
+        UnrelatedFiles
+    ),
+    StaleMTime = erlang:system_time(second) - 3601,
+    ok = set_mtimes([OtherTmp, ManualTmp], StaleMTime),
+    try
+        ok = hocon_cli:main(
+            generate_with_schema_opts(
+                "2000.01.01.00.00.01",
+                1,
+                Dir,
+                ["-f", "app.custom"]
+            )
+        ),
+        ?assertNot(filelib:is_file(OldCustomConfig)),
+        ?assert(filelib:is_regular(OtherConfig)),
+        ?assert(filelib:is_regular(ManualConfig)),
+        ?assert(filelib:is_regular(OtherTmp)),
+        ?assert(filelib:is_regular(ManualTmp)),
+        ?assert(
+            filelib:is_regular(
+                filename:join(Dir, "app.custom.2000.01.01.00.00.01.config")
+            )
+        )
+    after
+        cleanup_dir(Dir)
+    end.
+
+stale_tmp_files_are_cleaned_before_generation_test() ->
+    Dir = filename:join(out(), atom_to_list(?FUNCTION_NAME)),
+    ok = filelib:ensure_dir(filename:join(Dir, "dummy")),
+    StaleAppTmp = filename:join(Dir, "app.2000.01.01.00.00.00.config.123.1.tmp"),
+    StaleVMArgsTmp = filename:join(Dir, "vm.2000.01.01.00.00.00.args.123.2.tmp"),
+    FreshAppTmp = filename:join(Dir, "app.2000.01.01.00.00.00.config.456.3.tmp"),
+    lists:foreach(
+        fun(Filename) -> ok = file:write_file(Filename, <<"tmp">>) end,
+        [StaleAppTmp, StaleVMArgsTmp, FreshAppTmp]
+    ),
+    StaleMTime = erlang:system_time(second) - 3601,
+    ok = set_mtimes([StaleAppTmp, StaleVMArgsTmp], StaleMTime),
+    try
+        ok = hocon_cli:main([
+            "-c",
+            etc("demo-schema-example-1.conf"),
+            "-s",
+            "demo_schema",
+            "-t",
+            "2000.01.01.00.00.01",
+            "-d",
+            Dir,
+            "generate"
+        ]),
+        ?assertNot(filelib:is_file(StaleAppTmp)),
+        ?assertNot(filelib:is_file(StaleVMArgsTmp)),
+        ?assert(filelib:is_regular(FreshAppTmp))
+    after
+        cleanup_dir(Dir)
+    end.
+
+cleanup_dir(Dir) ->
+    case file:list_dir(Dir) of
+        {ok, Files} ->
+            lists:foreach(fun(Filename) -> file:delete(filename:join(Dir, Filename)) end, Files);
+        {error, enoent} ->
+            ok
+    end,
+    file:del_dir(Dir),
+    ok.
+
+set_mtime(Filename, MTime) ->
+    file:write_file_info(Filename, #file_info{mtime = MTime}, [{time, posix}]).
+
+set_mtimes(Filenames, MTime) ->
+    lists:foreach(fun(Filename) -> ok = set_mtime(Filename, MTime) end, Filenames).
+
+restore_backup_failure_preserves_target_test() ->
+    Dir = filename:join(out(), atom_to_list(?FUNCTION_NAME)),
+    ok = filelib:ensure_dir(filename:join(Dir, "dummy")),
+    Target = filename:join(Dir, "app.config"),
+    MissingBackup = filename:join(Dir, "missing.tmp"),
+    ok = file:write_file(Target, <<"current">>),
+    try
+        ok = hocon_cli:restore_backup(Target, MissingBackup),
+        ?assertEqual({ok, <<"current">>}, file:read_file(Target))
+    after
+        cleanup_dir(Dir)
+    end.
+
+atomic_write_preserves_existing_modes_test() ->
+    Dir = filename:join(out(), atom_to_list(?FUNCTION_NAME)),
+    ok = filelib:ensure_dir(filename:join(Dir, "dummy")),
+    AppConfig = filename:join(Dir, "app.config"),
+    VMArgs = filename:join(Dir, "vm.args"),
+    lists:foreach(
+        fun(Filename) ->
+            ok = file:write_file(Filename, <<"old">>),
+            ok = file:change_mode(Filename, 8#600)
+        end,
+        [AppConfig, VMArgs]
+    ),
+    try
+        ?assertEqual(
+            ok,
+            hocon_cli:atomic_write_files(
+                new_config_files(VMArgs, AppConfig),
+                fun file:rename/2
+            )
+        ),
+        ?assertEqual({ok, <<"new app config">>}, file:read_file(AppConfig)),
+        ?assertEqual({ok, <<"new vm args">>}, file:read_file(VMArgs)),
+        ?assertEqual(8#600, file_mode(AppConfig)),
+        ?assertEqual(8#600, file_mode(VMArgs))
+    after
+        cleanup_dir(Dir)
+    end.
+
+atomic_prepare_failure_preserves_targets_test() ->
+    Dir = filename:join(out(), atom_to_list(?FUNCTION_NAME)),
+    ok = filelib:ensure_dir(filename:join(Dir, "dummy")),
+    VMArgs = filename:join(Dir, "vm.args"),
+    AppConfig = filename:join(Dir, "app.config"),
+    ok = file:write_file(VMArgs, <<"old vm args">>),
+    ok = file:make_dir(AppConfig),
+    try
+        ?assertEqual(
+            {error, AppConfig, eisdir},
+            hocon_cli:atomic_write_files(
+                new_config_files(VMArgs, AppConfig),
+                fun file:rename/2
+            )
+        ),
+        ?assertEqual({ok, <<"old vm args">>}, file:read_file(VMArgs)),
+        ?assert(filelib:is_dir(AppConfig)),
+        ?assertEqual([], filelib:wildcard(filename:join(Dir, "*.tmp")))
+    after
+        _ = file:delete(VMArgs),
+        _ = file:del_dir(AppConfig),
+        _ = file:del_dir(Dir)
+    end.
+
+file_mode(Filename) ->
+    {ok, #file_info{mode = Mode}} = file:read_file_info(Filename),
+    Mode band 8#777.
+
+generation_failure_preserves_retained_history_test() ->
+    Dir = filename:join(out(), atom_to_list(?FUNCTION_NAME)),
+    ok = filelib:ensure_dir(filename:join(Dir, "dummy")),
+    OldestTime = "2000.01.01.00.00.00",
+    RetainedTime = "2000.01.01.00.00.01",
+    NewTime = "2000.01.01.00.00.02",
+    OldestAppConfig = filename:join(Dir, "app." ++ OldestTime ++ ".config"),
+    OldestVMArgs = filename:join(Dir, "vm." ++ OldestTime ++ ".args"),
+    RetainedAppConfig = filename:join(Dir, "app." ++ RetainedTime ++ ".config"),
+    RetainedVMArgs = filename:join(Dir, "vm." ++ RetainedTime ++ ".args"),
+    NewAppConfig = filename:join(Dir, "app." ++ NewTime ++ ".config"),
+    NewVMArgs = filename:join(Dir, "vm." ++ NewTime ++ ".args"),
+    lists:foreach(
+        fun(Filename) -> ok = file:write_file(Filename, <<"old">>) end,
+        [OldestAppConfig, OldestVMArgs, RetainedAppConfig, RetainedVMArgs]
+    ),
+    ok = file:make_dir(NewVMArgs),
+    try
+        ?assertThrow(
+            stop_deactivate,
+            hocon_cli:main(generate_with_schema_opts(NewTime, 2, Dir))
+        ),
+        ?assertNot(filelib:is_file(OldestAppConfig)),
+        ?assertNot(filelib:is_file(OldestVMArgs)),
+        ?assert(filelib:is_regular(RetainedAppConfig)),
+        ?assert(filelib:is_regular(RetainedVMArgs)),
+        ?assertNot(filelib:is_file(NewAppConfig)),
+        ?assert(filelib:is_dir(NewVMArgs)),
+        ?assertEqual([], filelib:wildcard(filename:join(Dir, "*.tmp")))
+    after
+        _ = file:delete(OldestAppConfig),
+        _ = file:delete(OldestVMArgs),
+        _ = file:delete(RetainedAppConfig),
+        _ = file:delete(RetainedVMArgs),
+        _ = file:delete(NewAppConfig),
+        _ = file:del_dir(NewVMArgs),
+        _ = file:del_dir(Dir)
+    end.
+
+atomic_commit_failure_removes_partial_generation_test() ->
+    atomic_commit_failure_test(?FUNCTION_NAME, {error, enoent}, {error, enoent}).
+
+atomic_commit_failure_restores_existing_targets_test() ->
+    atomic_commit_failure_test(
+        ?FUNCTION_NAME,
+        {ok, <<"old app config">>},
+        {ok, <<"old vm args">>}
+    ).
+
+atomic_commit_failure_test(TestName, ExpectedAppConfig, ExpectedVMArgs) ->
+    Dir = filename:join(out(), atom_to_list(TestName)),
+    ok = filelib:ensure_dir(filename:join(Dir, "dummy")),
+    AppConfig = filename:join(Dir, "app.config"),
+    VMArgs = filename:join(Dir, "vm.args"),
+    ok = maybe_write_file(AppConfig, ExpectedAppConfig),
+    ok = maybe_write_file(VMArgs, ExpectedVMArgs),
+    RenameCountKey = {?MODULE, TestName},
+    try
+        ?assertEqual(
+            {error, AppConfig, eacces},
+            hocon_cli:atomic_write_files(
+                new_config_files(VMArgs, AppConfig),
+                fail_second_rename(RenameCountKey)
+            )
+        ),
+        ?assertEqual(ExpectedAppConfig, file:read_file(AppConfig)),
+        ?assertEqual(ExpectedVMArgs, file:read_file(VMArgs)),
+        ?assertEqual([], filelib:wildcard(filename:join(Dir, "*.tmp")))
+    after
+        erlang:erase(RenameCountKey),
+        _ = file:delete(AppConfig),
+        _ = file:delete(VMArgs),
+        _ = file:del_dir(Dir)
+    end.
+
+new_config_files(VMArgs, AppConfig) ->
+    [{VMArgs, <<"new vm args">>}, {AppConfig, <<"new app config">>}].
+
+maybe_write_file(Filename, {ok, Content}) ->
+    file:write_file(Filename, Content);
+maybe_write_file(_Filename, {error, enoent}) ->
+    ok.
+
+fail_second_rename(RenameCountKey) ->
+    fun(From, To) ->
+        case erlang:get(RenameCountKey) of
+            undefined ->
+                erlang:put(RenameCountKey, 1),
+                file:rename(From, To);
+            1 ->
+                {error, eacces}
+        end
+    end.
 
 %% etc-path
 etc(Name) ->
