@@ -59,7 +59,7 @@ read(Filename) ->
 -spec scan(binary() | string(), hocon:ctx()) -> list().
 scan(Input, Ctx) when is_binary(Input) ->
     case unicode_list(Input) of
-        {error, _Ok, Invalid} ->
+        {Status, _Ok, Invalid} when Status =:= error; Status =:= incomplete ->
             throw({scan_invalid_utf8, Invalid, Ctx});
         InputList ->
             scan(InputList, Ctx)
