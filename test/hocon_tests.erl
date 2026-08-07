@@ -1079,6 +1079,13 @@ invalid_utf8_test() ->
         hocon:load("./test/data/invalid-utf8.conf")
     ).
 
+incomplete_utf8_test() ->
+    Incomplete = <<16#E2, 16#82>>,
+    ?assertMatch(
+        {error, {scan_invalid_utf8, Incomplete, _}},
+        hocon:load("./test/data/incomplete-utf8.conf")
+    ).
+
 empty_map_test_() ->
     [
         ?_assertEqual({ok, #{<<"a">> => #{}}}, hocon:binary("a={}")),
