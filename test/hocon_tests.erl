@@ -272,6 +272,79 @@ escape_test_() ->
         )
     ].
 
+unicode_escape_test_() ->
+    [
+        {"ASCII code point",
+            ?_assertEqual(
+                #{<<"k">> => <<"A">>},
+                binary(<<"k = \"\\u0041\"">>)
+            )},
+        {"mixed-case hexadecimal BMP code points",
+            ?_assertEqual(
+                #{<<"k">> => <<"å你"/utf8>>},
+                binary(<<"k = \"\\u00e5\\u4F60\"">>)
+            )},
+        {"unicode escape in a quoted key",
+            ?_assertEqual(
+                #{<<"key">> => 1},
+                binary(<<"\"\\u006bey\" = 1">>)
+            )},
+        {"surrogate pair",
+            ?_assertEqual(
+                #{<<"k">> => <<"😀"/utf8>>},
+                binary(<<"k = \"\\uD83D\\uDE00\"">>)
+            )},
+        {"lowest surrogate pair",
+            ?_assertEqual(
+                #{<<"k">> => <<16#10000/utf8>>},
+                binary(<<"k = \"\\uD800\\uDC00\"">>)
+            )},
+        {"highest surrogate pair",
+            ?_assertEqual(
+                #{<<"k">> => <<16#10FFFF/utf8>>},
+                binary(<<"k = \"\\uDBFF\\uDFFF\"">>)
+            )},
+        {"lone low surrogate",
+            ?_assertMatch(
+                {error, {scan_error, #{reason := invalid_uescape}}},
+                hocon:binary(<<"k = \"\\uDC00\"">>)
+            )},
+        {"lone high surrogate",
+            ?_assertMatch(
+                {error, {scan_error, #{reason := invalid_uescape}}},
+                hocon:binary(<<"k = \"\\uD800\"">>)
+            )},
+        {"high surrogate followed by a BMP code point",
+            ?_assertMatch(
+                {error, {scan_error, #{reason := invalid_uescape_surrogate}}},
+                hocon:binary(<<"k = \"\\uD800\\u0041\"">>)
+            )},
+        {"malformed unicode escape",
+            ?_assertMatch(
+                {error, {scan_error, _}},
+                hocon:binary(<<"k = \"\\u123x\"">>)
+            )},
+        {"short unicode escape",
+            ?_assertMatch(
+                {error, {scan_error, _}},
+                hocon:binary(<<"k = \"\\u123\"">>)
+            )},
+        {"triple-quoted strings preserve quoting verbatim",
+            ?_assertEqual(
+                #{<<"k">> => <<"\\u00e5\\u4F60\\t">>},
+                binary(<<"k = \"\"\"\\u00e5\\u4F60\\t\"\"\"">>)
+            )},
+        {"triple-quoted indented strings preserve quoting verbatim",
+            ?_assertEqual(
+                #{<<"k">> => <<"\\u00e5\\u4F60\\t\n">>},
+                binary(<<
+                    "k = \"\"\"~\n"
+                    "    \\u00e5\\u4F60\\t\n"
+                    "~\"\"\""
+                >>)
+            )}
+    ].
+
 triple_quote_string_test_() ->
     Parse = fun(Str) -> maps:get(<<"a">>, binary(<<"a = \"\"\"", Str/binary, "\"\"\"">>)) end,
     [
