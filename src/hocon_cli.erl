@@ -18,11 +18,15 @@
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
--export([is_valid_now_time/1]).
+-export([atomic_write_files/2, is_valid_now_time/1, restore_backup/2]).
 -endif.
 
 -export([main/1]).
 
+-include_lib("kernel/include/file.hrl").
+
+-define(NOW_TIME_LENGTH, 19).
+-define(STALE_TMP_AGE_SECONDS, 3600).
 -define(STDERR(Str, Args), io:format(standard_error, Str ++ "~n", Args)).
 -define(STDOUT(Str, Args), io:format(Str ++ "~n", Args)).
 -define(FORMAT_TEMPLATE, [time, " [", level, "] ", msg, "\n"]).
@@ -306,6 +310,9 @@ generate(ParsedArgs) ->
     DestinationVMArgs = filename:join(AbsPath, DestinationVMArgsFilename),
     log(debug, "Generating config in: ~0p", [Destination]),
 
+    cleanup_stale_tmp_files(Destination),
+    cleanup_stale_tmp_files(DestinationVMArgs),
+
     Schema = load_schema(ParsedArgs),
     Conf = load_conf(ParsedArgs, fun log/3),
     LogFun =
@@ -319,22 +326,21 @@ generate(ParsedArgs) ->
             AppConfig = proplists:delete(vm_args, NewConfig),
             VmArgs = stringify(proplists:get_value(vm_args, NewConfig)),
 
-            %% Prune excess files
-            MaxHistory = proplists:get_value(max_history, ParsedArgs, 3) - 1,
+            Files = [
+                {DestinationVMArgs, string:join(VmArgs, "\n")},
+                {Destination, io_lib:fwrite("~p.\n", [AppConfig])}
+            ],
+            MaxHistory = proplists:get_value(max_history, ParsedArgs, 3),
+            %% Reclaim excess history before staging so an ENOSPC retry can recover.
             prune(Destination, MaxHistory),
             prune(DestinationVMArgs, MaxHistory),
-
-            case
-                {
-                    file:write_file(Destination, io_lib:fwrite("~p.\n", [AppConfig])),
-                    file:write_file(DestinationVMArgs, string:join(VmArgs, "\n"))
-                }
-            of
-                {ok, ok} ->
-                    ok;
-                {Err1, Err2} ->
-                    maybe_log_file_error(Destination, Err1),
-                    maybe_log_file_error(DestinationVMArgs, Err2),
+            case atomic_write_files(Files) of
+                ok ->
+                    %% Enforce the retention limit after both files are in place.
+                    prune(Destination, MaxHistory),
+                    prune(DestinationVMArgs, MaxHistory);
+                {error, Filename, Reason} ->
+                    log(error, "Error writing ~s: ~s", [Filename, file:format_error(Reason)]),
                     stop_deactivate()
             end
     catch
@@ -368,12 +374,101 @@ prune(Filename, MaxHistory) ->
     %% recent MaxHistory
     Path = filename:dirname(Filename),
     Ext = filename:extension(Filename),
-    Base = hd(string:tokens(filename:basename(Filename, Ext), ".")),
+    Base = generated_file_base(Filename),
+    CurrentFilename = filename:basename(Filename),
     Files =
-        lists:sort(filelib:wildcard(Base ++ ".*" ++ Ext, Path)),
+        lists:sort([
+            File
+         || File <- directory_files(Path),
+            is_generated_filename(File, Base, Ext)
+        ]),
+    HistoryFiles =
+        [filename:join([Path, F]) || F <- Files, F =/= CurrentFilename],
+    HistoryLimit = max(MaxHistory - 1, 0),
 
-    delete([filename:join([Path, F]) || F <- Files], MaxHistory),
+    delete(HistoryFiles, HistoryLimit),
     ok.
+
+cleanup_stale_tmp_files(Filename) ->
+    Path = filename:dirname(Filename),
+    Ext = filename:extension(Filename),
+    Base = generated_file_base(Filename),
+    TmpFiles =
+        [
+            File
+         || File <- directory_files(Path),
+            is_generated_tmp_filename(File, Base, Ext)
+        ],
+    Now = erlang:system_time(second),
+    lists:foreach(
+        fun(TmpFile) ->
+            maybe_cleanup_stale_tmp_file(filename:join(Path, TmpFile), Now)
+        end,
+        TmpFiles
+    ).
+
+generated_file_base(Filename) ->
+    Ext = filename:extension(Filename),
+    Root = filename:basename(Filename, Ext),
+    lists:sublist(Root, length(Root) - ?NOW_TIME_LENGTH - 1).
+
+directory_files(Path) ->
+    case file:list_dir(Path) of
+        {ok, Files} -> Files;
+        {error, _Reason} -> []
+    end.
+
+is_generated_filename(Filename, Base, Ext) ->
+    Root = filename:basename(Filename, Ext),
+    Prefix = Base ++ ".",
+    filename:extension(Filename) =:= Ext andalso
+        lists:prefix(Prefix, Root) andalso
+        is_valid_now_time(lists:nthtail(length(Prefix), Root)).
+
+is_generated_tmp_filename(Filename, Base, Ext) ->
+    case filename:extension(Filename) of
+        ".tmp" ->
+            ReversedParts =
+                lists:reverse(string:split(filename:basename(Filename, ".tmp"), ".", all)),
+            case ReversedParts of
+                [Unique, Pid | ReversedTargetParts] ->
+                    is_decimal_string(Pid) andalso
+                        is_decimal_string(Unique) andalso
+                        is_generated_filename(
+                            string:join(lists:reverse(ReversedTargetParts), "."), Base, Ext
+                        );
+                _Other ->
+                    false
+            end;
+        _Other ->
+            false
+    end.
+
+is_decimal_string([]) ->
+    false;
+is_decimal_string(String) ->
+    lists:all(fun(Char) -> Char >= $0 andalso Char =< $9 end, String).
+
+maybe_cleanup_stale_tmp_file(TmpFilename, Now) ->
+    case file:read_file_info(TmpFilename, [{time, posix}]) of
+        {ok, #file_info{type = regular, mtime = MTime}} when
+            Now - MTime >= ?STALE_TMP_AGE_SECONDS
+        ->
+            maybe_log_tmp_cleanup_error(TmpFilename, file:delete(TmpFilename));
+        {ok, _FileInfo} ->
+            ok;
+        {error, enoent} ->
+            ok;
+        {error, Reason} ->
+            log(error, "Could not inspect temporary file ~s, ~0p", [TmpFilename, Reason])
+    end.
+
+maybe_log_tmp_cleanup_error(_TmpFilename, ok) ->
+    ok;
+maybe_log_tmp_cleanup_error(_TmpFilename, {error, enoent}) ->
+    ok;
+maybe_log_tmp_cleanup_error(TmpFilename, {error, Reason}) ->
+    log(error, "Could not delete stale temporary file ~s, ~0p", [TmpFilename, Reason]).
 
 -spec delete(file:name_all(), non_neg_integer()) -> ok.
 delete(Files, MaxHistory) when length(Files) =< MaxHistory ->
@@ -390,12 +485,168 @@ do_delete([File | Files], Left) ->
     end,
     do_delete(Files, Left - 1).
 
--spec maybe_log_file_error(file:filename(), ok | {error, file_error()}) -> ok.
-maybe_log_file_error(_, ok) ->
+-spec atomic_write_files([{file:filename(), iodata()}]) ->
+    ok | {error, file:filename(), file_error()}.
+atomic_write_files(Files) ->
+    atomic_write_files(Files, fun file:rename/2).
+
+-spec atomic_write_files(
+    [{file:filename(), iodata()}],
+    fun((file:filename(), file:filename()) -> ok | {error, file_error()})
+) -> ok | {error, file:filename(), file_error()}.
+atomic_write_files(Files, RenameFun) ->
+    case stage_files(Files, []) of
+        {ok, StagedFiles} ->
+            case prepare_staged_files(StagedFiles, []) of
+                {ok, PreparedFiles} ->
+                    commit_staged_files(PreparedFiles, RenameFun, []);
+                {error, Filename, Reason, PreparedFiles} ->
+                    cleanup_staged_files(StagedFiles),
+                    cleanup_backup_files(PreparedFiles),
+                    {error, Filename, Reason}
+            end;
+        {error, Filename, Reason, StagedFiles} ->
+            cleanup_staged_files(StagedFiles),
+            {error, Filename, Reason}
+    end.
+
+stage_files([], StagedFiles) ->
+    {ok, lists:reverse(StagedFiles)};
+stage_files([{Filename, Content} | Files], StagedFiles) ->
+    case stage_file(Filename, Content) of
+        {ok, TmpFilename} ->
+            stage_files(Files, [{Filename, TmpFilename} | StagedFiles]);
+        {error, Reason} ->
+            {error, Filename, Reason, StagedFiles}
+    end.
+
+stage_file(Filename, Content) ->
+    TmpFilename = temporary_filename(Filename),
+    case file:open(TmpFilename, [write, binary, raw, exclusive]) of
+        {ok, IoDevice} ->
+            case preserve_target_mode(Filename, TmpFilename) of
+                ok ->
+                    WriteResult = write_and_sync(IoDevice, Content),
+                    CloseResult = file:close(IoDevice),
+                    case {WriteResult, CloseResult} of
+                        {ok, ok} ->
+                            {ok, TmpFilename};
+                        {{error, Reason}, _} ->
+                            _ = file:delete(TmpFilename),
+                            {error, Reason};
+                        {ok, {error, Reason}} ->
+                            _ = file:delete(TmpFilename),
+                            {error, Reason}
+                    end;
+                {error, Reason} ->
+                    _ = file:close(IoDevice),
+                    _ = file:delete(TmpFilename),
+                    {error, Reason}
+            end;
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+preserve_target_mode(Filename, TmpFilename) ->
+    case file:read_file_info(Filename) of
+        {ok, #file_info{type = regular, mode = Mode}} when is_integer(Mode) ->
+            file:change_mode(TmpFilename, Mode band 8#777);
+        _ ->
+            ok
+    end.
+
+write_and_sync(IoDevice, Content) ->
+    case file:write(IoDevice, Content) of
+        ok -> file:sync(IoDevice);
+        {error, Reason} -> {error, Reason}
+    end.
+
+prepare_staged_files([], PreparedFiles) ->
+    {ok, lists:reverse(PreparedFiles)};
+prepare_staged_files([{Filename, TmpFilename} | StagedFiles], PreparedFiles) ->
+    case backup_file(Filename) of
+        {ok, BackupFilename} ->
+            PreparedFile = {Filename, TmpFilename, BackupFilename},
+            prepare_staged_files(StagedFiles, [PreparedFile | PreparedFiles]);
+        {error, Reason} ->
+            {error, Filename, Reason, PreparedFiles}
+    end.
+
+backup_file(Filename) ->
+    case file:read_file(Filename) of
+        {ok, Content} -> stage_file(Filename, Content);
+        {error, enoent} -> {ok, none};
+        {error, Reason} -> {error, Reason}
+    end.
+
+commit_staged_files([], _RenameFun, CommittedFiles) ->
+    cleanup_backup_files(CommittedFiles),
     ok;
-maybe_log_file_error(Filename, {error, Reason}) ->
-    log(error, "Error writing ~s: ~s", [Filename, file:format_error(Reason)]),
-    ok.
+commit_staged_files(
+    [{Filename, TmpFilename, _BackupFilename} = PreparedFile | PreparedFiles],
+    RenameFun,
+    CommittedFiles
+) ->
+    case RenameFun(TmpFilename, Filename) of
+        ok ->
+            commit_staged_files(PreparedFiles, RenameFun, [PreparedFile | CommittedFiles]);
+        {error, Reason} ->
+            cleanup_staged_files([{Filename, TmpFilename} | staged_files(PreparedFiles)]),
+            cleanup_backup_files([PreparedFile | PreparedFiles]),
+            rollback_committed_files(CommittedFiles),
+            {error, Filename, Reason}
+    end.
+
+staged_files(PreparedFiles) ->
+    [{Filename, TmpFilename} || {Filename, TmpFilename, _BackupFilename} <- PreparedFiles].
+
+rollback_committed_files(CommittedFiles) ->
+    lists:foreach(fun rollback_committed_file/1, CommittedFiles).
+
+rollback_committed_file({Filename, _TmpFilename, none}) ->
+    maybe_log_rollback_delete_error(Filename, file:delete(Filename));
+rollback_committed_file({Filename, _TmpFilename, BackupFilename}) ->
+    restore_backup(Filename, BackupFilename).
+
+restore_backup(Filename, BackupFilename) ->
+    maybe_log_rollback_error(Filename, file:rename(BackupFilename, Filename)).
+
+maybe_log_rollback_delete_error(_Filename, ok) ->
+    ok;
+maybe_log_rollback_delete_error(_Filename, {error, enoent}) ->
+    ok;
+maybe_log_rollback_delete_error(Filename, {error, Reason}) ->
+    maybe_log_rollback_error(Filename, {error, Reason}).
+
+maybe_log_rollback_error(_Filename, ok) ->
+    ok;
+maybe_log_rollback_error(Filename, {error, Reason}) ->
+    log(error, "Error rolling back ~s: ~s", [Filename, file:format_error(Reason)]).
+
+cleanup_staged_files(StagedFiles) ->
+    lists:foreach(
+        fun({_Filename, TmpFilename}) ->
+            _ = file:delete(TmpFilename)
+        end,
+        StagedFiles
+    ).
+
+cleanup_backup_files(PreparedFiles) ->
+    lists:foreach(
+        fun
+            ({_Filename, _TmpFilename, none}) -> ok;
+            ({_Filename, _TmpFilename, BackupFilename}) -> _ = file:delete(BackupFilename)
+        end,
+        PreparedFiles
+    ).
+
+temporary_filename(Filename) ->
+    lists:flatten(
+        io_lib:format(
+            "~s.~s.~B.tmp",
+            [Filename, os:getpid(), erlang:unique_integer([positive, monotonic])]
+        )
+    ).
 
 filename_maker(Filename, NowTime, Extension) ->
     lists:flatten(io_lib:format("~s.~s.~s", [Filename, NowTime, Extension])).
