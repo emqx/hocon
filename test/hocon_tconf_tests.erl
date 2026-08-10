@@ -2852,3 +2852,78 @@ root_converter_module_test() ->
         hocon_tconf:check_plain(demo_schema7, Conf)
     ),
     ok.
+
+redact_sensitive_test() ->
+    Sc = #{
+        roots => [
+            {"root1", hoconsc:mk(hoconsc:map(x, hoconsc:ref(level1)), #{})},
+            {root2, hoconsc:mk(hoconsc:array(hoconsc:ref(level1)), #{})},
+            {root3, hoconsc:mk(hoconsc:ref(level1), #{})},
+            {root4, hoconsc:mk(binary(), #{sensitive => true})}
+        ],
+        fields => #{
+            level1 => [
+                {foo, hoconsc:mk(integer(), #{})},
+                {bar, hoconsc:mk(binary(), #{sensitive => true})},
+                {baz,
+                    hoconsc:mk(binary(), #{
+                        sensitive => true,
+                        converter => fun(X) -> X end
+                    })}
+            ]
+        }
+    },
+    Level1 = #{
+        <<"foo">> => 10,
+        <<"bar">> => <<"secret">>,
+        <<"baz">> => <<"also secret">>
+    },
+    Conf = #{
+        <<"root1">> => #{<<"a">> => Level1},
+        <<"root2">> => [Level1, Level1],
+        <<"root3">> => Level1,
+        <<"root4">> => <<"root secret">>
+    },
+    %% no change if not serializing
+    ?assertMatch(
+        Conf,
+        hocon_tconf:check_plain(Sc, Conf, #{make_serializable => false})
+    ),
+    %% redacts if we ask it to.
+    Redacted = <<"******">>,
+    Level1Redacted = #{
+        <<"foo">> => 10,
+        <<"bar">> => Redacted,
+        <<"baz">> => Redacted
+    },
+    ConfRedacted =
+        #{
+            <<"root1">> => #{<<"a">> => Level1Redacted},
+            <<"root2">> => [Level1Redacted, Level1Redacted],
+            <<"root3">> => Level1Redacted,
+            <<"root4">> => Redacted
+        },
+    ?assertMatch(
+        ConfRedacted,
+        hocon_tconf:check_plain(Sc, Conf, #{make_serializable => true, redact_sensitive => true})
+    ),
+    %% errors; since we're serializing, we don't run validators and also return redacted values.
+    Level1Wrong = #{
+        <<"foo">> => 10,
+        <<"bar">> => 999,
+        <<"baz">> => 888
+    },
+    WrongConf =
+        #{
+            <<"root1">> => #{<<"a">> => Level1Wrong},
+            <<"root2">> => [Level1Wrong, Level1Wrong],
+            <<"root3">> => Level1Wrong,
+            <<"root4">> => 777
+        },
+    ?assertMatch(
+        ConfRedacted,
+        hocon_tconf:check_plain(Sc, WrongConf, #{
+            make_serializable => true, redact_sensitive => true
+        })
+    ),
+    ok.

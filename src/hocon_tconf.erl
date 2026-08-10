@@ -77,6 +77,7 @@
 -define(MAGIC, '$magic_chicken').
 -define(MAGIC_SCHEMA, #{type => ?MAGIC}).
 -define(MAP_KEY_RE, <<"^[A-Za-z0-9]+[A-Za-z0-9-_]*$">>).
+-define(REDACTED_VAL, <<"******">>).
 
 %% @doc generates application env from a parsed .conf and a schema module.
 %% For example, one can set the output values by
@@ -524,7 +525,8 @@ map_one_field_non_hidden(FieldType, FieldSchema, FieldValue0, Opts) ->
             case ValidationResult of
                 [] ->
                     Mapped = maybe_mapping(Mapping, Pv),
-                    NewValue = maybe_computed(FieldSchema, NewValue0, Opts),
+                    NewValue1 = maybe_computed(FieldSchema, NewValue0, Opts),
+                    NewValue = maybe_redact_sensitive(FieldSchema, NewValue1, Opts),
                     {Acc ++ Mapped, NewValue};
                 Errors ->
                     {Acc ++ Errors, NewValue0}
@@ -532,6 +534,18 @@ map_one_field_non_hidden(FieldType, FieldSchema, FieldValue0, Opts) ->
         _ ->
             {Acc, FieldValue}
     end.
+
+maybe_redact_sensitive(FieldSchema, CheckedValue, #{
+    make_serializable := true, redact_sensitive := true
+}) ->
+    case field_schema(FieldSchema, sensitive) of
+        true ->
+            ?REDACTED_VAL;
+        _ ->
+            CheckedValue
+    end;
+maybe_redact_sensitive(_FieldSchema, CheckedValue, _Opts) ->
+    CheckedValue.
 
 maybe_computed(_FieldSchema, CheckedValue, #{make_serializable := true}) ->
     CheckedValue;
