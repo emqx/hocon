@@ -30,6 +30,8 @@
     ?assertThrow({_, [Reason]}, Expr)
 ).
 
+-elvis([{elvis_style, dont_repeat_yourself, disable}]).
+
 namespace() -> bar.
 roots() -> [bar].
 
@@ -2853,6 +2855,35 @@ root_converter_module_test() ->
     ),
     ok.
 
+with_log_check(RunFn, CheckFn) ->
+    TestPid = self(),
+    Tracer = spawn_link(fun Loop() ->
+        receive
+            X -> TestPid ! {event, X}
+        end,
+        Loop()
+    end),
+    Session = trace:session_create(logger_session, Tracer, []),
+    try
+        trace:process(Session, self(), true, [call]),
+        trace:function(Session, {logger, log, '_'}, [], []),
+
+        RunFn(),
+
+        receive
+            {event, {trace, _Pid, call, {logger, log, [error, "~s", [Arg]]}}} ->
+                CheckFn(Arg),
+                ok
+        after 1_000 ->
+            ct:fail({did_not_log, process_info(self(), messages)})
+        end,
+        ok
+    after
+        trace:session_destroy(Session),
+        exit(Tracer, normal),
+        ok
+    end.
+
 redact_sensitive_test() ->
     Sc = #{
         roots => [
@@ -2982,4 +3013,67 @@ redact_sensitive_test() ->
             make_serializable => true, redact_sensitive => true
         })
     ),
+    %% custom redaction function crash should not leak arg
+    Sc3 = #{
+        roots => [
+            {error,
+                hoconsc:mk(binary(), #{
+                    required => false,
+                    sensitive => {true, fun(X) -> error(boom) end}
+                })},
+            {throw,
+                hoconsc:mk(binary(), #{
+                    required => false,
+                    sensitive => {true, fun(X) -> throw(boom) end}
+                })},
+            {exit,
+                hoconsc:mk(binary(), #{
+                    required => false,
+                    sensitive => {true, fun(X) -> exit(boom) end}
+                })}
+        ]
+    },
+
+    with_log_check(
+        fun() ->
+            ?assertError(
+                #{reason := failed_to_check_field},
+                hocon_tconf:check_plain(Sc3, #{<<"error">> => <<"secret">>}, #{
+                    make_serializable => true, redact_sensitive => true
+                })
+            )
+        end,
+        fun(LogArg) ->
+            ?assertEqual(nomatch, re:run(LogArg, <<"secret">>, [{capture, none}]))
+        end
+    ),
+
+    with_log_check(
+        fun() ->
+            ?assertThrow(
+                #{reason := failed_to_check_field},
+                hocon_tconf:check_plain(Sc3, #{<<"throw">> => <<"secret">>}, #{
+                    make_serializable => true, redact_sensitive => true
+                })
+            )
+        end,
+        fun(LogArg) ->
+            ?assertEqual(nomatch, re:run(LogArg, <<"secret">>, [{capture, none}]))
+        end
+    ),
+
+    with_log_check(
+        fun() ->
+            ?assertExit(
+                #{reason := failed_to_check_field},
+                hocon_tconf:check_plain(Sc3, #{<<"exit">> => <<"secret">>}, #{
+                    make_serializable => true, redact_sensitive => true
+                })
+            )
+        end,
+        fun(LogArg) ->
+            ?assertEqual(nomatch, re:run(LogArg, <<"secret">>, [{capture, none}]))
+        end
+    ),
+
     ok.

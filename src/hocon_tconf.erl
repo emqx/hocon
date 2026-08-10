@@ -456,13 +456,20 @@ map_fields_cont([{_, FieldSchema} = Field | Fields], Conf0, Acc, Opts) ->
                         end,
                     exception => E
                 },
+                FieldValue1 =
+                    case {FieldValue, field_schema(FieldSchema, sensitive)} of
+                        {undefined, _} -> FieldValue;
+                        {_, true} -> ?REDACTED_VAL;
+                        {_, {true, _}} -> ?REDACTED_VAL;
+                        _ -> FieldValue
+                    end,
                 catch log(
                     Opts,
                     error,
                     bin(
                         io_lib:format(
                             "input-config:~n~p~n~p~n",
-                            [FieldValue, Err]
+                            [FieldValue1, Err]
                         )
                     )
                 ),
