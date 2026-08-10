@@ -30,6 +30,8 @@
     ?assertThrow({_, [Reason]}, Expr)
 ).
 
+-elvis([{elvis_style, dont_repeat_yourself, disable}]).
+
 namespace() -> bar.
 roots() -> [bar].
 
@@ -2851,4 +2853,230 @@ root_converter_module_test() ->
         },
         hocon_tconf:check_plain(demo_schema7, Conf)
     ),
+    ok.
+
+with_log_check(RunFn, CheckFn) ->
+    TestPid = self(),
+    Tracer = spawn_link(fun Loop() ->
+        receive
+            X -> TestPid ! {event, X}
+        end,
+        Loop()
+    end),
+    Session = trace:session_create(logger_session, Tracer, []),
+    try
+        trace:process(Session, self(), true, [call]),
+        trace:function(Session, {logger, log, '_'}, [], []),
+
+        RunFn(),
+
+        receive
+            {event, {trace, _Pid, call, {logger, log, [error, "~s", [Arg]]}}} ->
+                CheckFn(Arg),
+                ok
+        after 1_000 ->
+            ct:fail({did_not_log, process_info(self(), messages)})
+        end,
+        ok
+    after
+        trace:session_destroy(Session),
+        exit(Tracer, normal),
+        ok
+    end.
+
+redact_sensitive_test() ->
+    Sc = #{
+        roots => [
+            {"root1", hoconsc:mk(hoconsc:map(x, hoconsc:ref(level1)), #{})},
+            {root2, hoconsc:mk(hoconsc:array(hoconsc:ref(level1)), #{})},
+            {root3, hoconsc:mk(hoconsc:ref(level1), #{})},
+            {root4, hoconsc:mk(binary(), #{sensitive => true})},
+            {root5, hoconsc:mk(binary(), #{sensitive => true, required => false})}
+        ],
+        fields => #{
+            level1 => [
+                {foo, hoconsc:mk(integer(), #{})},
+                {bar, hoconsc:mk(binary(), #{sensitive => true})},
+                {baz,
+                    hoconsc:mk(binary(), #{
+                        sensitive => true,
+                        converter => fun(X) -> X end
+                    })},
+                {quux, hoconsc:mk(binary(), #{sensitive => true, required => false})}
+            ]
+        }
+    },
+    Level1 = #{
+        <<"foo">> => 10,
+        <<"bar">> => <<"secret">>,
+        <<"baz">> => <<"also secret">>
+        %% optional quux intentionally missing
+    },
+    Conf = #{
+        <<"root1">> => #{<<"a">> => Level1},
+        <<"root2">> => [Level1, Level1],
+        <<"root3">> => Level1,
+        <<"root4">> => <<"root secret">>
+        %% optional root5 intentionally missing
+    },
+    %% no change if not serializing
+    ?assertMatch(
+        Conf,
+        hocon_tconf:check_plain(Sc, Conf, #{make_serializable => false})
+    ),
+    %% redacts if we ask it to.
+    Redacted = <<"******">>,
+    Level1Redacted = #{
+        <<"foo">> => 10,
+        <<"bar">> => Redacted,
+        <<"baz">> => Redacted
+    },
+    ConfRedacted =
+        #{
+            <<"root1">> => #{<<"a">> => Level1Redacted},
+            <<"root2">> => [Level1Redacted, Level1Redacted],
+            <<"root3">> => Level1Redacted,
+            <<"root4">> => Redacted
+        },
+    ?assertMatch(
+        ConfRedacted,
+        hocon_tconf:check_plain(Sc, Conf, #{
+            make_serializable => true,
+            obfuscate_sensitive_values => true
+        })
+    ),
+    %% errors; since we're serializing, we don't run validators and also return redacted values.
+    Level1Wrong = #{
+        <<"foo">> => 10,
+        <<"bar">> => 999,
+        <<"baz">> => 888
+    },
+    WrongConf =
+        #{
+            <<"root1">> => #{<<"a">> => Level1Wrong},
+            <<"root2">> => [Level1Wrong, Level1Wrong],
+            <<"root3">> => Level1Wrong,
+            <<"root4">> => 777
+        },
+    ?assertMatch(
+        ConfRedacted,
+        hocon_tconf:check_plain(Sc, WrongConf, #{
+            make_serializable => true, obfuscate_sensitive_values => true
+        })
+    ),
+    %% custom redacting fun from schema
+    Sc2 = #{
+        roots => [
+            {root1,
+                hoconsc:mk(hoconsc:array(integer()), #{
+                    sensitive =>
+                        {true, fun(X) ->
+                            lists:map(
+                                fun(Y) ->
+                                    case Y rem 2 == 0 of
+                                        true -> Redacted;
+                                        false -> Y
+                                    end
+                                end,
+                                X
+                            )
+                        end}
+                })},
+            {root2,
+                hoconsc:mk(map(), #{
+                    sensitive =>
+                        {true, fun(X) ->
+                            maps:map(
+                                fun
+                                    (<<"authorization">>, _) -> Redacted;
+                                    (_, Y) -> Y
+                                end,
+                                X
+                            )
+                        end}
+                })}
+        ]
+    },
+    Conf2 = #{
+        <<"root1">> => [1, 2, 3],
+        <<"root2">> => #{
+            <<"authorization">> => <<"bearer ...">>,
+            <<"content-type">> => <<"json">>
+        }
+    },
+    ?assertMatch(
+        #{
+            <<"root1">> := [1, Redacted, 3],
+            <<"root2">> := #{
+                <<"authorization">> := Redacted,
+                <<"content-type">> := <<"json">>
+            }
+        },
+        hocon_tconf:check_plain(Sc2, Conf2, #{
+            make_serializable => true, obfuscate_sensitive_values => true
+        })
+    ),
+    %% custom redaction function crash should not leak arg
+    Sc3 = #{
+        roots => [
+            {error,
+                hoconsc:mk(binary(), #{
+                    required => false,
+                    sensitive => {true, fun(_) -> error(boom) end}
+                })},
+            {throw,
+                hoconsc:mk(binary(), #{
+                    required => false,
+                    sensitive => {true, fun(_) -> throw(boom) end}
+                })},
+            {exit,
+                hoconsc:mk(binary(), #{
+                    required => false,
+                    sensitive => {true, fun(_) -> exit(boom) end}
+                })}
+        ]
+    },
+
+    with_log_check(
+        fun() ->
+            ?assertError(
+                #{reason := failed_to_check_field},
+                hocon_tconf:check_plain(Sc3, #{<<"error">> => <<"secret">>}, #{
+                    make_serializable => true, obfuscate_sensitive_values => true
+                })
+            )
+        end,
+        fun(LogArg) ->
+            ?assertEqual(nomatch, re:run(LogArg, <<"secret">>, [{capture, none}]))
+        end
+    ),
+
+    with_log_check(
+        fun() ->
+            ?assertThrow(
+                #{reason := failed_to_check_field},
+                hocon_tconf:check_plain(Sc3, #{<<"throw">> => <<"secret">>}, #{
+                    make_serializable => true, obfuscate_sensitive_values => true
+                })
+            )
+        end,
+        fun(LogArg) ->
+            ?assertEqual(nomatch, re:run(LogArg, <<"secret">>, [{capture, none}]))
+        end
+    ),
+
+    with_log_check(
+        fun() ->
+            ?assertExit(
+                #{reason := failed_to_check_field},
+                hocon_tconf:check_plain(Sc3, #{<<"exit">> => <<"secret">>}, #{
+                    make_serializable => true, obfuscate_sensitive_values => true
+                })
+            )
+        end,
+        fun(LogArg) ->
+            ?assertEqual(nomatch, re:run(LogArg, <<"secret">>, [{capture, none}]))
+        end
+    ),
+
     ok.

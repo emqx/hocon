@@ -77,6 +77,7 @@
 -define(MAGIC, '$magic_chicken').
 -define(MAGIC_SCHEMA, #{type => ?MAGIC}).
 -define(MAP_KEY_RE, <<"^[A-Za-z0-9]+[A-Za-z0-9-_]*$">>).
+-define(REDACTED_VAL, <<"******">>).
 
 %% @doc generates application env from a parsed .conf and a schema module.
 %% For example, one can set the output values by
@@ -455,13 +456,20 @@ map_fields_cont([{_, FieldSchema} = Field | Fields], Conf0, Acc, Opts) ->
                         end,
                     exception => E
                 },
+                FieldValue1 =
+                    case {FieldValue, field_schema(FieldSchema, sensitive)} of
+                        {undefined, _} -> FieldValue;
+                        {_, true} -> ?REDACTED_VAL;
+                        {_, {true, _}} -> ?REDACTED_VAL;
+                        _ -> FieldValue
+                    end,
                 catch log(
                     Opts,
                     error,
                     bin(
                         io_lib:format(
                             "input-config:~n~p~n~p~n",
-                            [FieldValue, Err]
+                            [FieldValue1, Err]
                         )
                     )
                 ),
@@ -664,7 +672,7 @@ map_field(?LAZY(Type), Schema, Value, Opts) ->
         true -> map_field(SubType, Schema, Value, Opts);
         false -> {[], Value}
     end;
-map_field(?ARRAY(Type), _Schema, Value0, Opts) ->
+map_field(?ARRAY(Type), Schema, Value0, Opts) ->
     %% array needs an unbox
     Array = unbox(Opts, Value0),
     F = fun(I, Elem) ->
@@ -677,7 +685,8 @@ map_field(?ARRAY(Type), _Schema, Value0, Opts) ->
                 %% assert
                 true = is_list(NewArray),
                 %% and we need to box it back
-                {Mapped, boxit(Opts, NewArray, Value0)};
+                Boxed = boxit(Opts, NewArray, Value0),
+                {Mapped, ensure_obfuscate_sensitive(Opts, Schema, Boxed)};
             {error, Reasons} ->
                 {[{error, Reasons}], Value0}
         end
@@ -1071,8 +1080,12 @@ obfuscate(_Schema, undefined) ->
     undefined;
 obfuscate(Schema, Value) ->
     case field_schema(Schema, sensitive) of
-        true -> <<"******">>;
-        _ -> Value
+        true ->
+            ?REDACTED_VAL;
+        {true, Fn} when is_function(Fn, 1) ->
+            Fn(Value);
+        _ ->
+            Value
     end.
 
 log(#{logger := Logger}, Level, Msg) ->
