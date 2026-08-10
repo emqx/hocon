@@ -541,6 +541,8 @@ maybe_redact_sensitive(FieldSchema, CheckedValue, #{
     case field_schema(FieldSchema, sensitive) of
         true ->
             ?REDACTED_VAL;
+        {true, Fn} when is_function(Fn, 1) ->
+            Fn(CheckedValue);
         _ ->
             CheckedValue
     end;

@@ -2926,4 +2926,56 @@ redact_sensitive_test() ->
             make_serializable => true, redact_sensitive => true
         })
     ),
+    %% custom redacting fun from schema
+    Sc2 = #{
+        roots => [
+            {root1,
+                hoconsc:mk(hoconsc:array(integer()), #{
+                    sensitive =>
+                        {true, fun(X) ->
+                            lists:map(
+                                fun(Y) ->
+                                    case Y rem 2 == 0 of
+                                        true -> Redacted;
+                                        false -> Y
+                                    end
+                                end,
+                                X
+                            )
+                        end}
+                })},
+            {root2,
+                hoconsc:mk(map(), #{
+                    sensitive =>
+                        {true, fun(X) ->
+                            maps:map(
+                                fun
+                                    (<<"authorization">>, _) -> Redacted;
+                                    (_, Y) -> Y
+                                end,
+                                X
+                            )
+                        end}
+                })}
+        ]
+    },
+    Conf2 = #{
+        <<"root1">> => [1, 2, 3],
+        <<"root2">> => #{
+            <<"authorization">> => <<"bearer ...">>,
+            <<"content-type">> => <<"json">>
+        }
+    },
+    ?assertMatch(
+        #{
+            <<"root1">> := [1, Redacted, 3],
+            <<"root2">> := #{
+                <<"authorization">> := Redacted,
+                <<"content-type">> := <<"json">>
+            }
+        },
+        hocon_tconf:check_plain(Sc2, Conf2, #{
+            make_serializable => true, redact_sensitive => true
+        })
+    ),
     ok.
