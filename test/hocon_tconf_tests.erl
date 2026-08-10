@@ -2940,7 +2940,10 @@ redact_sensitive_test() ->
         },
     ?assertMatch(
         ConfRedacted,
-        hocon_tconf:check_plain(Sc, Conf, #{make_serializable => true, redact_sensitive => true})
+        hocon_tconf:check_plain(Sc, Conf, #{
+            make_serializable => true,
+            obfuscate_sensitive_values => true
+        })
     ),
     %% errors; since we're serializing, we don't run validators and also return redacted values.
     Level1Wrong = #{
@@ -2958,7 +2961,7 @@ redact_sensitive_test() ->
     ?assertMatch(
         ConfRedacted,
         hocon_tconf:check_plain(Sc, WrongConf, #{
-            make_serializable => true, redact_sensitive => true
+            make_serializable => true, obfuscate_sensitive_values => true
         })
     ),
     %% custom redacting fun from schema
@@ -3010,7 +3013,7 @@ redact_sensitive_test() ->
             }
         },
         hocon_tconf:check_plain(Sc2, Conf2, #{
-            make_serializable => true, redact_sensitive => true
+            make_serializable => true, obfuscate_sensitive_values => true
         })
     ),
     %% custom redaction function crash should not leak arg
@@ -3019,17 +3022,17 @@ redact_sensitive_test() ->
             {error,
                 hoconsc:mk(binary(), #{
                     required => false,
-                    sensitive => {true, fun(X) -> error(boom) end}
+                    sensitive => {true, fun(_) -> error(boom) end}
                 })},
             {throw,
                 hoconsc:mk(binary(), #{
                     required => false,
-                    sensitive => {true, fun(X) -> throw(boom) end}
+                    sensitive => {true, fun(_) -> throw(boom) end}
                 })},
             {exit,
                 hoconsc:mk(binary(), #{
                     required => false,
-                    sensitive => {true, fun(X) -> exit(boom) end}
+                    sensitive => {true, fun(_) -> exit(boom) end}
                 })}
         ]
     },
@@ -3039,7 +3042,7 @@ redact_sensitive_test() ->
             ?assertError(
                 #{reason := failed_to_check_field},
                 hocon_tconf:check_plain(Sc3, #{<<"error">> => <<"secret">>}, #{
-                    make_serializable => true, redact_sensitive => true
+                    make_serializable => true, obfuscate_sensitive_values => true
                 })
             )
         end,
@@ -3053,7 +3056,7 @@ redact_sensitive_test() ->
             ?assertThrow(
                 #{reason := failed_to_check_field},
                 hocon_tconf:check_plain(Sc3, #{<<"throw">> => <<"secret">>}, #{
-                    make_serializable => true, redact_sensitive => true
+                    make_serializable => true, obfuscate_sensitive_values => true
                 })
             )
         end,
@@ -3067,7 +3070,7 @@ redact_sensitive_test() ->
             ?assertExit(
                 #{reason := failed_to_check_field},
                 hocon_tconf:check_plain(Sc3, #{<<"exit">> => <<"secret">>}, #{
-                    make_serializable => true, redact_sensitive => true
+                    make_serializable => true, obfuscate_sensitive_values => true
                 })
             )
         end,

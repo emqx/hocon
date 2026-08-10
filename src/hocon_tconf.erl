@@ -532,8 +532,7 @@ map_one_field_non_hidden(FieldType, FieldSchema, FieldValue0, Opts) ->
             case ValidationResult of
                 [] ->
                     Mapped = maybe_mapping(Mapping, Pv),
-                    NewValue1 = maybe_computed(FieldSchema, NewValue0, Opts),
-                    NewValue = maybe_redact_sensitive(FieldSchema, NewValue1, Opts),
+                    NewValue = maybe_computed(FieldSchema, NewValue0, Opts),
                     {Acc ++ Mapped, NewValue};
                 Errors ->
                     {Acc ++ Errors, NewValue0}
@@ -541,20 +540,6 @@ map_one_field_non_hidden(FieldType, FieldSchema, FieldValue0, Opts) ->
         _ ->
             {Acc, FieldValue}
     end.
-
-maybe_redact_sensitive(FieldSchema, CheckedValue, #{
-    make_serializable := true, redact_sensitive := true
-}) when CheckedValue =/= undefined ->
-    case field_schema(FieldSchema, sensitive) of
-        true ->
-            ?REDACTED_VAL;
-        {true, Fn} when is_function(Fn, 1) ->
-            Fn(CheckedValue);
-        _ ->
-            CheckedValue
-    end;
-maybe_redact_sensitive(_FieldSchema, CheckedValue, _Opts) ->
-    CheckedValue.
 
 maybe_computed(_FieldSchema, CheckedValue, #{make_serializable := true}) ->
     CheckedValue;
@@ -687,7 +672,7 @@ map_field(?LAZY(Type), Schema, Value, Opts) ->
         true -> map_field(SubType, Schema, Value, Opts);
         false -> {[], Value}
     end;
-map_field(?ARRAY(Type), _Schema, Value0, Opts) ->
+map_field(?ARRAY(Type), Schema, Value0, Opts) ->
     %% array needs an unbox
     Array = unbox(Opts, Value0),
     F = fun(I, Elem) ->
@@ -700,7 +685,8 @@ map_field(?ARRAY(Type), _Schema, Value0, Opts) ->
                 %% assert
                 true = is_list(NewArray),
                 %% and we need to box it back
-                {Mapped, boxit(Opts, NewArray, Value0)};
+                Boxed = boxit(Opts, NewArray, Value0),
+                {Mapped, ensure_obfuscate_sensitive(Opts, Schema, Boxed)};
             {error, Reasons} ->
                 {[{error, Reasons}], Value0}
         end
@@ -1094,8 +1080,12 @@ obfuscate(_Schema, undefined) ->
     undefined;
 obfuscate(Schema, Value) ->
     case field_schema(Schema, sensitive) of
-        true -> <<"******">>;
-        _ -> Value
+        true ->
+            ?REDACTED_VAL;
+        {true, Fn} when is_function(Fn, 1) ->
+            Fn(Value);
+        _ ->
+            Value
     end.
 
 log(#{logger := Logger}, Level, Msg) ->
