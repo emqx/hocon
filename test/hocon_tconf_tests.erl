@@ -2859,7 +2859,8 @@ redact_sensitive_test() ->
             {"root1", hoconsc:mk(hoconsc:map(x, hoconsc:ref(level1)), #{})},
             {root2, hoconsc:mk(hoconsc:array(hoconsc:ref(level1)), #{})},
             {root3, hoconsc:mk(hoconsc:ref(level1), #{})},
-            {root4, hoconsc:mk(binary(), #{sensitive => true})}
+            {root4, hoconsc:mk(binary(), #{sensitive => true})},
+            {root5, hoconsc:mk(binary(), #{sensitive => true, required => false})}
         ],
         fields => #{
             level1 => [
@@ -2869,7 +2870,8 @@ redact_sensitive_test() ->
                     hoconsc:mk(binary(), #{
                         sensitive => true,
                         converter => fun(X) -> X end
-                    })}
+                    })},
+                {quux, hoconsc:mk(binary(), #{sensitive => true, required => false})}
             ]
         }
     },
@@ -2877,12 +2879,14 @@ redact_sensitive_test() ->
         <<"foo">> => 10,
         <<"bar">> => <<"secret">>,
         <<"baz">> => <<"also secret">>
+        %% optional quux intentionally missing
     },
     Conf = #{
         <<"root1">> => #{<<"a">> => Level1},
         <<"root2">> => [Level1, Level1],
         <<"root3">> => Level1,
         <<"root4">> => <<"root secret">>
+        %% optional root5 intentionally missing
     },
     %% no change if not serializing
     ?assertMatch(

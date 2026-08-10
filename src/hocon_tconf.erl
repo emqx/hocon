@@ -537,7 +537,7 @@ map_one_field_non_hidden(FieldType, FieldSchema, FieldValue0, Opts) ->
 
 maybe_redact_sensitive(FieldSchema, CheckedValue, #{
     make_serializable := true, redact_sensitive := true
-}) ->
+}) when CheckedValue =/= undefined ->
     case field_schema(FieldSchema, sensitive) of
         true ->
             ?REDACTED_VAL;
