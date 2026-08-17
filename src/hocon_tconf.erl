@@ -64,7 +64,8 @@
     stack => [name()],
     schema => schema(),
     check_lazy => boolean(),
-    include_importance_up_from => hocon_schema:importance()
+    include_importance_up_from => hocon_schema:importance(),
+    any() => term()
 }.
 
 -type name() :: hocon_schema:name().
@@ -1184,7 +1185,7 @@ validators(Validator) when is_function(Validator) ->
     validators([Validator]);
 validators(Validators) when is_list(Validators) ->
     %% assert
-    true = lists:all(fun(F) -> is_function(F, 1) end, Validators),
+    true = lists:all(fun(F) -> is_function(F, 1) orelse is_function(F, 2) end, Validators),
     Validators.
 
 user_defined_validators(Schema) ->
@@ -1228,7 +1229,7 @@ validate(Opts, Schema, Value, _IsRequired, Validators) ->
 do_validate(_Opts, _Schema, _Value, []) ->
     [];
 do_validate(Opts, Schema, Value, [H | T]) ->
-    try H(Value) of
+    try apply_validator(H, Value, Opts) of
         OK when OK =:= ok orelse OK =:= true ->
             do_validate(Opts, Schema, Value, T);
         false ->
@@ -1248,6 +1249,11 @@ do_validate(Opts, Schema, Value, [H | T]) ->
                 obfuscate(Schema, Value)
             )
     end.
+
+apply_validator(Fn, Value, _Opts) when is_function(Fn, 1) ->
+    Fn(Value);
+apply_validator(Fn, Value, Opts) when is_function(Fn, 2) ->
+    Fn(Value, Opts).
 
 required_field_errs(Opts) ->
     validation_errs(Opts, #{reason => required_field}).

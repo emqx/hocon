@@ -188,7 +188,9 @@
 -type translationfunc() ::
     fun((hocon:config()) -> hocon:config())
     | fun((hocon:config(), map()) -> hocon:config()).
--type validationfun() :: fun((hocon:config()) -> ok | boolean() | {error, term()}).
+-type validationfun() ::
+    fun((hocon:config()) -> ok | boolean() | {error, term()})
+    | fun((hocon:config(), hocon_tconf:opts()) -> ok | boolean() | {error, term()}).
 -type bin_name() :: binary().
 -type tag() :: binary().
 
