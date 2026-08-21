@@ -62,7 +62,7 @@ MultilineString     = """{MultilineChar}*"""
 
 %% Bytesize and Duration
 Percent             = {Digit}+%
-Bytesize            = {Digit}+(kb|KB|mb|MB|gb|GB)
+Bytesize            = {Digit}+(b|B|kb|KB|mb|MB|gb|GB)
 Duration            = {Digit}+(d|D|h|H|m|M|s|S|ms|MS)
 %%Duration            = {Digit}+(d|h|m|s|ms|us|ns)
 
