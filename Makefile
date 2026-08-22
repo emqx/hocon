@@ -51,3 +51,6 @@ erlfmt:
 .PHONY: erlfmt-check
 erlfmt-check:
 	$(REBAR) fmt -c
+
+hank:
+	$(REBAR) hank
