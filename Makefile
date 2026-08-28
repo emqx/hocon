@@ -1,7 +1,7 @@
 REBAR := rebar3
 
 .PHONY: all
-all: es
+all: cli
 
 .PHONY: compile
 compile:
@@ -34,10 +34,13 @@ cover:
 dialyzer: compile
 	$(REBAR) dialyzer
 
-.PHONY: es
-es: export HOCON_ESCRIPT = true
-es:
-	$(REBAR) as es escriptize
+.PHONY: cli
+cli:
+	$(REBAR) as cli escriptize
+
+.PHONY: cli-convert
+cli-convert:
+	$(REBAR) as cli_convert escriptize
 
 .PHONY: elvis
 elvis:
