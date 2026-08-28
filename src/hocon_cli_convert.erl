@@ -74,7 +74,7 @@ main(Opts, Args) ->
         end,
     ConfFormatted = format_conf(Format, Conf),
     write_output(Output, ConfFormatted),
-    die(0).
+    ok.
 
 parse_input(Stdin, ParseOpts) ->
     case hocon:binary(iolist_to_binary(Stdin), ParseOpts) of
@@ -170,6 +170,7 @@ slurp_standard_input(Acc) ->
             slurp_standard_input([Data | Acc])
     end.
 
+-spec terminate_invalid_args(term()) -> no_return().
 terminate_invalid_args(Reason) ->
     ?STDERR("Invalid arguments: ~p", [Reason]),
     usage(standard_error),
