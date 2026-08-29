@@ -63,7 +63,6 @@ main(Opts, Args) ->
     ok = io:setopts([binary, {encoding, unicode}]),
     IncludeDirs = proplists:get_all_values(include_dirs, Opts),
     Format = validate_format(proplists:get_value(format, Opts)),
-    Output = prepare_output(proplists:get_value(output, Opts)),
     ParseOpts = #{format => map, include_dirs => IncludeDirs},
     Conf =
         case Args of
@@ -73,6 +72,7 @@ main(Opts, Args) ->
                 parse_files(Filenames, ParseOpts)
         end,
     ConfFormatted = format_conf(Format, Conf),
+    Output = prepare_output(proplists:get_value(output, Opts)),
     write_output(Output, ConfFormatted),
     ok.
 
