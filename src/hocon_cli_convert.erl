@@ -19,7 +19,6 @@
 -export([main/1]).
 
 -define(STDERR(Str, Args), io:format(standard_error, Str ++ "~n", Args)).
--define(FORMAT_TEMPLATE, [time, " [", level, "] ", msg, "\n"]).
 
 usage(OutputStream) ->
     getopt:usage(
@@ -41,8 +40,7 @@ cli_options() ->
         {output, $o, "output", {string, "-"},
             "Specifies where to write converted output, `-` is stdout"},
         {format, $F, "format", {string, "json"},
-            "Specifies output format, `json` and `yaml` are supported"},
-        {log_level, $l, "log_level", {string, "notice"}, "Log level"}
+            "Specifies output format, `json` and `yaml` are supported"}
     ].
 
 main(Args) ->
@@ -94,36 +92,8 @@ parse_files(Files, ParseOpts) ->
             die(3)
     end.
 
-setup_logging(Opts) ->
-    LogLevel = maps:get(
-        proplists:get_value(log_level, Opts),
-        #{
-            "debug" => debug,
-            "info" => info,
-            "notice" => notice,
-            "warning" => warning,
-            "error" => error
-        },
-        notice
-    ),
-    logger:remove_handler(default),
-    logger:set_primary_config(level, LogLevel),
-    logger:add_handler(
-        hocon_cli,
-        logger_std_h,
-        #{
-            config => #{type => standard_io},
-            formatter =>
-                {logger_formatter, #{
-                    legacy_header => false,
-                    single_line => true,
-                    template => ?FORMAT_TEMPLATE
-                }},
-            filter_default => log,
-            filters => [],
-            level => all
-        }
-    ).
+setup_logging(_Opts) ->
+    logger:set_primary_config(level, critical).
 
 prepare_output("-") ->
     standard_io;
