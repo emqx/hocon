@@ -50,7 +50,7 @@ main(Args) ->
         {ok, {Opts, PosArgs}} ->
             case proplists:get_value(help, Opts) of
                 true ->
-                    usage(standard_error);
+                    usage(standard_io);
                 _ ->
                     main(Opts, PosArgs)
             end;
