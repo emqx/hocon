@@ -108,6 +108,8 @@ prepare_output(Filename) ->
 
 write_output(FD, Bytes) ->
     case write(FD, Bytes) of
+        ok when is_atom(FD) ->
+            ok;
         ok ->
             file:sync(FD);
         {error, Reason} ->
