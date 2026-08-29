@@ -75,7 +75,7 @@ main(Opts, Args) ->
     ok.
 
 parse_input(Stdin, ParseOpts) ->
-    case hocon:binary(iolist_to_binary(Stdin), ParseOpts) of
+    case hocon:binary(Stdin, ParseOpts) of
         {ok, Conf} ->
             Conf;
         {error, Reason} ->
