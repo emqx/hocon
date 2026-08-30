@@ -38,10 +38,6 @@ dialyzer: compile
 cli:
 	$(REBAR) as cli escriptize
 
-.PHONY: cli-convert
-cli-convert:
-	$(REBAR) as cli_convert escriptize
-
 .PHONY: elvis
 elvis:
 	./scripts/elvis-check.sh

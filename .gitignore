@@ -26,7 +26,6 @@ src/hocon_scanner.erl
 
 #escript
 /hocon
-/hocon-convert
 
 # test
 generated/
