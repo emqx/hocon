@@ -21,8 +21,13 @@
 
 -define(FORMAT_TEMPLATE, [time, " [", level, "] ", msg, "\n"]).
 -define(PROGNAME, "hocon").
+-define(STATUS_SUCCESS, 0).
+-define(STATUS_USAGE_ERROR, 1).
+-define(STATUS_OUTPUT_ERROR, 2).
+-define(STATUS_CONFIG_ERROR, 3).
 
--type status() :: 0 | 1 | 2 | 3.
+-type status() ::
+    ?STATUS_SUCCESS | ?STATUS_USAGE_ERROR | ?STATUS_OUTPUT_ERROR | ?STATUS_CONFIG_ERROR.
 
 main(Args) ->
     Status = run(Args),
@@ -36,12 +41,19 @@ run(ArgsIn) ->
     Args = mask_dash_arguments(Marker, ArgsIn),
     ParserOpts = #{progname => ?PROGNAME},
     case argparse:parse(Args, Command, ParserOpts) of
-        {ok, ArgMap, _Path, #{handler := Handler}} ->
-            Handler(unmask_dash_arguments(Marker, ArgMap));
+        {ok, ArgMap0, _Path, #{handler := Handler}} ->
+            ArgMap = unmask_dash_arguments(Marker, ArgMap0),
+            case validate_arguments(ArgMap) of
+                ok ->
+                    Handler(ArgMap);
+                {error, Message} ->
+                    stderr("error: ~ts~n", [Message]),
+                    ?STATUS_USAGE_ERROR
+            end;
         {error, Reason = {Path, _, _, _}} ->
             stderr("error: ~ts~n", [argparse:format_error(Reason)]),
             stderr("~ts", [argparse:help(Command, ParserOpts#{command => Path})]),
-            1
+            ?STATUS_USAGE_ERROR
     end.
 
 stdout(CharData) ->
@@ -89,6 +101,14 @@ unmask_dash_argument(Marker, ArgName, ValueList = [X | _]) when is_list(X) ->
     [unmask_dash_argument(Marker, ArgName, V) || V <- ValueList];
 unmask_dash_argument(_, _, ArgValue) ->
     ArgValue.
+
+validate_arguments(#{conf_files := Files}) ->
+    case lists:member(dash, Files) andalso Files =/= [dash] of
+        true -> {error, "'-' must be the only input file"};
+        false -> ok
+    end;
+validate_arguments(_Args) ->
+    ok.
 
 cli() ->
     #{
@@ -255,11 +275,11 @@ input_arguments() ->
 h_help(#{cmd := Command}) ->
     ParserOpts = #{progname => ?PROGNAME, command => [Command]},
     stdout(argparse:help(cli(), ParserOpts)),
-    0;
+    ?STATUS_SUCCESS;
 h_help(#{}) ->
     ParserOpts = #{progname => ?PROGNAME},
     stdout(argparse:help(cli(), ParserOpts)),
-    0.
+    ?STATUS_SUCCESS.
 
 h_generate(Args) ->
     setup_logger(Args),
@@ -281,8 +301,10 @@ h_validate(Args) ->
     add_code_paths(Args),
     with_schema_and_conf(Args, fun(Schema, Conf) ->
         case generate_config(Schema, Conf) of
-            {ok, _Generated} -> 0;
-            {error, Errors} -> log_schema_errors(Schema, Errors)
+            {ok, _Generated} ->
+                ?STATUS_SUCCESS;
+            {error, Errors} ->
+                log_schema_errors(Schema, Errors)
         end
     end).
 
@@ -293,24 +315,24 @@ h_docgen(Args) ->
         {ok, Schema} ->
             Markdown = hocon_schema_md:gen(Schema, maps:get(doctitle, Args, undefined)),
             stdout(Markdown),
-            0;
+            ?STATUS_SUCCESS;
         {error, _Reason} ->
-            3
+            ?STATUS_CONFIG_ERROR
     end.
 
 h_format(Args) ->
     setup_logger(Args),
-    case load_format_conf(Args) of
+    case load_conf(map, Args) of
         {ok, Conf} ->
             Content = format_conf(maps:get(output_format, Args), Conf),
-            case write_output(maps:get(output, Args), Content) of
+            case write_output(maps:get(output, Args, dash), Content) of
                 ok ->
-                    0;
+                    ?STATUS_SUCCESS;
                 {error, _Reason} ->
-                    2
+                    ?STATUS_OUTPUT_ERROR
             end;
         {error, _Reason} ->
-            3
+            ?STATUS_CONFIG_ERROR
     end.
 
 setup_logger(Args) ->
@@ -359,7 +381,7 @@ get_values(#{keys := Keys} = Parsed) ->
                 {_, CheckedConf} ->
                     Values = [{Key, hocon_maps:get(Key, CheckedConf)} || Key <- Keys],
                     print_values(Values),
-                    0
+                    ?STATUS_SUCCESS
             catch
                 throw:{Schema, Errors} -> log_schema_errors(Schema, Errors)
             end
@@ -373,10 +395,10 @@ with_schema_and_conf(Parsed, Fun) ->
                 {ok, Conf} ->
                     Fun(Schema, Conf);
                 {error, _Reason} ->
-                    3
+                    ?STATUS_CONFIG_ERROR
             end;
         {error, _Reason} ->
-            3
+            ?STATUS_CONFIG_ERROR
     end.
 
 load_schema(Args) ->
@@ -484,7 +506,7 @@ log_tconf(Level, Msg) ->
 log_schema_errors(Schema, Errors) ->
     logger:error("Failed to check schema ~0p", [Schema]),
     lists:foreach(fun(Error) -> logger:error("~0p", [Error]) end, Errors),
-    3.
+    ?STATUS_CONFIG_ERROR.
 
 root_name(Schema, Key) ->
     [RootName | _] = string:lexemes(Key, "."),
@@ -505,15 +527,15 @@ write_generated_config(Args, Generated) ->
         ok ->
             write_vm_args(VMArgsOutput, VMArgs);
         {error, _Reason} ->
-            2
+            ?STATUS_OUTPUT_ERROR
     end.
 
 write_vm_args(Output, VMArgs) ->
     case write_output(Output, string:join(VMArgs, "\n")) of
         ok ->
-            0;
+            ?STATUS_SUCCESS;
         {error, _Reason} ->
-            2
+            ?STATUS_OUTPUT_ERROR
     end.
 
 write_output(dash, Content) ->
