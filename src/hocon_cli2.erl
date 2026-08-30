@@ -14,8 +14,7 @@
 %% limitations under the License.
 %%--------------------------------------------------------------------
 
-%% This is the work-in-progress unified CLI. The `convert` command from
-%% hocon_cli_convert and the old `pp` command have not been migrated yet.
+%% Unified HOCON CLI.
 -module(hocon_cli2).
 
 -export([main/1, run/1]).
@@ -51,15 +50,31 @@ stdout(CharData) ->
 stderr(Format, Args) when is_list(Args) ->
     io:format(standard_error, Format, Args).
 
-mask_dash_arguments(Marker, ["-c", "-" | Rest]) ->
-    ["-c", Marker | mask_dash_arguments(Marker, Rest)];
-mask_dash_arguments(Marker, ["--conf-file", "-" | Rest]) ->
-    ["--conf-file", Marker | mask_dash_arguments(Marker, Rest)];
-mask_dash_arguments(Marker, ["--conf-file=-" | Rest]) ->
-    ["--conf-file=" ++ Marker | mask_dash_arguments(Marker, Rest)];
-mask_dash_arguments(Marker, [Arg | Rest]) ->
-    [Arg | mask_dash_arguments(Marker, Rest)];
-mask_dash_arguments(_, []) ->
+%% @doc Mask single-dash arguments.
+%% `argparse` rejects "-" as an option value because it starts with the option
+%% prefix. Mask stdin/stdout markers before parsing and restore them afterwards.
+mask_dash_arguments(Marker, Args) ->
+    mask_dash_arguments(root, Marker, Args).
+
+mask_dash_arguments(root, Marker, ["format" | Rest]) ->
+    ["format" | mask_dash_arguments(format, Marker, Rest)];
+mask_dash_arguments(Context, Marker, ["-c", "-" | Rest]) ->
+    ["-c", Marker | mask_dash_arguments(Context, Marker, Rest)];
+mask_dash_arguments(Context, Marker, ["--conf-file", "-" | Rest]) ->
+    ["--conf-file", Marker | mask_dash_arguments(Context, Marker, Rest)];
+mask_dash_arguments(Context, Marker, ["--conf-file=-" | Rest]) ->
+    ["--conf-file=" ++ Marker | mask_dash_arguments(Context, Marker, Rest)];
+mask_dash_arguments(format, Marker, ["-o", "-" | Rest]) ->
+    ["-o", Marker | mask_dash_arguments(format, Marker, Rest)];
+mask_dash_arguments(format, Marker, ["--output", "-" | Rest]) ->
+    ["--output", Marker | mask_dash_arguments(format, Marker, Rest)];
+mask_dash_arguments(format, Marker, ["--output=-" | Rest]) ->
+    ["--output=" ++ Marker | mask_dash_arguments(format, Marker, Rest)];
+mask_dash_arguments(format, Marker, ["-"]) ->
+    [Marker];
+mask_dash_arguments(Context, Marker, [Arg | Rest]) ->
+    [Arg | mask_dash_arguments(Context, Marker, Rest)];
+mask_dash_arguments(_Context, _Marker, []) ->
     [].
 
 unmask_dash_arguments(Marker, ArgMap) ->
@@ -75,11 +90,10 @@ unmask_dash_argument(Marker, ArgName, ValueList = [X | _]) when is_list(X) ->
 unmask_dash_argument(_, _, ArgValue) ->
     ArgValue.
 
-
 cli() ->
     #{
         help => [
-            "Read, validate, and generate configuration with HOCON.\n",
+            "Read, format, validate, and generate configuration with HOCON.\n",
             commands,
             arguments,
             options
@@ -95,7 +109,8 @@ cli() ->
                         name => cmd,
                         required => false,
                         nargs => 'maybe',
-                        type => {string, ["generate", "get", "validate", "docgen", "help"]},
+                        type =>
+                            {string, ["generate", "get", "validate", "docgen", "format", "help"]},
                         help => "Subcommand"
                     }
                 ]
@@ -103,31 +118,33 @@ cli() ->
             "generate" => #{
                 help => "Generate an Erlang application configuration.",
                 handler => fun h_generate/1,
-                arguments => schema_arguments() ++ input_arguments() ++ [
-                    #{
-                        name => config_output,
-                        required => true,
-                        long => "-out-app-config",
-                        help => "Application configuration output"
-                    },
-                    #{
-                        name => vm_args_output,
-                        required => true,
-                        long => "-out-vm-args",
-                        help => "VM arguments output"
-                    }
-                ]
+                arguments => schema_arguments() ++ input_arguments() ++
+                    [
+                        #{
+                            name => config_output,
+                            required => true,
+                            long => "-out-app-config",
+                            help => "Application configuration output"
+                        },
+                        #{
+                            name => vm_args_output,
+                            required => true,
+                            long => "-out-vm-args",
+                            help => "VM arguments output"
+                        }
+                    ]
             },
             "get" => #{
                 help => "Get one or more values from a checked configuration.",
                 handler => fun h_get/1,
-                arguments => schema_arguments() ++ input_arguments() ++ [
-                    #{
-                        name => keys,
-                        nargs => nonempty_list,
-                        help => "Configuration key; multiple keys are accepted"
-                    }
-                ]
+                arguments => schema_arguments() ++ input_arguments() ++
+                    [
+                        #{
+                            name => keys,
+                            nargs => nonempty_list,
+                            help => "Configuration key; multiple keys are accepted"
+                        }
+                    ]
             },
             "validate" => #{
                 help => "Check a configuration against a schema without generating output.",
@@ -137,11 +154,46 @@ cli() ->
             "docgen" => #{
                 help => "Generate Markdown documentation for a schema module.",
                 handler => fun h_docgen/1,
-                arguments => schema_arguments() ++ [
+                arguments => schema_arguments() ++
+                    [
+                        #{
+                            name => doctitle,
+                            long => "-doctitle",
+                            help => "Level-one title for the generated Markdown document"
+                        }
+                    ]
+            },
+            "format" => #{
+                help => "Format HOCON as HOCON, JSON, or YAML.",
+                handler => fun h_format/1,
+                arguments => [
                     #{
-                        name => doctitle,
-                        long => "-doctitle",
-                        help => "Level-one title for the generated Markdown document"
+                        name => output_format,
+                        short => $F,
+                        long => "-format",
+                        type => {atom, [hocon, json, yaml]},
+                        default => hocon,
+                        help => "Output format"
+                    },
+                    #{
+                        name => output,
+                        short => $o,
+                        long => "-output",
+                        help => "Output file; '-' or omission means stdout"
+                    },
+                    #{
+                        name => include_dirs,
+                        short => $I,
+                        long => "-include-dir",
+                        action => append,
+                        help => "Directory used to resolve includes; may be repeated"
+                    },
+                    #{
+                        name => conf_files,
+                        nargs => list,
+                        required => false,
+                        help =>
+                            "HOCON input file; multiple files are accepted. Use '-' or omit to read stdin"
                     }
                 ]
             }
@@ -180,7 +232,7 @@ schema_arguments() ->
             action => append,
             help => "Prepend a code path; may be repeated"
         }
- ].
+    ].
 
 input_arguments() ->
     [
@@ -240,8 +292,23 @@ h_docgen(Args) ->
     case load_schema(Args) of
         {ok, Schema} ->
             Markdown = hocon_schema_md:gen(Schema, maps:get(doctitle, Args, undefined)),
-            io:put_chars(standard_io, Markdown),
+            stdout(Markdown),
             0;
+        {error, _Reason} ->
+            3
+    end.
+
+h_format(Args) ->
+    setup_logger(Args),
+    case load_format_conf(Args) of
+        {ok, Conf} ->
+            Content = format_conf(maps:get(output_format, Args), Conf),
+            case write_output(maps:get(output, Args), Content) of
+                ok ->
+                    0;
+                {error, _Reason} ->
+                    2
+            end;
         {error, _Reason} ->
             3
     end.
@@ -361,10 +428,16 @@ log_compile_warnings(Warnings) ->
     lists:foreach(fun(Warning) -> logger:warning("~0p", [Warning]) end, Warnings).
 
 load_conf(Args) ->
+    load_conf(richmap, Args).
+
+load_conf(MapFormat, Args) when MapFormat =:= map; MapFormat =:= richmap ->
     Files = maps:get(conf_files, Args, []),
     IncludeDirs = maps:get(include_dirs, Args, []),
-    ParseOpts = #{format => richmap, include_dirs => IncludeDirs},
+    ParseOpts = #{format => MapFormat, include_dirs => IncludeDirs},
     logger:debug("ConfFiles: ~0p", [{Files, IncludeDirs}]),
+    parse_conf(Files, ParseOpts).
+
+parse_conf(Files, ParseOpts) ->
     Result =
         case Files of
             [] ->
@@ -465,3 +538,92 @@ stringify_line(Key, Value) when is_list(Value) ->
     lists:flatten(io_lib:format("~s ~s", [Key, Value]));
 stringify_line(Key, Value) ->
     lists:flatten(io_lib:format("~s ~w", [Key, Value])).
+
+%%--------------------------------------------------------------------
+%% Configuration formatter
+%%--------------------------------------------------------------------
+
+format_conf(hocon, Conf) ->
+    hocon_pp:do(Conf, #{});
+format_conf(json, Conf) ->
+    json:format(Conf);
+format_conf(yaml, Conf) ->
+    format_yaml(Conf).
+
+%%--------------------------------------------------------------------
+%% YAML formatter
+%%--------------------------------------------------------------------
+
+format_yaml(Conf) ->
+    yaml_lines(Conf, <<>>).
+
+yaml_lines(#{} = Conf, Indent) when map_size(Conf) > 0 ->
+    [yaml_map_entry(Key, Value, Indent) || {Key, Value} <- maps:to_list(Conf)];
+yaml_lines([_ | _] = Values, Indent) ->
+    [yaml_list_entry(Value, Indent) || Value <- Values];
+yaml_lines(Value, Indent) ->
+    [Indent, yaml_scalar(Value), $\n].
+
+yaml_map_entry(Key, Value, Indent) ->
+    [Indent, yaml_map_entry_content(Key, Value, Indent)].
+
+yaml_map_entry_content(Key, Value, Indent) ->
+    case is_nonempty_collection(Value) of
+        true ->
+            [yaml_key(Key), $:, $\n, yaml_lines(Value, increase_indent(Indent))];
+        false ->
+            [yaml_key(Key), $:, $\s, yaml_scalar(Value), $\n]
+    end.
+
+yaml_list_entry(#{} = Value, IndentBase) when map_size(Value) > 0 ->
+    [{K0, V0} | Rest] = maps:to_list(Value),
+    Indent = increase_indent(IndentBase),
+    [
+        IndentBase,
+        $-,
+        $\s,
+        yaml_map_entry_content(K0, V0, Indent),
+        [yaml_map_entry(K, V, Indent) || {K, V} <- Rest]
+    ];
+yaml_list_entry(Value, Indent) ->
+    case is_nonempty_collection(Value) of
+        true ->
+            [Indent, $-, $\n, yaml_lines(Value, increase_indent(Indent))];
+        false ->
+            [Indent, $-, $\s, yaml_scalar(Value), $\n]
+    end.
+
+increase_indent(Indent) ->
+    <<Indent/binary, "  ">>.
+
+is_nonempty_collection(#{} = Value) ->
+    map_size(Value) > 0;
+is_nonempty_collection([_ | _]) ->
+    true;
+is_nonempty_collection(_) ->
+    false.
+
+yaml_scalar(Value) ->
+    json:encode(Value).
+
+yaml_key(Key) when is_binary(Key) ->
+    case is_plain_key(Key) andalso not is_yaml_keyword(Key) of
+        true -> Key;
+        false -> yaml_scalar(Key)
+    end;
+yaml_key(Key) ->
+    yaml_scalar(Key).
+
+is_plain_key(Key) ->
+    re:run(Key, <<"^[A-Za-z_][A-Za-z0-9_.-]*$">>, [{capture, none}]) =:= match.
+
+is_yaml_keyword(Key) ->
+    lists:member(string:lowercase(Key), [
+        <<"false">>,
+        <<"no">>,
+        <<"null">>,
+        <<"off">>,
+        <<"on">>,
+        <<"true">>,
+        <<"yes">>
+    ]).
