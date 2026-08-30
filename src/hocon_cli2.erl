@@ -213,7 +213,8 @@ cli() ->
                         nargs => list,
                         required => false,
                         help =>
-                            "HOCON input file; multiple files are accepted. Use '-' or omit to read stdin"
+                            "HOCON input file; multiple files are accepted. "
+                            "Use '-' or omit to read stdin"
                     }
                 ]
             }
