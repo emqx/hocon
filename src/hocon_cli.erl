@@ -15,7 +15,7 @@
 %%--------------------------------------------------------------------
 
 %% Unified HOCON CLI.
--module(hocon_cli2).
+-module(hocon_cli).
 
 -export([main/1, run/1]).
 
@@ -341,9 +341,9 @@ h_format(Args) ->
 setup_logger(Args) ->
     LogLevel = maps:get(log_level, Args, notice),
     _ = logger:remove_handler(default),
-    _ = logger:remove_handler(hocon_cli2),
+    _ = logger:remove_handler(hocon_cli),
     ok = logger:add_handler(
-        hocon_cli2,
+        hocon_cli,
         logger_std_h,
         #{
             config => #{type => standard_error},
@@ -362,7 +362,7 @@ setup_logger(Args) ->
 
 sync_logger() ->
     try
-        logger_std_h:filesync(hocon_cli2)
+        logger_std_h:filesync(hocon_cli)
     catch
         _:_ -> ok
     end.

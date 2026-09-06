@@ -14,7 +14,7 @@
 %% limitations under the License.
 %%--------------------------------------------------------------------
 
--module(hocon_cli2_tests).
+-module(hocon_cli_tests).
 
 -include_lib("eunit/include/eunit.hrl").
 
@@ -75,11 +75,11 @@ cleanup(#{dir := Dir, logger := LoggerConfig}) ->
     ok = file:del_dir(Dir).
 
 help(_Context) ->
-    {?STATUS_SUCCESS, Help} = capture(<<>>, fun() -> hocon_cli2:run([]) end),
+    {?STATUS_SUCCESS, Help} = capture(<<>>, fun() -> hocon_cli:run([]) end),
     ?assertNotEqual(nomatch, binary:match(Help, <<"Read, format, validate">>)),
     ?assertNotEqual(nomatch, binary:match(Help, <<"format">>)),
     {?STATUS_SUCCESS, FormatHelp} = capture(<<>>, fun() ->
-        hocon_cli2:run(["help", "format"])
+        hocon_cli:run(["help", "format"])
     end),
     ?assertNotEqual(nomatch, binary:match(FormatHelp, <<"Format HOCON as HOCON, JSON, or YAML">>)).
 
@@ -117,7 +117,7 @@ format_stdin(#{hocon := Hocon}) ->
     },
     lists:foreach(
         fun(Args) ->
-            {?STATUS_SUCCESS, JSON} = capture(Hocon, fun() -> hocon_cli2:run(Args) end),
+            {?STATUS_SUCCESS, JSON} = capture(Hocon, fun() -> hocon_cli:run(Args) end),
             ?assertEqual(Expected, json:decode(JSON))
         end,
         [
@@ -130,7 +130,7 @@ format_stdin(#{hocon := Hocon}) ->
 validate(_Context) ->
     ?assertEqual(
         ?STATUS_SUCCESS,
-        hocon_cli2:run([
+        hocon_cli:run([
             "validate",
             "--log-level",
             "emergency",
@@ -142,7 +142,7 @@ validate(_Context) ->
     ),
     ?assertEqual(
         ?STATUS_CONFIG_ERROR,
-        hocon_cli2:run([
+        hocon_cli:run([
             "validate",
             "--log-level",
             "emergency",
@@ -156,7 +156,7 @@ validate(_Context) ->
 schema_module(_Context) ->
     ?assertEqual(
         ?STATUS_SUCCESS,
-        hocon_cli2:run([
+        hocon_cli:run([
             "validate",
             "--schema-module",
             "demo_schema",
@@ -167,7 +167,7 @@ schema_module(_Context) ->
 
 repeated_conf_files(_Context) ->
     {Status, Output} = capture(<<>>, fun() ->
-        hocon_cli2:run([
+        hocon_cli:run([
             "get",
             "--schema-file",
             schema_file(),
@@ -190,11 +190,11 @@ get_values(_Context) ->
         config_file("demo-schema-example-1.conf")
     ],
     {?STATUS_SUCCESS, One} = capture(<<>>, fun() ->
-        hocon_cli2:run(Args ++ ["foo.setting"])
+        hocon_cli:run(Args ++ ["foo.setting"])
     end),
     ?assertEqual(<<"\"hello\"\n">>, One),
     {?STATUS_SUCCESS, Many} = capture(<<>>, fun() ->
-        hocon_cli2:run(Args ++ ["foo.min", "foo.max"])
+        hocon_cli:run(Args ++ ["foo.min", "foo.max"])
     end),
     ?assertEqual(<<"foo.min=1\nfoo.max=10\n">>, Many).
 
@@ -212,14 +212,14 @@ get_env_override(_Context) ->
         {"HOCON_CLI2_TEST_FOO__SETTING", "hi"}
     ],
     {Status, Output} = capture(<<>>, fun() ->
-        hocon_test_lib:with_envs(fun() -> hocon_cli2:run(Args) end, Envs)
+        hocon_test_lib:with_envs(fun() -> hocon_cli:run(Args) end, Envs)
     end),
     ?assertEqual(?STATUS_SUCCESS, Status),
     ?assertEqual(<<"\"hi\"\n">>, Output).
 
 get_nested_values(_Context) ->
     {Status, Output} = capture(<<>>, fun() ->
-        hocon_cli2:run([
+        hocon_cli:run([
             "get",
             "--schema-file",
             filename:join("sample-schemas", "demo_schema2.erl"),
@@ -237,7 +237,7 @@ generate(#{dir := Dir}) ->
     VMArgs = filename:join(Dir, "vm.args"),
     ?assertEqual(
         ?STATUS_SUCCESS,
-        hocon_cli2:run([
+        hocon_cli:run([
             "generate",
             "--schema-file",
             schema_file(),
@@ -262,7 +262,7 @@ generate_failure(#{dir := Dir}) ->
     VMArgs = filename:join(Dir, "invalid-vm.args"),
     ?assertEqual(
         ?STATUS_CONFIG_ERROR,
-        hocon_cli2:run([
+        hocon_cli:run([
             "generate",
             "--log-level",
             "emergency",
@@ -281,20 +281,20 @@ generate_failure(#{dir := Dir}) ->
 
 docgen(_Context) ->
     {?STATUS_SUCCESS, Markdown} = capture(<<>>, fun() ->
-        hocon_cli2:run(["docgen", "--schema-file", schema_file(), "--doctitle", "Demo"])
+        hocon_cli:run(["docgen", "--schema-file", schema_file(), "--doctitle", "Demo"])
     end),
     ?assertMatch(<<"Demo\n", _/binary>>, Markdown),
     ?assertNotEqual(nomatch, binary:match(Markdown, <<"foo">>)).
 
 errors(#{dir := Dir, input := Input, invalid_input := InvalidInput}) ->
-    ?assertEqual(?STATUS_USAGE_ERROR, hocon_cli2:run(["format", Input, "-"])),
+    ?assertEqual(?STATUS_USAGE_ERROR, hocon_cli:run(["format", Input, "-"])),
     ?assertEqual(
         ?STATUS_CONFIG_ERROR,
-        hocon_cli2:run(["validate", "--pa", filename:join(Dir, "missing-code-path")])
+        hocon_cli:run(["validate", "--pa", filename:join(Dir, "missing-code-path")])
     ),
     ?assertEqual(
         ?STATUS_OUTPUT_ERROR,
-        hocon_cli2:run([
+        hocon_cli:run([
             "format",
             "--log-level",
             "emergency",
@@ -305,11 +305,11 @@ errors(#{dir := Dir, input := Input, invalid_input := InvalidInput}) ->
     ),
     ?assertEqual(
         ?STATUS_CONFIG_ERROR,
-        hocon_cli2:run(["format", "--log-level", "emergency", InvalidInput])
+        hocon_cli:run(["format", "--log-level", "emergency", InvalidInput])
     ).
 
 run_format(Format, Input, Output) ->
-    hocon_cli2:run([
+    hocon_cli:run([
         "format",
         "--format",
         atom_to_list(Format),
@@ -395,14 +395,14 @@ save_logger_config() ->
     #{
         primary => logger:get_primary_config(),
         default => logger:get_handler_config(default),
-        cli => logger:get_handler_config(hocon_cli2)
+        cli => logger:get_handler_config(hocon_cli)
     }.
 
 restore_logger_config(#{primary := Primary, default := Default, cli := CLI}) ->
     _ = logger:remove_handler(default),
-    _ = logger:remove_handler(hocon_cli2),
+    _ = logger:remove_handler(hocon_cli),
     restore_logger_handler(default, Default),
-    restore_logger_handler(hocon_cli2, CLI),
+    restore_logger_handler(hocon_cli, CLI),
     ok = logger:set_primary_config(Primary).
 
 restore_logger_handler(_Id, {error, _Reason}) ->
