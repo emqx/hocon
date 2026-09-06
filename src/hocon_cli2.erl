@@ -284,42 +284,44 @@ h_help(#{}) ->
 
 h_generate(Args) ->
     setup_logger(Args),
-    add_code_paths(Args),
-    with_schema_and_conf(Args, fun(Schema, Conf) ->
-        case generate_config(Schema, Conf) of
-            {ok, Generated} -> write_generated_config(Args, Generated);
-            {error, Errors} -> log_schema_errors(Schema, Errors)
-        end
+    with_code_paths(Args, fun() ->
+        with_schema_and_conf(Args, fun(Schema, Conf) ->
+            case generate_config(Schema, Conf) of
+                {ok, Generated} -> write_generated_config(Args, Generated);
+                {error, Errors} -> log_schema_errors(Schema, Errors)
+            end
+        end)
     end).
 
 h_get(Args) ->
     setup_logger(Args),
-    add_code_paths(Args),
-    get_values(Args).
+    with_code_paths(Args, fun() -> get_values(Args) end).
 
 h_validate(Args) ->
     setup_logger(Args),
-    add_code_paths(Args),
-    with_schema_and_conf(Args, fun(Schema, Conf) ->
-        case generate_config(Schema, Conf) of
-            {ok, _Generated} ->
-                ?STATUS_SUCCESS;
-            {error, Errors} ->
-                log_schema_errors(Schema, Errors)
-        end
+    with_code_paths(Args, fun() ->
+        with_schema_and_conf(Args, fun(Schema, Conf) ->
+            case generate_config(Schema, Conf) of
+                {ok, _Generated} ->
+                    ?STATUS_SUCCESS;
+                {error, Errors} ->
+                    log_schema_errors(Schema, Errors)
+            end
+        end)
     end).
 
 h_docgen(Args) ->
     setup_logger(Args),
-    add_code_paths(Args),
-    case load_schema(Args) of
-        {ok, Schema} ->
-            Markdown = hocon_schema_md:gen(Schema, maps:get(doctitle, Args, undefined)),
-            stdout(Markdown),
-            ?STATUS_SUCCESS;
-        {error, _Reason} ->
-            ?STATUS_CONFIG_ERROR
-    end.
+    with_code_paths(Args, fun() ->
+        case load_schema(Args) of
+            {ok, Schema} ->
+                Markdown = hocon_schema_md:gen(Schema, maps:get(doctitle, Args, undefined)),
+                stdout(Markdown),
+                ?STATUS_SUCCESS;
+            {error, _Reason} ->
+                ?STATUS_CONFIG_ERROR
+        end
+    end).
 
 h_format(Args) ->
     setup_logger(Args),
@@ -366,12 +368,27 @@ sync_logger() ->
     end.
 
 add_code_paths(#{code_paths := Paths}) ->
-    lists:foreach(
-        fun(Path) -> true = code:add_patha(Path) end,
-        Paths
-    );
+    add_code_paths(Paths);
 add_code_paths(#{}) ->
+    ok;
+add_code_paths([Path | Rest]) ->
+    case code:add_patha(Path) of
+        true ->
+            add_code_paths(Rest);
+        {error, bad_directory} = Error ->
+            logger:error("Could not add code path ~ts: not an existing directory", [Path]),
+            Error
+    end;
+add_code_paths([]) ->
     ok.
+
+with_code_paths(Args, Fun) ->
+    case add_code_paths(Args) of
+        ok ->
+            Fun();
+        {error, _Reason} ->
+            ?STATUS_CONFIG_ERROR
+    end.
 
 get_values(#{keys := Keys} = Parsed) ->
     with_schema_and_conf(

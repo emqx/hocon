@@ -200,6 +200,10 @@ docgen(_Context) ->
 errors(#{dir := Dir, input := Input, invalid_input := InvalidInput}) ->
     ?assertEqual(?STATUS_USAGE_ERROR, hocon_cli2:run(["format", Input, "-"])),
     ?assertEqual(
+        ?STATUS_CONFIG_ERROR,
+        hocon_cli2:run(["validate", "--pa", filename:join(Dir, "missing-code-path")])
+    ),
+    ?assertEqual(
         ?STATUS_OUTPUT_ERROR,
         hocon_cli2:run([
             "format",
