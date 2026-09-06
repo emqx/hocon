@@ -117,7 +117,8 @@ format_stdin(#{hocon := Hocon}) ->
         end,
         [
             ["format", "--format", "json"],
-            ["format", "--format", "json", "--output=-", "-"]
+            ["format", "--format", "json", "--output=-", "-"],
+            ["format", "-", "--format", "json"]
         ]
     ).
 

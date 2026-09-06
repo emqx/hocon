@@ -82,8 +82,8 @@ mask_dash_arguments(format, Marker, ["--output", "-" | Rest]) ->
     ["--output", Marker | mask_dash_arguments(format, Marker, Rest)];
 mask_dash_arguments(format, Marker, ["--output=-" | Rest]) ->
     ["--output=" ++ Marker | mask_dash_arguments(format, Marker, Rest)];
-mask_dash_arguments(format, Marker, ["-"]) ->
-    [Marker];
+mask_dash_arguments(format, Marker, ["-" | Rest]) ->
+    [Marker | mask_dash_arguments(format, Marker, Rest)];
 mask_dash_arguments(Context, Marker, [Arg | Rest]) ->
     [Arg | mask_dash_arguments(Context, Marker, Rest)];
 mask_dash_arguments(_Context, _Marker, []) ->
