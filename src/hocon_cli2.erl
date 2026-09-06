@@ -52,7 +52,7 @@ run(ArgsIn) ->
             end;
         {error, Reason = {Path, _, _, _}} ->
             stderr("error: ~ts~n", [argparse:format_error(Reason)]),
-            stderr("~ts", [argparse:help(Command, ParserOpts#{command => Path})]),
+            stderr("~ts", [argparse:help(Command, ParserOpts#{command => tl(Path)})]),
             ?STATUS_USAGE_ERROR
     end.
 
