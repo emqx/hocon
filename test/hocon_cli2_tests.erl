@@ -30,8 +30,13 @@ cli_test_() ->
             {"format files as HOCON, JSON, and YAML", fun() -> format_files(Context) end},
             {"format stdin as JSON on stdout", fun() -> format_stdin(Context) end},
             {"validate valid and invalid configuration", fun() -> validate(Context) end},
+            {"load a schema module", fun() -> schema_module(Context) end},
+            {"merge repeated configuration files", fun() -> repeated_conf_files(Context) end},
             {"get one or more checked values", fun() -> get_values(Context) end},
+            {"apply environment overrides through get", fun() -> get_env_override(Context) end},
+            {"get nested array and missing values", fun() -> get_nested_values(Context) end},
             {"generate application config and VM arguments", fun() -> generate(Context) end},
+            {"invalid configuration generates no output", fun() -> generate_failure(Context) end},
             {"generate schema documentation", fun() -> docgen(Context) end},
             {"return distinct usage, output, and config errors", fun() -> errors(Context) end}
         ]
@@ -148,6 +153,34 @@ validate(_Context) ->
         ])
     ).
 
+schema_module(_Context) ->
+    ?assertEqual(
+        ?STATUS_SUCCESS,
+        hocon_cli2:run([
+            "validate",
+            "--schema-module",
+            "demo_schema",
+            "--conf-file",
+            config_file("demo-schema-example-1.conf")
+        ])
+    ).
+
+repeated_conf_files(_Context) ->
+    {Status, Output} = capture(<<>>, fun() ->
+        hocon_cli2:run([
+            "get",
+            "--schema-file",
+            schema_file(),
+            "--conf-file",
+            config_file("demo-schema-example-2.conf"),
+            "--conf-file",
+            config_file("demo-schema-example-3.conf"),
+            "foo.setting"
+        ])
+    end),
+    ?assertEqual(?STATUS_SUCCESS, Status),
+    ?assertEqual(<<"\"yaa\"\n">>, Output).
+
 get_values(_Context) ->
     Args = [
         "get",
@@ -164,6 +197,40 @@ get_values(_Context) ->
         hocon_cli2:run(Args ++ ["foo.min", "foo.max"])
     end),
     ?assertEqual(<<"foo.min=1\nfoo.max=10\n">>, Many).
+
+get_env_override(_Context) ->
+    Args = [
+        "get",
+        "--schema-file",
+        schema_file(),
+        "--conf-file",
+        config_file("demo-schema-example-2.conf"),
+        "foo.setting"
+    ],
+    Envs = [
+        {"HOCON_ENV_OVERRIDE_PREFIX", "HOCON_CLI2_TEST_"},
+        {"HOCON_CLI2_TEST_FOO__SETTING", "hi"}
+    ],
+    {Status, Output} = capture(<<>>, fun() ->
+        hocon_test_lib:with_envs(fun() -> hocon_cli2:run(Args) end, Envs)
+    end),
+    ?assertEqual(?STATUS_SUCCESS, Status),
+    ?assertEqual(<<"\"hi\"\n">>, Output).
+
+get_nested_values(_Context) ->
+    {Status, Output} = capture(<<>>, fun() ->
+        hocon_cli2:run([
+            "get",
+            "--schema-file",
+            filename:join("sample-schemas", "demo_schema2.erl"),
+            "--conf-file",
+            config_file("demo_schema2.conf"),
+            "foo.1.int",
+            "foo.x.int"
+        ])
+    end),
+    ?assertEqual(?STATUS_SUCCESS, Status),
+    ?assertEqual(<<"foo.1.int=1\nfoo.x.int=undefined\n">>, Output).
 
 generate(#{dir := Dir}) ->
     AppConfig = filename:join(Dir, "app.config"),
@@ -189,6 +256,28 @@ generate(#{dir := Dir}) ->
         <<"-env ERL_MAX_PORTS 64000\n-name emqx@127.0.0.1">>,
         element(2, file:read_file(VMArgs))
     ).
+
+generate_failure(#{dir := Dir}) ->
+    AppConfig = filename:join(Dir, "invalid-app.config"),
+    VMArgs = filename:join(Dir, "invalid-vm.args"),
+    ?assertEqual(
+        ?STATUS_CONFIG_ERROR,
+        hocon_cli2:run([
+            "generate",
+            "--log-level",
+            "emergency",
+            "--schema-file",
+            schema_file(),
+            "--conf-file",
+            config_file("demo-schema-failure.conf"),
+            "--out-app-config",
+            AppConfig,
+            "--out-vm-args",
+            VMArgs
+        ])
+    ),
+    ?assertEqual({error, enoent}, file:read_file(AppConfig)),
+    ?assertEqual({error, enoent}, file:read_file(VMArgs)).
 
 docgen(_Context) ->
     {?STATUS_SUCCESS, Markdown} = capture(<<>>, fun() ->
