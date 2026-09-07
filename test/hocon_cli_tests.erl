@@ -296,11 +296,21 @@ get_nested_values(_Context) ->
             "--conf-file",
             config_file("demo_schema2.conf"),
             "foo.1.int",
-            "foo.x.int"
+            "foo.x.int",
+            "foo.9.int",
+            "foo.0.int"
         ])
     end),
     ?assertEqual(?STATUS_SUCCESS, Status),
-    ?assertEqual(<<"foo.1.int=1\nfoo.x.int=undefined\n">>, Output).
+    ?assertEqual(
+        <<
+            "foo.1.int=1\n"
+            "foo.x.int=undefined\n"
+            "foo.9.int=undefined\n"
+            "foo.0.int=undefined\n"
+        >>,
+        Output
+    ).
 
 get_unknown_root(_Context) ->
     ?assertEqual(

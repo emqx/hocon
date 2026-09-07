@@ -184,7 +184,7 @@ try_get(Key, Conf, map) when is_map(Conf) ->
 try_get(Key, Conf, map) when is_list(Conf) ->
     try binary_to_integer(Key) of
         N ->
-            lists:nth(N, Conf)
+            list_nth(N, Conf)
     catch
         error:badarg ->
             undefined
@@ -192,6 +192,13 @@ try_get(Key, Conf, map) when is_list(Conf) ->
 %% get(["a", "b", "d"], #{<<"a">> => #{<<"b">> => 1}})
 try_get(Key, Conf, map) ->
     error({key_not_found, Key, Conf}).
+
+list_nth(1, [Value | _]) ->
+    Value;
+list_nth(N, [_ | Rest]) when N > 1 ->
+    list_nth(N - 1, Rest);
+list_nth(_N, _List) ->
+    undefined.
 
 %% @doc Recursively merge two maps.
 %% @see hocon:deep_merge/2 for more.

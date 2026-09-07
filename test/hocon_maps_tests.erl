@@ -99,3 +99,12 @@ key_not_found_test() ->
         {key_not_found, <<"d">>, 1},
         hocon_maps:get(["a", "b", "d"], #{<<"a">> => #{<<"b">> => 1}})
     ).
+
+array_get_test_() ->
+    Conf = #{<<"foo">> => [#{<<"int">> => 1}]},
+    [
+        ?_assertEqual(1, hocon_maps:get("foo.1.int", Conf)),
+        ?_assertEqual(undefined, hocon_maps:get("foo.0.int", Conf)),
+        ?_assertEqual(undefined, hocon_maps:get("foo.2.int", Conf)),
+        ?_assertEqual(undefined, hocon_maps:get("foo.x.int", Conf))
+    ].
