@@ -394,14 +394,21 @@ get_values(#{keys := Keys} = Parsed) ->
     with_schema_and_conf(
         Parsed,
         fun(Schema, Conf) ->
-            RootNames = lists:usort([root_name(Schema, Key) || Key <- Keys]),
-            try hocon_tconf:map(Schema, Conf, RootNames, tconf_opts()) of
-                {_, CheckedConf} ->
-                    Values = [{Key, hocon_maps:get(Key, CheckedConf)} || Key <- Keys],
-                    print_values(Values),
-                    ?STATUS_SUCCESS
+            try
+                RootNames = lists:usort([root_name(Schema, Key) || Key <- Keys]),
+                {_, CheckedConf} = hocon_tconf:map(Schema, Conf, RootNames, tconf_opts()),
+                Values = [{Key, hocon_maps:get(Key, CheckedConf)} || Key <- Keys],
+                print_values(Values),
+                ?STATUS_SUCCESS
             catch
-                throw:{Schema, Errors} -> log_schema_errors(Schema, Errors)
+                throw:{invalid_key, Key} ->
+                    logger:error("Key ~0p is invalid", [Key]),
+                    ?STATUS_USAGE_ERROR;
+                throw:{unknown_struct_name, Schema, StructName} ->
+                    logger:error("Unknown ~0p root: ~s", [Schema, StructName]),
+                    ?STATUS_CONFIG_ERROR;
+                throw:{Schema, Errors} ->
+                    log_schema_errors(Schema, Errors)
             end
         end
     ).
@@ -527,8 +534,12 @@ log_schema_errors(Schema, Errors) ->
     ?STATUS_CONFIG_ERROR.
 
 root_name(Schema, Key) ->
-    [RootName | _] = string:lexemes(Key, "."),
-    hocon_schema:resolve_struct_name(Schema, RootName).
+    case string:lexemes(Key, ".") of
+        [RootName | _] ->
+            hocon_schema:resolve_struct_name(Schema, RootName);
+        [] ->
+            throw({invalid_key, Key})
+    end.
 
 print_values([{_Key, Value}]) ->
     io:format("~0p~n", [Value]);

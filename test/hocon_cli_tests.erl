@@ -35,6 +35,7 @@ cli_test_() ->
             {"get one or more checked values", fun() -> get_values(Context) end},
             {"apply environment overrides through get", fun() -> get_env_override(Context) end},
             {"get nested array and missing values", fun() -> get_nested_values(Context) end},
+            {"reject a key with an unknown schema root", fun() -> get_unknown_root(Context) end},
             {"generate application config and VM arguments", fun() -> generate(Context) end},
             {"invalid configuration generates no output", fun() -> generate_failure(Context) end},
             {"generate schema documentation", fun() -> docgen(Context) end},
@@ -231,6 +232,21 @@ get_nested_values(_Context) ->
     end),
     ?assertEqual(?STATUS_SUCCESS, Status),
     ?assertEqual(<<"foo.1.int=1\nfoo.x.int=undefined\n">>, Output).
+
+get_unknown_root(_Context) ->
+    ?assertEqual(
+        ?STATUS_CONFIG_ERROR,
+        hocon_cli:run([
+            "get",
+            "--log-level",
+            "emergency",
+            "--schema-file",
+            schema_file(),
+            "--conf-file",
+            config_file("demo-schema-example-1.conf"),
+            "bla"
+        ])
+    ).
 
 generate(#{dir := Dir}) ->
     AppConfig = filename:join(Dir, "app.config"),
