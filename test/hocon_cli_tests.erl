@@ -31,6 +31,7 @@ cli_test_() ->
             {"format stdin as JSON on stdout", fun() -> format_stdin(Context) end},
             {"validate valid and invalid configuration", fun() -> validate(Context) end},
             {"load a schema module", fun() -> schema_module(Context) end},
+            {"reject modules invalid schemas", fun() -> invalid_schema_module(Context) end},
             {"merge repeated configuration files", fun() -> repeated_conf_files(Context) end},
             {"get one or more checked values", fun() -> get_values(Context) end},
             {"apply environment overrides through get", fun() -> get_env_override(Context) end},
@@ -51,6 +52,8 @@ setup() ->
     ]),
     Input = filename:join(Dir, "input.conf"),
     InvalidInput = filename:join(Dir, "invalid.conf"),
+    InvalidSchema = filename:join(Dir, "not_a_schema.erl"),
+    BrokenSchema = filename:join(Dir, "broken_schema.erl"),
     ok = filelib:ensure_dir(Input),
     Hocon =
         ~"""
@@ -61,10 +64,28 @@ setup() ->
         """,
     ok = file:write_file(Input, Hocon),
     ok = file:write_file(InvalidInput, <<"foo = {">>),
+    ok = file:write_file(
+        InvalidSchema,
+        ~"""
+        -module(not_a_schema).
+        -export([hello/0]).
+
+        hello() -> world.
+        """
+    ),
+    ok = file:write_file(
+        BrokenSchema,
+        ~"""
+        -module(broken_schema).
+        broken( ->
+        """
+    ),
     #{
         dir => Dir,
         input => Input,
         invalid_input => InvalidInput,
+        invalid_schema => InvalidSchema,
+        broken_schema => BrokenSchema,
         hocon => Hocon,
         logger => save_logger_config()
     }.
@@ -163,6 +184,38 @@ schema_module(_Context) ->
             "demo_schema",
             "--conf-file",
             config_file("demo-schema-example-1.conf")
+        ])
+    ).
+
+invalid_schema_module(#{dir := Dir, invalid_schema := InvalidSchema}) ->
+    InvalidModuleArgs = ["--log-level", "emergency", "--schema-module", "erlang"],
+    Commands = [
+        ["get" | InvalidModuleArgs ++ ["foo"]],
+        ["validate" | InvalidModuleArgs],
+        ["docgen" | InvalidModuleArgs],
+        [
+            "generate"
+            | InvalidModuleArgs ++
+                [
+                    "--out-app-config",
+                    filename:join(Dir, "invalid-schema-app.config"),
+                    "--out-vm-args",
+                    filename:join(Dir, "invalid-schema-vm.args")
+                ]
+        ]
+    ],
+    lists:foreach(
+        fun(Args) -> ?assertEqual(?STATUS_CONFIG_ERROR, hocon_cli:run(Args)) end,
+        Commands
+    ),
+    ?assertEqual(
+        ?STATUS_CONFIG_ERROR,
+        hocon_cli:run([
+            "validate",
+            "--log-level",
+            "emergency",
+            "--schema-file",
+            InvalidSchema
         ])
     ).
 

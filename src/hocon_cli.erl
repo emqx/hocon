@@ -437,7 +437,7 @@ load_schema(Args) ->
             Module = list_to_atom(SchemaModule),
             case code:ensure_loaded(Module) of
                 {module, Module} ->
-                    {ok, Module};
+                    validate_schema_module(Module);
                 {error, Reason} ->
                     logger:error("Could not load schema module ~s: ~0p", [SchemaModule, Reason]),
                     {error, Reason}
@@ -462,17 +462,54 @@ compile_schema(SchemaFile) ->
 load_compiled_schema(Module, SchemaFile, Beam) ->
     case code:load_binary(Module, SchemaFile, Beam) of
         {module, Module} ->
-            {ok, Module};
+            validate_schema_module(Module);
         {error, Reason} ->
             logger:error("Could not load compiled schema ~s: ~0p", [SchemaFile, Reason]),
             {error, Reason}
     end.
 
+validate_schema_module(Module) ->
+    case hocon_schema:is_schema(Module) of
+        true ->
+            {ok, Module};
+        false ->
+            logger:error("Module ~p is not a HOCON schema", [Module]),
+            {error, invalid_schema_module};
+        {error, Reason} ->
+            logger:error("Module ~p is not loaded: ~0p", [Module, Reason]),
+            {error, Reason}
+    end.
+
 log_compile_errors(Errors) ->
-    lists:foreach(fun(Error) -> logger:error("~0p", [Error]) end, Errors).
+    log_compile_diagnostics(error, Errors).
 
 log_compile_warnings(Warnings) ->
-    lists:foreach(fun(Warning) -> logger:warning("~0p", [Warning]) end, Warnings).
+    log_compile_diagnostics(warning, Warnings).
+
+log_compile_diagnostics(Level, Diagnostics) ->
+    lists:foreach(
+        fun({Filename, FileDiagnostics}) ->
+            lists:foreach(
+                fun({Location, Module, Description}) ->
+                    Diagnostic = {Location, Module, Description},
+                    logger:log(Level, "~ts", [format_compile_diagnostic(Filename, Diagnostic)])
+                end,
+                FileDiagnostics
+            )
+        end,
+        Diagnostics
+    ).
+
+format_compile_diagnostic(Filename, {Location, Module, Description}) ->
+    FormattedError = apply(Module, format_error, [Description]),
+    [format_source_location(Filename, Location), ": ", FormattedError].
+
+format_source_location(Filename, {Line, Column}) ->
+    io_lib:format("~ts:~B:~B", [Filename, Line, Column]);
+format_source_location(Filename, Line) when is_integer(Line) ->
+    io_lib:format("~ts:~B", [Filename, Line]);
+format_source_location(Filename, none) ->
+    Filename.
 
 load_conf(Args) ->
     load_conf(richmap, Args).

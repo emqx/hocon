@@ -31,6 +31,7 @@
     override/2,
     namespace/1,
     root_converter/2,
+    is_schema/1,
     resolve_struct_name/2,
     root_names/1,
     field_schema/2,
@@ -344,6 +345,22 @@ fields_and_meta(#{fields := Fields}, Name) when is_function(Fields) ->
     ensure_struct_meta(Fields(Name));
 fields_and_meta(#{fields := Fields}, Name) when is_map(Fields) ->
     ensure_struct_meta(maps:get(Name, Fields)).
+
+-spec is_schema(module()) -> boolean() | {error, _Reason}.
+is_schema(Module) ->
+    case code:ensure_loaded(Module) of
+        {module, Module} ->
+            Callbacks = ?MODULE:behaviour_info(callbacks),
+            OptionalCallbacks = ?MODULE:behaviour_info(optional_callbacks),
+            lists:all(
+                fun({Function, Arity}) ->
+                    erlang:function_exported(Module, Function, Arity)
+                end,
+                Callbacks -- OptionalCallbacks
+            );
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
 maybe_add_desc(Mod, Name, Meta) ->
     case erlang:function_exported(Mod, desc, 1) of
