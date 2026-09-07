@@ -19,6 +19,10 @@
 
 -export([main/1, run/1]).
 
+-ifdef(TEST).
+-export([sync_logger/0]).
+-endif.
+
 -define(FORMAT_TEMPLATE, [time, " [", level, "] ", msg, "\n"]).
 -define(PROGNAME, "hocon").
 -define(STATUS_SUCCESS, 0).
@@ -560,6 +564,17 @@ generate_config(Schema, Conf) ->
 tconf_opts() ->
     #{logger => fun log_tconf/2, apply_override_envs => true}.
 
+log_tconf(Level, #{hocon_env_var_name := Var, path := Path, value := Value}) ->
+    %% NOTE: Adapted from legacy CLI.
+    {FmtArg, FmtValue} =
+        case Value of
+            V when is_binary(V) -> {"~s", V};
+            #{} -> {"~s", <<"{...}">>};
+            [] -> {"~s", <<"[]">>};
+            [_ | _] -> {"~s", <<"[...]">>};
+            V -> {"~0tp", V}
+        end,
+    logger:log(Level, "~ts [~ts]: " ++ FmtArg, [Var, Path, FmtValue]);
 log_tconf(Level, Msg) when is_binary(Msg) ->
     logger:log(Level, "~ts", [Msg]);
 log_tconf(Level, Msg) ->

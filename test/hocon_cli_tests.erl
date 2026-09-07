@@ -255,6 +255,8 @@ get_values(_Context) ->
 get_env_override(_Context) ->
     Args = [
         "get",
+        "-l",
+        "info",
         "--schema-file",
         schema_file(),
         "--conf-file",
@@ -262,14 +264,23 @@ get_env_override(_Context) ->
         "foo.setting"
     ],
     Envs = [
-        {"HOCON_ENV_OVERRIDE_PREFIX", "HOCON_CLI2_TEST_"},
-        {"HOCON_CLI2_TEST_FOO__SETTING", "hi"}
+        {"HOCON_ENV_OVERRIDE_PREFIX", "HOCON_CLI_TEST_"},
+        {"HOCON_CLI_TEST_FOO__MIN", "42"},
+        {"HOCON_CLI_TEST_FOO__SETTING", "hi"}
     ],
     {Status, Output} = capture(<<>>, fun() ->
         hocon_test_lib:with_envs(fun() -> hocon_cli:run(Args) end, Envs)
     end),
     ?assertEqual(?STATUS_SUCCESS, Status),
-    ?assertEqual(<<"\"hi\"\n">>, Output).
+    ?assertNotEqual(
+        nomatch,
+        binary:match(Output, <<"HOCON_CLI_TEST_FOO__MIN [foo.min]: 42">>)
+    ),
+    ?assertNotEqual(
+        nomatch,
+        binary:match(Output, <<"HOCON_CLI_TEST_FOO__SETTING [foo.setting]: ******">>)
+    ),
+    ?assertNotEqual(nomatch, binary:match(Output, <<"\"hi\"\n">>)).
 
 get_nested_values(_Context) ->
     {Status, Output} = capture(<<>>, fun() ->
@@ -394,22 +405,28 @@ config_file(Filename) ->
     filename:join("etc", Filename).
 
 capture(Input, Fun) ->
-    OldGroupLeader = group_leader(),
-    IODevice = spawn_link(fun() -> io_loop(iolist_to_binary(Input), queue:new()) end),
-    true = group_leader(IODevice, self()),
+    GroupLeader = group_leader(),
+    Stderr = whereis(standard_error),
+    IOCapture = spawn_link(fun() -> io_loop(iolist_to_binary(Input), queue:new()) end),
+    true = group_leader(IOCapture, self()),
+    true = unregister(standard_error),
+    true = register(standard_error, IOCapture),
     try
         Result = Fun(),
+        hocon_cli:sync_logger(),
         Ref = make_ref(),
-        IODevice ! {get_output, self(), Ref},
+        IOCapture ! {get_output, self(), Ref},
         receive
             {Ref, Output} -> {Result, iolist_to_binary(Output)}
         after 1000 ->
             error(io_capture_timeout)
         end
     after
-        true = group_leader(OldGroupLeader, self()),
-        unlink(IODevice),
-        IODevice ! stop
+        true = unregister(standard_error),
+        true = register(standard_error, Stderr),
+        true = group_leader(GroupLeader, self()),
+        unlink(IOCapture),
+        IOCapture ! stop
     end.
 
 io_loop(Input, Output) ->
