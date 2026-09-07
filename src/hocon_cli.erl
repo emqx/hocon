@@ -402,8 +402,10 @@ get_values(#{keys := Keys} = Parsed) ->
         fun(Schema, Conf) ->
             try
                 RootNames = lists:usort([root_name(Schema, Key) || Key <- Keys]),
-                {_, CheckedConf} = hocon_tconf:map(Schema, Conf, RootNames, tconf_opts()),
-                Values = [{Key, hocon_maps:get(Key, CheckedConf)} || Key <- Keys],
+                %% Validate converted values, then preserve their HOCON representation for output.
+                {_, _CheckedConf} = hocon_tconf:map(Schema, Conf, RootNames, tconf_opts()),
+                {_, SerializableConf} = hocon_tconf:map(Schema, Conf, RootNames, tconf_opts_get()),
+                Values = [{Key, hocon_maps:get(Key, SerializableConf)} || Key <- Keys],
                 print_values(Values),
                 ?STATUS_SUCCESS
             catch
@@ -564,7 +566,18 @@ generate_config(Schema, Conf) ->
     end.
 
 tconf_opts() ->
-    #{logger => fun log_tconf/2, apply_override_envs => true}.
+    #{
+        logger => fun log_tconf/2,
+        apply_override_envs => true
+    }.
+
+tconf_opts_get() ->
+    #{
+        logger => fun(_, _) -> ok end,
+        apply_override_envs => true,
+        make_serializable => true,
+        atom_key => false
+    }.
 
 log_tconf(Level, #{hocon_env_var_name := Var, path := Path, value := Value}) ->
     %% NOTE: Adapted from legacy CLI.
