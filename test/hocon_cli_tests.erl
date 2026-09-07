@@ -233,7 +233,7 @@ repeated_conf_files(_Context) ->
         ])
     end),
     ?assertEqual(?STATUS_SUCCESS, Status),
-    ?assertEqual(<<"\"yaa\"\n">>, Output).
+    ?assertEqual(<<"yaa\n">>, Output).
 
 get_values(_Context) ->
     Args = [
@@ -246,7 +246,7 @@ get_values(_Context) ->
     {?STATUS_SUCCESS, One} = capture(<<>>, fun() ->
         hocon_cli:run(Args ++ ["foo.setting"])
     end),
-    ?assertEqual(<<"\"hello\"\n">>, One),
+    ?assertEqual(<<"hello\n">>, One),
     {?STATUS_SUCCESS, Many} = capture(<<>>, fun() ->
         hocon_cli:run(Args ++ ["foo.min", "foo.max"])
     end),
@@ -280,7 +280,7 @@ get_env_override(_Context) ->
         nomatch,
         binary:match(Output, <<"HOCON_CLI_TEST_FOO__SETTING [foo.setting]: ******">>)
     ),
-    ?assertNotEqual(nomatch, binary:match(Output, <<"\"hi\"\n">>)).
+    ?assertNotEqual(nomatch, binary:match(Output, <<"hi\n">>)).
 
 get_nested_values(_Context) ->
     {Status, Output} = capture(<<>>, fun() ->

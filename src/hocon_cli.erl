@@ -166,7 +166,9 @@ cli() ->
                         #{
                             name => keys,
                             nargs => nonempty_list,
-                            help => "Configuration key; multiple keys are accepted"
+                            help =>
+                                "Configuration key; multiple keys are accepted.\n"
+                                "Complex values are formatted as single-line HOCON documents."
                         }
                     ]
             },
@@ -594,9 +596,17 @@ root_name(Schema, Key) ->
     end.
 
 print_values([{_Key, Value}]) ->
-    io:format("~0p~n", [Value]);
+    io:format("~s~n", [print_value(Value)]);
 print_values(Values) ->
-    lists:foreach(fun({Key, Value}) -> io:format("~s=~0p~n", [Key, Value]) end, Values).
+    lists:foreach(
+        fun({Key, Value}) ->
+            io:format("~s=~s~n", [Key, print_value(Value)])
+        end,
+        Values
+    ).
+
+print_value(V) ->
+    hocon_pp:do(V, #{embedded => true, newline => ""}).
 
 write_generated_config(Args, Generated) ->
     AppConfig = proplists:delete(vm_args, Generated),
