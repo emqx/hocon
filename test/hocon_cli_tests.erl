@@ -42,6 +42,9 @@ cli_test_() ->
                 generate_env_override_logging(Context)
             end},
             {"invalid configuration generates no output", fun() -> generate_failure(Context) end},
+            {"invalid environment override prevents generation and is logged", fun() ->
+                generate_env_override_failure(Context)
+            end},
             {"generate schema documentation", fun() -> docgen(Context) end},
             {"return distinct usage, output, and config errors", fun() -> errors(Context) end}
         ]
@@ -425,6 +428,35 @@ generate_failure(#{dir := Dir}) ->
             VMArgs
         ])
     ),
+    ?assertEqual({error, enoent}, file:read_file(AppConfig)),
+    ?assertEqual({error, enoent}, file:read_file(VMArgs)).
+
+generate_env_override_failure(#{dir := Dir}) ->
+    AppConfig = filename:join(Dir, "invalid-env-app.config"),
+    VMArgs = filename:join(Dir, "invalid-env-vm.args"),
+    Args = [
+        "generate",
+        "--log-env-overrides",
+        "--schema-file",
+        schema_file(),
+        "--conf-file",
+        config_file("demo-schema-example-2.conf"),
+        "--out-app-config",
+        AppConfig,
+        "--out-vm-args",
+        VMArgs
+    ],
+    Envs = [
+        {"HOCON_ENV_OVERRIDE_PREFIX", "HOCON_CLI_TEST_"},
+        {"HOCON_CLI_TEST_FOO__MIN", "not-an-integer"}
+    ],
+    {Status, Output} = capture(<<>>, fun() ->
+        hocon_test_lib:with_envs(fun() -> hocon_cli:run(Args) end, Envs)
+    end),
+    ?assertEqual(?STATUS_CONFIG_ERROR, Status),
+    ?assertNotEqual(nomatch, binary:match(Output, <<"Failed to check schema demo_schema">>)),
+    ?assertNotEqual(nomatch, binary:match(Output, <<"path => \"foo.min\"">>)),
+    ?assertNotEqual(nomatch, binary:match(Output, <<"value => <<\"not-an-integer\">>">>)),
     ?assertEqual({error, enoent}, file:read_file(AppConfig)),
     ?assertEqual({error, enoent}, file:read_file(VMArgs)).
 
