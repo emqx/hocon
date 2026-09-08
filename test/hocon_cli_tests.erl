@@ -38,6 +38,9 @@ cli_test_() ->
             {"get nested array and missing values", fun() -> get_nested_values(Context) end},
             {"reject a key with an unknown schema root", fun() -> get_unknown_root(Context) end},
             {"generate application config and VM arguments", fun() -> generate(Context) end},
+            {"log environment overrides during generation", fun() ->
+                generate_env_override_logging(Context)
+            end},
             {"invalid configuration generates no output", fun() -> generate_failure(Context) end},
             {"generate schema documentation", fun() -> docgen(Context) end},
             {"return distinct usage, output, and config errors", fun() -> errors(Context) end}
@@ -173,7 +176,28 @@ validate(_Context) ->
             "--conf-file",
             config_file("demo-schema-failure.conf")
         ])
-    ).
+    ),
+    Envs = [
+        {"HOCON_ENV_OVERRIDE_PREFIX", "HOCON_CLI_TEST_"},
+        {"HOCON_CLI_TEST_FOO__MIN", "2"}
+    ],
+    {Status, Output} = capture(<<>>, fun() ->
+        hocon_test_lib:with_envs(
+            fun() ->
+                hocon_cli:run([
+                    "validate",
+                    "--log-env-overrides",
+                    "--schema-file",
+                    schema_file(),
+                    "--conf-file",
+                    config_file("demo-schema-example-1.conf")
+                ])
+            end,
+            Envs
+        )
+    end),
+    ?assertEqual(?STATUS_SUCCESS, Status),
+    ?assertEqual(<<"HOCON_CLI_TEST_FOO__MIN [foo.min]: 2\n">>, Output).
 
 schema_module(_Context) ->
     ?assertEqual(
@@ -277,15 +301,7 @@ get_env_override(_Context) ->
         hocon_test_lib:with_envs(fun() -> hocon_cli:run(Args) end, Envs)
     end),
     ?assertEqual(?STATUS_SUCCESS, Status),
-    ?assertNotEqual(
-        nomatch,
-        binary:match(Output, <<"HOCON_CLI_TEST_FOO__MIN [foo.min]: 42">>)
-    ),
-    ?assertNotEqual(
-        nomatch,
-        binary:match(Output, <<"HOCON_CLI_TEST_FOO__SETTING [foo.setting]: ******">>)
-    ),
-    ?assertNotEqual(nomatch, binary:match(Output, <<"hi\n">>)).
+    ?assertEqual(<<"hi\n">>, Output).
 
 get_nested_values(_Context) ->
     {Status, Output} = capture(<<>>, fun() ->
@@ -351,6 +367,44 @@ generate(#{dir := Dir}) ->
         <<"-env ERL_MAX_PORTS 64000\n-name emqx@127.0.0.1">>,
         element(2, file:read_file(VMArgs))
     ).
+
+generate_env_override_logging(#{dir := Dir}) ->
+    AppConfig = filename:join(Dir, "env-app.config"),
+    VMArgs = filename:join(Dir, "env-vm.args"),
+    Args = [
+        "generate",
+        "--log-env-overrides",
+        "--schema-file",
+        schema_file(),
+        "--conf-file",
+        config_file("demo-schema-example-2.conf"),
+        "--out-app-config",
+        AppConfig,
+        "--out-vm-args",
+        VMArgs
+    ],
+    Envs = [
+        {"HOCON_ENV_OVERRIDE_PREFIX", "HOCON_CLI_TEST_"},
+        {"HOCON_CLI_TEST_FOO__MIN", "2"},
+        {"HOCON_CLI_TEST_FOO__SETTING", "hi"}
+    ],
+    {Status, Output} = capture(<<>>, fun() ->
+        hocon_test_lib:with_envs(fun() -> hocon_cli:run(Args) end, Envs)
+    end),
+    ?assertEqual(?STATUS_SUCCESS, Status),
+    ?assertNotEqual(
+        nomatch,
+        binary:match(Output, <<"HOCON_CLI_TEST_FOO__MIN [foo.min]: 2">>)
+    ),
+    ?assertNotEqual(
+        nomatch,
+        binary:match(Output, <<"HOCON_CLI_TEST_FOO__SETTING [foo.setting]: ******">>)
+    ),
+    ?assertEqual(nomatch, binary:match(Output, <<"[info]">>)),
+    {ok, [[{app_foo, AppFoo}]]} = file:consult(AppConfig),
+    ?assertEqual({2, 10}, proplists:get_value(range, AppFoo)),
+    ?assertEqual("hi", proplists:get_value(setting, AppFoo)),
+    ?assertMatch({ok, _}, file:read_file(VMArgs)).
 
 generate_failure(#{dir := Dir}) ->
     AppConfig = filename:join(Dir, "invalid-app.config"),

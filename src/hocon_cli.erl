@@ -63,6 +63,9 @@ run(ArgsIn) ->
 stdout(CharData) ->
     io:put_chars(standard_io, CharData).
 
+stdout(Format, Args) when is_list(Args) ->
+    io:format(standard_io, Format, Args).
+
 stderr(Format, Args) when is_list(Args) ->
     io:format(standard_error, Format, Args).
 
@@ -142,7 +145,7 @@ cli() ->
             "generate" => #{
                 help => "Generate an Erlang application configuration.",
                 handler => fun h_generate/1,
-                arguments => schema_arguments() ++ input_arguments() ++
+                arguments => schema_arguments() ++ input_arguments() ++ logenv_arguments() ++
                     [
                         #{
                             name => config_output,
@@ -175,7 +178,7 @@ cli() ->
             "validate" => #{
                 help => "Check a configuration against a schema without generating output.",
                 handler => fun h_validate/1,
-                arguments => schema_arguments() ++ input_arguments()
+                arguments => schema_arguments() ++ input_arguments() ++ logenv_arguments()
             },
             "docgen" => #{
                 help => "Generate Markdown documentation for a schema module.",
@@ -279,6 +282,18 @@ input_arguments() ->
         }
     ].
 
+logenv_arguments() ->
+    [
+        #{
+            name => log_env_overrides,
+            short => $v,
+            long => "-log-env-overrides",
+            action => {store, true},
+            default => false,
+            help => "Print applied environment overrides to stdout"
+        }
+    ].
+
 h_help(#{cmd := Command}) ->
     ParserOpts = #{progname => ?PROGNAME, command => [Command]},
     stdout(argparse:help(cli(), ParserOpts)),
@@ -292,7 +307,7 @@ h_generate(Args) ->
     setup_logger(Args),
     with_code_paths(Args, fun() ->
         with_schema_and_conf(Args, fun(Schema, Conf) ->
-            case generate_config(Schema, Conf) of
+            case generate_config(Schema, Conf, tconf_opts(Args)) of
                 {ok, Generated} -> write_generated_config(Args, Generated);
                 {error, Errors} -> log_schema_errors(Schema, Errors)
             end
@@ -307,7 +322,7 @@ h_validate(Args) ->
     setup_logger(Args),
     with_code_paths(Args, fun() ->
         with_schema_and_conf(Args, fun(Schema, Conf) ->
-            case generate_config(Schema, Conf) of
+            case generate_config(Schema, Conf, tconf_opts(Args)) of
                 {ok, _Generated} ->
                     ?STATUS_SUCCESS;
                 {error, Errors} ->
@@ -558,16 +573,21 @@ slurp_standard_input(Acc) ->
             slurp_standard_input([Data | Acc])
     end.
 
-generate_config(Schema, Conf) ->
-    try hocon_tconf:generate(Schema, Conf, tconf_opts()) of
-        Generated -> {ok, Generated}
+generate_config(Schema, Conf, Opts) ->
+    try hocon_tconf:generate(Schema, Conf, Opts) of
+        Generated ->
+            {ok, Generated}
     catch
-        throw:{Schema, Errors} -> {error, Errors}
+        throw:{Schema, Errors} ->
+            {error, Errors}
     end.
 
 tconf_opts() ->
+    tconf_opts(#{}).
+
+tconf_opts(Opts) ->
     #{
-        logger => fun log_tconf/2,
+        logger => fun(Level, Msg) -> log_tconf(Level, Msg, Opts) end,
         apply_override_envs => true
     }.
 
@@ -579,7 +599,20 @@ tconf_opts_get() ->
         atom_key => false
     }.
 
-log_tconf(Level, #{hocon_env_var_name := Var, path := Path, value := Value}) ->
+log_tconf(
+    _Level,
+    #{hocon_env_var_name := Var, path := Path, value := Value},
+    #{log_env_overrides := true}
+) ->
+    log_env_override(Var, Path, Value);
+log_tconf(_Level, #{hocon_env_var_name := _}, _Opts) ->
+    ok;
+log_tconf(Level, Msg, _Opts) when is_binary(Msg) ->
+    logger:log(Level, "~ts", [Msg]);
+log_tconf(Level, Msg, _Opts) ->
+    logger:log(Level, Msg).
+
+log_env_override(Var, Path, Value) ->
     %% NOTE: Adapted from legacy CLI.
     {FmtArg, FmtValue} =
         case Value of
@@ -589,11 +622,7 @@ log_tconf(Level, #{hocon_env_var_name := Var, path := Path, value := Value}) ->
             [_ | _] -> {"~s", <<"[...]">>};
             V -> {"~0tp", V}
         end,
-    logger:log(Level, "~ts [~ts]: " ++ FmtArg, [Var, Path, FmtValue]);
-log_tconf(Level, Msg) when is_binary(Msg) ->
-    logger:log(Level, "~ts", [Msg]);
-log_tconf(Level, Msg) ->
-    logger:log(Level, Msg).
+    stdout("~ts [~ts]: " ++ FmtArg ++ "~n", [Var, Path, FmtValue]).
 
 log_schema_errors(Schema, Errors) ->
     logger:error("Failed to check schema ~0p", [Schema]),
