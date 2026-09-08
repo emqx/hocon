@@ -278,11 +278,14 @@ get_values(_Context) ->
         hocon_cli:run(Args ++ ["foo.min", "foo.max"])
     end),
     ?assertEqual(<<"foo.min=1\nfoo.max=10\n">>, Many),
-    EndpointArgs = ["get", "--schema-file", schema_file(), "foo.endpoint"],
+    EndpointArgs = ["get", "--schema-file", schema_file(), "foo.endpoint", "foo.setting"],
     {?STATUS_SUCCESS, Endpoint} = capture(<<"foo.endpoint = \"127.0.0.1\"\n">>, fun() ->
         hocon_cli:run(EndpointArgs)
     end),
-    ?assertEqual(<<"\"127.0.0.1\"\n">>, Endpoint).
+    ?assertEqual(<<"foo.endpoint=\"127.0.0.1\"\nfoo.setting=default\n">>, Endpoint),
+    {?STATUS_CONFIG_ERROR, _} = capture(<<"foo.endpoint = invalid\n">>, fun() ->
+        hocon_cli:run(EndpointArgs)
+    end).
 
 get_env_override(_Context) ->
     Args = [
