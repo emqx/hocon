@@ -99,7 +99,13 @@ check_converter_test() ->
             }
         },
         hocon_util:richmap_to_map(hocon_tconf:check(?MODULE, RichConf))
-    ).
+    ),
+    WithSource = hocon_tconf:check(?MODULE, RichConf, #{
+        format => {richmap, #{keep_source => true}}
+    }),
+    ?assertEqual(4, hocon_maps:get("root2.key4", WithSource)),
+    ?assertEqual(3, hocon_maps:get_source("root2.key4", WithSource)),
+    ?assertEqual(3, hocon_maps:get_source("root2.old_key4", WithSource)).
 
 check_field_test() ->
     ConfText =

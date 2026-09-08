@@ -128,7 +128,12 @@ keep_source_test() ->
     ?assertEqual("foo", hocon_maps:get("bar.field1", Checked)),
     ?assertEqual(<<"foo">>, hocon_maps:get_source("bar.field1", Checked)),
     ?assertEqual(<<"localhost">>, hocon_maps:get_source("bar.host", Checked)),
-    ?assertNot(maps:is_key(?HOCON_SOURCE, hocon_maps:deep_get("bar", Checked))),
+    ?assertEqual(dummy, hocon_maps:get_source("bar.union_with_default", Checked)),
+    ?assertNotMatch(#{?HOCON_SOURCE := _}, hocon_maps:deep_get("bar", Checked)),
+    ?assertNotMatch(
+        #{?HOCON_SOURCE := _},
+        hocon_maps:deep_get("bar.union_with_default", Checked)
+    ),
     ?assertMatch(
         #{?HOCON_SOURCE := <<"foo">>},
         hocon_maps:deep_get("bar.field1", Checked)
@@ -140,16 +145,89 @@ keep_source_test() ->
         #{format => {richmap, #{keep_source => true}}}
     ),
     ?assertEqual(42, hocon_maps:get_source("value", Unchanged)),
-    ?assertNot(maps:is_key(?HOCON_SOURCE, hocon_maps:deep_get("value", Unchanged))),
+    ?assertNotMatch(#{?HOCON_SOURCE := _}, hocon_maps:deep_get("value", Unchanged)),
     WithoutSource = hocon_tconf:check(?MODULE, RichConf, #{
         format => {richmap, #{keep_source => false}}
     }),
-    ?assertNot(maps:is_key(?HOCON_SOURCE, hocon_maps:deep_get("bar.field1", WithoutSource))),
+    ?assertNotMatch(#{?HOCON_SOURCE := _}, hocon_maps:deep_get("bar.field1", WithoutSource)),
     Redacted = hocon_tconf:check(?MODULE, RichConf, #{
         format => {richmap, #{keep_source => true}},
         obfuscate_sensitive_values => true
     }),
-    ?assertEqual(<<"******">>, hocon_maps:get_source("bar.field1", Redacted)).
+    ?assertEqual(<<"******">>, hocon_maps:get_source("bar.field1", Redacted)),
+    ?assertNotMatch(#{?HOCON_SOURCE := _}, hocon_maps:deep_get("bar.field1", Redacted)).
+
+keep_source_nested_converters_test() ->
+    Sc = #{
+        roots => [{root, hoconsc:ref(node)}],
+        fields => #{
+            node => [
+                {count, hoconsc:mk(integer(), #{converter => fun word_to_integer/2})},
+                {child, hoconsc:ref(child)}
+            ],
+            child => [
+                {enabled, hoconsc:mk(boolean(), #{converter => fun word_to_boolean/2})}
+            ]
+        }
+    },
+    Checked = check_keep_source(Sc, "root {count = one, child.enabled = enabled}"),
+    ?assertEqual(
+        #{<<"count">> => 1, <<"child">> => #{<<"enabled">> => true}},
+        hocon_maps:get("root", Checked)
+    ),
+    ?assertEqual(
+        #{<<"count">> => <<"one">>, <<"child">> => #{<<"enabled">> => <<"enabled">>}},
+        hocon_maps:get_source("root", Checked)
+    ),
+    ?assertEqual(<<"one">>, hocon_maps:get_source("root.count", Checked)),
+    ?assertEqual(<<"enabled">>, hocon_maps:get_source("root.child.enabled", Checked)).
+
+keep_source_struct_converter_test() ->
+    Sc = #{
+        roots => [{root, hoconsc:ref(node)}],
+        fields => #{
+            node => [
+                {count, hoconsc:mk(integer(), #{converter => fun word_to_integer/2})},
+                {child, hoconsc:ref(child)}
+            ],
+            child => [
+                {enabled, hoconsc:mk(boolean(), #{converter => fun word_to_boolean/2})}
+            ]
+        },
+        root_converter => #{node => fun convert_legacy_node/2}
+    },
+    Checked = check_keep_source(
+        Sc,
+        "root {legacy_count = one, legacy_child.legacy_enabled = enabled}"
+    ),
+    ?assertEqual(
+        #{<<"count">> => 1, <<"child">> => #{<<"enabled">> => true}},
+        hocon_maps:get("root", Checked)
+    ),
+    ?assertEqual(
+        #{<<"count">> => <<"one">>, <<"child">> => #{<<"enabled">> => <<"enabled">>}},
+        hocon_maps:get_source("root", Checked)
+    ),
+    ?assertEqual(<<"one">>, hocon_maps:get_source("root.count", Checked)),
+    ?assertEqual(<<"enabled">>, hocon_maps:get_source("root.child.enabled", Checked)).
+
+word_to_integer(<<"one">>, _Opts) ->
+    1.
+
+word_to_boolean(<<"enabled">>, _Opts) ->
+    true.
+
+convert_legacy_node(
+    #{
+        <<"legacy_count">> := Count,
+        <<"legacy_child">> := #{<<"legacy_enabled">> := Enabled}
+    },
+    _Opts
+) ->
+    #{
+        <<"count">> => Count,
+        <<"child">> => #{<<"enabled">> => Enabled}
+    }.
 
 obfuscate_sensitive_values_test() ->
     Conf = "{bar.field1: \"foo\"}",
@@ -351,6 +429,12 @@ check_plain(Str) ->
 check_plain(Str, Opts) ->
     {ok, Map} = hocon:binary(Str, #{}),
     hocon_tconf:check_plain(?MODULE, Map, Opts).
+
+check_keep_source(Schema, Str) ->
+    {ok, RichMap} = hocon:binary(Str, #{format => richmap}),
+    hocon_tconf:check(Schema, RichMap, #{
+        format => {richmap, #{keep_source => true}}
+    }).
 
 mapping_test_() ->
     F = fun(Str) ->
