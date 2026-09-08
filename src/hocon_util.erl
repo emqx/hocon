@@ -86,6 +86,8 @@ richmap_to_map(Iter, Map) ->
     case maps:next(Iter) of
         {?METADATA, _, I} ->
             richmap_to_map(I, Map);
+        {?HOCON_SOURCE, _, I} ->
+            richmap_to_map(I, Map);
         {?HOCON_T, _, I} ->
             richmap_to_map(I, Map);
         {?HOCON_V, M, _} when is_map(M) ->

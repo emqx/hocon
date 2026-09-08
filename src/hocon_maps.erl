@@ -26,7 +26,7 @@
 
 %% Access maybe-rich map values,
 %% Always return plain value.
--export([get/2, get/3]).
+-export([get/2, get/3, get_source/2, get_source/3]).
 
 -export([flatten/2]).
 
@@ -157,6 +157,43 @@ get(Path, Map) ->
         false ->
             do_get(hocon_util:split_path(Path), Map, map)
     end.
+
+%% @doc Get the source value from a maybe-rich map.
+%% Falls back to the current value when no source value was preserved.
+-spec get_source([name()] | name(), config()) -> term().
+get_source(Path, Map) ->
+    case is_richmap(Map) of
+        true ->
+            source_to_plain(deep_get(Path, Map));
+        false ->
+            do_get(hocon_util:split_path(Path), Map, map)
+    end.
+
+-spec get_source([name()] | name(), config(), term()) -> term().
+get_source(Path, Config, Default) ->
+    case get_source(Path, Config) of
+        undefined -> Default;
+        V -> V
+    end.
+
+source_to_plain(#{?HOCON_SOURCE := Source}) ->
+    source_to_plain(Source);
+source_to_plain(#{?HOCON_V := Value}) ->
+    source_to_plain(Value);
+source_to_plain(Map) when is_map(Map) ->
+    maps:fold(
+        fun
+            (?METADATA, _, Acc) -> Acc;
+            (?HOCON_T, _, Acc) -> Acc;
+            (Key, Value, Acc) -> Acc#{Key => source_to_plain(Value)}
+        end,
+        #{},
+        Map
+    );
+source_to_plain(List) when is_list(List) ->
+    [source_to_plain(Value) || Value <- List];
+source_to_plain(Value) ->
+    Value.
 
 do_get([], Conf, _Format) ->
     Conf;

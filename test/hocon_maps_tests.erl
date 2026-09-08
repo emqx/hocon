@@ -42,6 +42,56 @@ deep_get_test_() ->
         ?_assertEqual(undefined, F("a={b=1}", "a.c", ?HOCON_V))
     ].
 
+get_source_test() ->
+    RichMap = #{
+        ?HOCON_V => #{
+            <<"converted">> => #{?HOCON_V => converted, ?HOCON_SOURCE => <<"source">>},
+            <<"unchanged">> => #{?HOCON_V => 42},
+            <<"nested">> => #{
+                ?HOCON_V => #{
+                    <<"converted">> => #{
+                        ?HOCON_V => nested_converted,
+                        ?HOCON_SOURCE => <<"nested source">>
+                    }
+                }
+            },
+            <<"array">> => #{
+                ?HOCON_V => [
+                    #{?HOCON_V => array_converted, ?HOCON_SOURCE => <<"array source">>},
+                    #{
+                        ?HOCON_V => #{
+                            <<"converted">> => #{
+                                ?HOCON_V => deeply_converted,
+                                ?HOCON_SOURCE => <<"deep source">>
+                            }
+                        }
+                    }
+                ]
+            }
+        }
+    },
+    ?assertEqual(converted, hocon_maps:get("converted", RichMap)),
+    ?assertEqual(<<"source">>, hocon_maps:get_source("converted", RichMap)),
+    ?assertEqual(42, hocon_maps:get_source("unchanged", RichMap)),
+    ?assertEqual(
+        #{<<"converted">> => <<"nested source">>},
+        hocon_maps:get_source("nested", RichMap)
+    ),
+    ?assertEqual(
+        <<"nested source">>,
+        hocon_maps:get_source("nested.converted", RichMap)
+    ),
+    ?assertEqual(
+        [<<"array source">>, #{<<"converted">> => <<"deep source">>}],
+        hocon_maps:get_source("array", RichMap)
+    ),
+    ?assertEqual(<<"array source">>, hocon_maps:get_source("array.1", RichMap)),
+    ?assertEqual(
+        <<"deep source">>,
+        hocon_maps:get_source("array.2.converted", RichMap)
+    ),
+    ?assertEqual(missing, hocon_maps:get_source("unknown", RichMap, missing)).
+
 deep_get(Path, Conf, Param) ->
     case hocon_maps:deep_get(Path, Conf) of
         undefined -> undefined;

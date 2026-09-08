@@ -117,6 +117,40 @@ default_value_test() ->
         hocon_tconf:make_serializable(?MODULE, Res, #{})
     ).
 
+keep_source_test() ->
+    {ok, RichConf} = hocon:binary(
+        "bar.field1 = foo, bar.host = localhost",
+        #{format => richmap}
+    ),
+    Checked = hocon_tconf:check(?MODULE, RichConf, #{
+        format => {richmap, #{keep_source => true}}
+    }),
+    ?assertEqual("foo", hocon_maps:get("bar.field1", Checked)),
+    ?assertEqual(<<"foo">>, hocon_maps:get_source("bar.field1", Checked)),
+    ?assertEqual(<<"localhost">>, hocon_maps:get_source("bar.host", Checked)),
+    ?assertNot(maps:is_key(?HOCON_SOURCE, hocon_maps:deep_get("bar", Checked))),
+    ?assertMatch(
+        #{?HOCON_SOURCE := <<"foo">>},
+        hocon_maps:deep_get("bar.field1", Checked)
+    ),
+    {ok, UnchangedRichConf} = hocon:binary("value = 42", #{format => richmap}),
+    Unchanged = hocon_tconf:check(
+        #{roots => [{value, integer()}]},
+        UnchangedRichConf,
+        #{format => {richmap, #{keep_source => true}}}
+    ),
+    ?assertEqual(42, hocon_maps:get_source("value", Unchanged)),
+    ?assertNot(maps:is_key(?HOCON_SOURCE, hocon_maps:deep_get("value", Unchanged))),
+    WithoutSource = hocon_tconf:check(?MODULE, RichConf, #{
+        format => {richmap, #{keep_source => false}}
+    }),
+    ?assertNot(maps:is_key(?HOCON_SOURCE, hocon_maps:deep_get("bar.field1", WithoutSource))),
+    Redacted = hocon_tconf:check(?MODULE, RichConf, #{
+        format => {richmap, #{keep_source => true}},
+        obfuscate_sensitive_values => true
+    }),
+    ?assertEqual(<<"******">>, hocon_maps:get_source("bar.field1", Redacted)).
+
 obfuscate_sensitive_values_test() ->
     Conf = "{bar.field1: \"foo\"}",
     Res = check(Conf, #{format => richmap}),

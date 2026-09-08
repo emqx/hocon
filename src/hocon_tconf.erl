@@ -60,7 +60,9 @@
     %% format converted values back to HOCON or JSON serializable map
     %% (with default value filled)
     make_serializable => boolean(),
-    format => map | richmap,
+    %% Options relevant to `richmap`:
+    %%  * `keep_source` retains pre-conversion values on primitive richmap nodes.
+    format => map | richmap | {richmap, #{keep_source => boolean()}},
     stack => [name()],
     schema => schema(),
     check_lazy => boolean(),
@@ -215,13 +217,23 @@ assert_integrity_failure(Schema, Rest, Conf, Name, Reason) ->
     ).
 
 merge_opts(Default, Opts) ->
-    maps:merge(
-        Default#{
-            apply_override_envs => false,
-            atom_key => false
-        },
-        Opts
+    normalize_format(
+        maps:merge(
+            Default#{
+                apply_override_envs => false,
+                atom_key => false
+            },
+            Opts
+        )
     ).
+
+normalize_format(#{format := {richmap, FormatOpts}} = Opts) ->
+    Opts#{
+        format => richmap,
+        richmap_keep_source => maps:get(keep_source, FormatOpts, false)
+    };
+normalize_format(Opts) ->
+    Opts.
 
 %% @doc Check richmap input against schema.
 %% Returns a new config with:
@@ -476,7 +488,7 @@ map_fields_cont([{_, FieldSchema} = Field | Fields], Conf0, Acc, Opts) ->
                 ),
                 erlang:raise(C, Err, St)
         end,
-    Conf1 = put_value(Opts, FieldName, unbox(Opts, FValue), Conf0),
+    Conf1 = put_value(Opts, FieldName, FValue, Conf0),
     %% now drop all aliases
     %% it is allowed to have both old and new names provided in the config
     %% but the first match wins.
@@ -563,7 +575,8 @@ map_field_maybe_convert(Type, Schema, Value0, Opts, Converter) ->
     case do_apply_converter(Converter, Value0, Opts) of
         {ok, Value1} ->
             {Mapped, Value2} = map_field(Type, Schema, Value1, Opts),
-            {Mapped, ensure_obfuscate_sensitive(Opts, Schema, Value2)};
+            Value3 = preserve_converted_source(Opts, Type, Value0, Value2),
+            {Mapped, ensure_obfuscate_sensitive(Opts, Schema, Value3)};
         Errors ->
             Errors
     end.
@@ -717,7 +730,8 @@ map_field(Type, Schema, Value0, Opts) ->
         Validators = get_validators(Schema, Type, Opts),
         ValidationResult = validate(Opts, Schema, ConvertedValue, Validators),
         Value1 = boxit(Opts, ConvertedValue, Value0),
-        {ValidationResult, ensure_obfuscate_sensitive(Opts, Schema, Value1)}
+        Value2 = preserve_source(Opts, Value0, PlainValue, Value1),
+        {ValidationResult, ensure_obfuscate_sensitive(Opts, Schema, Value2)}
     catch
         {hocon_schema_builtin, Error} ->
             ValidationErrors = validation_errs(Opts, Error, obfuscate(Schema, PlainValue)),
@@ -1070,7 +1084,7 @@ ensure_obfuscate_sensitive(Opts, Schema, Val) ->
         true ->
             UnboxVal = unbox(Opts, Val),
             UnboxVal1 = obfuscate(Schema, UnboxVal),
-            boxit(Opts, UnboxVal1, Val);
+            drop_source(Opts, boxit(Opts, UnboxVal1, Val));
         false ->
             Val
     end.
@@ -1109,11 +1123,59 @@ unbox(Boxed) ->
         false -> error({bad_richmap, Boxed})
     end.
 
-boxit(#{format := map}, Value, _OldValue) -> Value;
+boxit(#{format := map}, Value, _ValueIn) -> Value;
 boxit(#{format := richmap}, Value, undefined) -> boxit(Value, ?NULL_BOX);
 boxit(#{format := richmap}, Value, Box) -> boxit(Value, Box).
 
 boxit(Value, Box) -> Box#{?HOCON_V => Value}.
+
+preserve_source(
+    #{format := richmap, richmap_keep_source := true},
+    #{?HOCON_SOURCE := Source},
+    _ValuePlain,
+    #{?HOCON_V := _} = Box
+) ->
+    with_source(Source, Box);
+preserve_source(
+    #{format := richmap, richmap_keep_source := true},
+    ValueIn,
+    ValuePlain,
+    #{?HOCON_V := _} = Box
+) when ValueIn =/= undefined ->
+    with_source(ValuePlain, Box);
+preserve_source(_Opts, _ValueIn, _ValuePlain, Box) ->
+    Box.
+
+preserve_converted_source(Opts, Type, ValueIn, ValueOut) ->
+    case is_primitive_type(Type) of
+        true -> preserve_converted_source(Opts, ValueIn, ValueOut);
+        false -> ValueOut
+    end.
+
+preserve_converted_source(
+    #{format := richmap, richmap_keep_source := true},
+    #{?HOCON_SOURCE := Source},
+    #{?HOCON_V := _} = Box
+) ->
+    with_source(Source, Box);
+preserve_converted_source(
+    #{format := richmap, richmap_keep_source := true},
+    ValueIn,
+    #{?HOCON_V := _} = Box
+) when ValueIn =/= undefined ->
+    with_source(ensure_plain(ValueIn), Box);
+preserve_converted_source(_Opts, _ValueIn, ValueOut) ->
+    ValueOut.
+
+with_source(Source, #{?HOCON_V := Source} = Box) ->
+    maps:remove(?HOCON_SOURCE, Box);
+with_source(Source, Box) ->
+    Box#{?HOCON_SOURCE => Source}.
+
+drop_source(#{format := richmap}, #{?HOCON_SOURCE := _} = Box) ->
+    maps:remove(?HOCON_SOURCE, Box);
+drop_source(_Opts, Value) ->
+    Value.
 
 %% nested boxing
 maybe_mkrich(_, undefined, _Box) ->
@@ -1163,6 +1225,8 @@ do_get_field_value(#{format := map}, Path, Conf) ->
 %% put (maybe deep) value to map/richmap
 %% e.g. "path.to.my.value"
 put_value(_Opts, _Path, undefined, Conf) ->
+    Conf;
+put_value(#{format := richmap}, _Path, #{?HOCON_V := undefined}, Conf) ->
     Conf;
 put_value(#{format := richmap} = Opts, Path, V, Conf) ->
     hocon_maps:deep_put(Path, V, Conf, Opts);
