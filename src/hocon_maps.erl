@@ -350,8 +350,14 @@ is_array_index(Maybe) ->
 flatten(Conf, Opts) ->
     lists:reverse(flatten(Conf, Opts, undefined, [], [])).
 
+flatten(#{?HOCON_T := array, ?HOCON_V := Value} = Conf, Opts, _Meta, Stack, Acc) ->
+    Meta = maps:get(?METADATA, Conf, undefined),
+    flatten_array(Value, Opts, Meta, Stack, Acc);
 flatten(Conf, Opts, Meta, Stack, Acc) when is_list(Conf) andalso Conf =/= [] ->
-    flatten_l(Conf, Opts, Meta, Stack, Acc, lists:seq(1, length(Conf)));
+    case io_lib:printable_unicode_list(Conf) of
+        true -> flatten_value(Conf, Opts, Meta, Stack, Acc);
+        false -> flatten_array(Conf, Opts, Meta, Stack, Acc)
+    end;
 flatten(#{?HOCON_V := Value} = Conf, Opts, _Meta, Stack, Acc) ->
     Meta = maps:get(?METADATA, Conf, undefined),
     flatten(Value, Opts, Meta, Stack, Acc);
@@ -359,6 +365,14 @@ flatten(Conf, Opts, Meta, Stack, Acc) when is_map(Conf) andalso Conf =/= ?EMPTY_
     {Keys, Values} = lists:unzip(maps:to_list(Conf)),
     flatten_l(Values, Opts, Meta, Stack, Acc, Keys);
 flatten(Value, Opts, Meta, Stack, Acc) ->
+    flatten_value(Value, Opts, Meta, Stack, Acc).
+
+flatten_array([], Opts, Meta, Stack, Acc) ->
+    flatten_value([], Opts, Meta, Stack, Acc);
+flatten_array(Value, Opts, Meta, Stack, Acc) ->
+    flatten_l(Value, Opts, Meta, Stack, Acc, lists:seq(1, length(Value))).
+
+flatten_value(Value, Opts, Meta, Stack, Acc) ->
     V =
         case maps:get(rich_value, Opts, false) of
             true -> #{?HOCON_V => Value, ?METADATA => Meta};
