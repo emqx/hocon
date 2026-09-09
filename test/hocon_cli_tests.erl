@@ -36,6 +36,12 @@ cli_test_() ->
             {"get one or more checked values", fun() -> get_values(Context) end},
             {"apply environment overrides through get", fun() -> get_env_override(Context) end},
             {"get nested array and missing values", fun() -> get_nested_values(Context) end},
+            {"get converted primitive value through mixed union", fun() ->
+                get_converted_mixed_union_value(Context)
+            end},
+            {"do not index a string selected from an array-or-string union", fun() ->
+                get_default_string_through_mixed_union(Context)
+            end},
             {"reject a key with an unknown schema root", fun() -> get_unknown_root(Context) end},
             {"generate application config and VM arguments", fun() -> generate(Context) end},
             {"log environment overrides during generation", fun() ->
@@ -337,6 +343,32 @@ get_nested_values(_Context) ->
         >>,
         Output
     ).
+
+get_converted_mixed_union_value(_Context) ->
+    Args = [
+        "get",
+        "--schema-file",
+        filename:join("test", "hocon_cli_mixed_union_schema.erl"),
+        "ip_or_node"
+    ],
+    {Status, Output} = capture(<<"ip_or_node = \"127.0.0.1\"\n">>, fun() ->
+        hocon_cli:run(Args)
+    end),
+    ?assertEqual(?STATUS_SUCCESS, Status),
+    ?assertEqual(<<"\"127.0.0.1\"\n">>, Output).
+
+get_default_string_through_mixed_union(_Context) ->
+    Args = [
+        "get",
+        "--schema-file",
+        filename:join("test", "hocon_cli_mixed_union_schema.erl"),
+        "array_or_string_node.value.1"
+    ],
+    {Status, Output} = capture(<<"array_or_string_node {}\n">>, fun() ->
+        hocon_cli:run(Args)
+    end),
+    ?assertEqual(?STATUS_SUCCESS, Status),
+    ?assertEqual(<<"undefined\n">>, Output).
 
 get_unknown_root(_Context) ->
     ?assertEqual(
