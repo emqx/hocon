@@ -39,7 +39,8 @@ deep_get_test_() ->
         ?_assertEqual(1, F("a=1", "a", ?HOCON_V)),
         ?_assertMatch(#{line := 1}, F("a=1", "a", ?METADATA)),
         ?_assertEqual(1, F("a={b=1}", "a.b", ?HOCON_V)),
-        ?_assertEqual(undefined, F("a={b=1}", "a.c", ?HOCON_V))
+        ?_assertEqual(undefined, F("a={b=1}", "a.c", ?HOCON_V)),
+        ?_assertEqual(1, F("a=[1,2]", "a.1", ?HOCON_V))
     ].
 
 get_source_test() ->
@@ -56,6 +57,7 @@ get_source_test() ->
                 }
             },
             <<"array">> => #{
+                ?HOCON_SCHEMA => #{typeclass => array},
                 ?HOCON_V => [
                     #{?HOCON_V => array_converted, ?HOCON_SOURCE => <<"array source">>},
                     #{
@@ -67,7 +69,8 @@ get_source_test() ->
                         }
                     }
                 ]
-            }
+            },
+            <<"string">> => #{?HOCON_V => "hello"}
         }
     },
     ?assertEqual(converted, hocon_maps:get("converted", RichMap)),
@@ -90,6 +93,7 @@ get_source_test() ->
         <<"deep source">>,
         hocon_maps:get_source("array.2.converted", RichMap)
     ),
+    ?assertEqual(undefined, hocon_maps:get_source("string.1", RichMap)),
     ?assertEqual(missing, hocon_maps:get_source("unknown", RichMap, missing)).
 
 deep_get(Path, Conf, Param) ->

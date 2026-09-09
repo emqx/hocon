@@ -84,18 +84,19 @@ richmap_to_map(Other) ->
 
 richmap_to_map(Iter, Map) ->
     case maps:next(Iter) of
-        {?METADATA, _, I} ->
-            richmap_to_map(I, Map);
-        {?HOCON_SOURCE, _, I} ->
-            richmap_to_map(I, Map);
-        {?HOCON_T, _, I} ->
-            richmap_to_map(I, Map);
         {?HOCON_V, M, _} when is_map(M) ->
             richmap_to_map(maps:iterator(M), #{});
         {?HOCON_V, A, _} when is_list(A) ->
             [richmap_to_map(R) || R <- A];
         {?HOCON_V, V, _} ->
             V;
+        {K, _, I} when
+            K =:= ?METADATA orelse
+                K =:= ?HOCON_T orelse
+                K =:= ?HOCON_SOURCE orelse
+                K =:= ?HOCON_SCHEMA
+        ->
+            richmap_to_map(I, Map);
         {K, V, I} ->
             richmap_to_map(I, Map#{K => richmap_to_map(V)});
         none ->

@@ -185,6 +185,7 @@ source_to_plain(Map) when is_map(Map) ->
         fun
             (?METADATA, _, Acc) -> Acc;
             (?HOCON_T, _, Acc) -> Acc;
+            (?HOCON_SCHEMA, _, Acc) -> Acc;
             (Key, Value, Acc) -> Acc#{Key => source_to_plain(Value)}
         end,
         #{},
@@ -203,9 +204,19 @@ do_get([H | T], Conf, Format) ->
 
 try_get(_Key, undefined, _Format) ->
     undefined;
-try_get(Key, Conf, richmap) ->
-    #{?HOCON_V := V} = Conf,
+%% Only schema-marked or parsed HOCON arrays may be traversed with numeric path segments.
+try_get(Key, #{?HOCON_T := array, ?HOCON_V := V}, richmap) when is_list(V) ->
     try_get(Key, V, map);
+try_get(
+    Key,
+    #{?HOCON_SCHEMA := #{typeclass := array}, ?HOCON_V := V},
+    richmap
+) when is_list(V) ->
+    try_get(Key, V, map);
+try_get(Key, #{?HOCON_V := V}, richmap) when is_map(V) ->
+    try_get(Key, V, map);
+try_get(_Key, #{?HOCON_V := _}, richmap) ->
+    undefined;
 try_get(Key, Conf, map) when is_map(Conf) ->
     case maps:get(Key, Conf, undefined) of
         undefined ->

@@ -515,7 +515,8 @@ map_one_field(FieldType, FieldSchema, FieldValue, Opts) ->
 
 map_one_field_non_hidden(FieldType, FieldSchema, FieldValue0, Opts) ->
     IsMakeSerializable = is_make_serializable(Opts),
-    {MaybeLog, FieldValue} = resolve_field_value(FieldSchema, FieldValue0, Opts),
+    FieldValue1 = clear_schema_metadata(FieldValue0),
+    {MaybeLog, FieldValue} = resolve_field_value(FieldSchema, FieldValue1, Opts),
     Converter = upgrade_converter(field_schema(FieldSchema, converter)),
     {Acc0, NewValue0} = map_field_maybe_convert(
         FieldType, FieldSchema, FieldValue, Opts, Converter
@@ -689,7 +690,7 @@ map_field(?ARRAY(Type), Schema, Value0, Opts) ->
                 %% assert
                 true = is_list(NewArray),
                 %% and we need to box it back
-                Boxed = boxit(Opts, NewArray, Value0),
+                Boxed = mark_array(Opts, boxit(Opts, NewArray, Value0)),
                 {Mapped, ensure_obfuscate_sensitive(Opts, Schema, Boxed)};
             {error, Reasons} ->
                 {[{error, Reasons}], Value0}
@@ -1053,7 +1054,7 @@ ensure_obfuscate_sensitive(Opts, Schema, Val) ->
         true ->
             UnboxVal = unbox(Opts, Val),
             UnboxVal1 = obfuscate(Schema, UnboxVal),
-            drop_source(Opts, boxit(Opts, UnboxVal1, Val));
+            drop_obfuscation_metadata(Opts, Schema, boxit(Opts, UnboxVal1, Val));
         false ->
             Val
     end.
@@ -1097,6 +1098,31 @@ boxit(#{format := richmap}, Value, undefined) -> boxit(Value, ?NULL_BOX);
 boxit(#{format := richmap}, Value, Box) -> boxit(Value, Box).
 
 boxit(Value, Box) -> Box#{?HOCON_V => Value}.
+
+%% Keep only the structural distinction that cannot be inferred from an Erlang value.
+mark_array(#{format := richmap}, #{?HOCON_V := _} = Box) ->
+    SchemaMetadata = maps:get(?HOCON_SCHEMA, Box, #{}),
+    Box#{?HOCON_SCHEMA => SchemaMetadata#{typeclass => array}};
+mark_array(_Opts, Value) ->
+    Value.
+
+clear_schema_metadata(#{?HOCON_V := _, ?HOCON_SCHEMA := _} = Box) ->
+    maps:remove(?HOCON_SCHEMA, Box);
+clear_schema_metadata(Value) ->
+    Value.
+
+drop_obfuscation_metadata(#{format := richmap}, Schema, Box0) ->
+    Box = maps:remove(?HOCON_SOURCE, Box0),
+    case field_schema(Schema, sensitive) of
+        true ->
+            clear_schema_metadata(Box);
+        {true, _} ->
+            clear_schema_metadata(Box);
+        _ ->
+            Box
+    end;
+drop_obfuscation_metadata(_Opts, _Schema, Value) ->
+    Value.
 
 preserve_source(
     #{format := richmap, richmap_keep_source := true},
@@ -1145,11 +1171,6 @@ with_source(Source, #{?HOCON_V := Source} = Box) ->
     maps:remove(?HOCON_SOURCE, Box);
 with_source(Source, Box) ->
     Box#{?HOCON_SOURCE => Source}.
-
-drop_source(#{format := richmap}, #{?HOCON_SOURCE := _} = Box) ->
-    maps:remove(?HOCON_SOURCE, Box);
-drop_source(_Opts, Value) ->
-    Value.
 
 %% nested boxing
 maybe_mkrich(_, undefined, _Box) ->

@@ -157,6 +157,66 @@ keep_source_test() ->
     ?assertEqual(<<"******">>, hocon_maps:get_source("bar.field1", Redacted)),
     ?assertNotMatch(#{?HOCON_SOURCE := _}, hocon_maps:deep_get("bar.field1", Redacted)).
 
+array_typeclass_test() ->
+    Schema = #{
+        roots => [
+            {provided, hoconsc:array(integer())},
+            {default, hoconsc:mk(hoconsc:array(integer()), #{default => [1, 2]})},
+            {converted, hoconsc:mk(hoconsc:array(integer()), #{converter => fun five_to_array/2})},
+            {string, hoconsc:mk(string(), #{default => "hello"})},
+            {sensitive,
+                hoconsc:mk(hoconsc:array(integer()), #{
+                    default => [6],
+                    sensitive => {true, fun(_) -> "masked" end}
+                })}
+        ]
+    },
+    {ok, RichConf} = hocon:binary("provided = [3, 4], converted = five", #{
+        format => richmap
+    }),
+    Checked = hocon_tconf:check(Schema, RichConf, #{format => richmap}),
+    lists:foreach(
+        fun(Name) ->
+            ?assertMatch(
+                #{?HOCON_SCHEMA := #{typeclass := array}},
+                hocon_maps:deep_get(Name, Checked)
+            )
+        end,
+        ["provided", "default", "converted", "sensitive"]
+    ),
+    ?assertNotMatch(
+        #{?HOCON_SCHEMA := _},
+        hocon_maps:deep_get("string", Checked)
+    ),
+    ?assertEqual(3, hocon_maps:get_source("provided.1", Checked)),
+    ?assertEqual(1, hocon_maps:get_source("default.1", Checked)),
+    ?assertEqual(5, hocon_maps:get_source("converted.1", Checked)),
+    ?assertEqual(undefined, hocon_maps:get_source("string.1", Checked)),
+    ?assertEqual(
+        #{
+            <<"provided">> => [3, 4],
+            <<"default">> => [1, 2],
+            <<"converted">> => [5],
+            <<"string">> => "hello",
+            <<"sensitive">> => [6]
+        },
+        hocon_util:richmap_to_map(Checked)
+    ),
+    Redacted = hocon_tconf:check(Schema, RichConf, #{
+        format => richmap,
+        obfuscate_sensitive_values => true
+    }),
+    ?assertMatch(
+        #{?HOCON_SCHEMA := #{typeclass := array}},
+        hocon_maps:deep_get("provided", Redacted)
+    ),
+    ?assertNotMatch(
+        #{?HOCON_SCHEMA := _},
+        hocon_maps:deep_get("sensitive", Redacted)
+    ),
+    ?assertEqual("masked", hocon_maps:get_source("sensitive", Redacted)),
+    ?assertEqual(undefined, hocon_maps:get_source("sensitive.1", Redacted)).
+
 keep_source_nested_converters_test() ->
     Sc = #{
         roots => [{root, hoconsc:ref(node)}],
@@ -256,6 +316,9 @@ word_to_integer(<<"one">>, _Opts) ->
 
 word_to_boolean(<<"enabled">>, _Opts) ->
     true.
+
+five_to_array(<<"five">>, _Opts) ->
+    [5].
 
 convert_legacy_node(
     #{
