@@ -211,6 +211,46 @@ keep_source_struct_converter_test() ->
     ?assertEqual(<<"one">>, hocon_maps:get_source("root.count", Checked)),
     ?assertEqual(<<"enabled">>, hocon_maps:get_source("root.child.enabled", Checked)).
 
+keep_source_struct_union_test() ->
+    Sc = #{
+        roots => [{value, hoconsc:union([hoconsc:ref(node), integer()])}],
+        fields => #{
+            node => [
+                {count, hoconsc:mk(integer(), #{converter => fun word_to_integer/2})},
+                {child, hoconsc:ref(child)}
+            ],
+            child => [
+                {enabled, hoconsc:mk(boolean(), #{converter => fun word_to_boolean/2})}
+            ]
+        }
+    },
+    Checked = check_keep_source(Sc, "value {count = one, child.enabled = enabled}"),
+    ?assertEqual(
+        #{<<"count">> => 1, <<"child">> => #{<<"enabled">> => true}},
+        hocon_maps:get("value", Checked)
+    ),
+    ?assertEqual(
+        #{<<"count">> => <<"one">>, <<"child">> => #{<<"enabled">> => <<"enabled">>}},
+        hocon_maps:get_source("value", Checked)
+    ).
+
+keep_source_primitive_union_test() ->
+    Sc = #{
+        roots => [
+            {number,
+                hoconsc:mk(
+                    hoconsc:union([integer(), boolean()]),
+                    #{converter => fun word_to_integer/2}
+                )},
+            {flag, hoconsc:union([integer(), boolean()])}
+        ]
+    },
+    Checked = check_keep_source(Sc, "number = one, flag = \"true\""),
+    ?assertEqual(1, hocon_maps:get("number", Checked)),
+    ?assertEqual(true, hocon_maps:get("flag", Checked)),
+    ?assertEqual(<<"one">>, hocon_maps:get_source("number", Checked)),
+    ?assertEqual(<<"true">>, hocon_maps:get_source("flag", Checked)).
+
 word_to_integer(<<"one">>, _Opts) ->
     1.
 

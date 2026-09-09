@@ -1147,10 +1147,15 @@ preserve_source(_Opts, _ValueIn, _ValuePlain, Box) ->
     Box.
 
 preserve_converted_source(Opts, Type, ValueIn, ValueOut) ->
-    case is_primitive_type(Type) of
+    case is_primitive_source_type(Type) of
         true -> preserve_converted_source(Opts, ValueIn, ValueOut);
         false -> ValueOut
     end.
+
+is_primitive_source_type(?UNION(Types, _)) ->
+    lists:all(fun is_primitive_source_type/1, hoconsc:union_members(Types));
+is_primitive_source_type(Type) ->
+    is_primitive_type(Type).
 
 preserve_converted_source(
     #{format := richmap, richmap_keep_source := true},
