@@ -19,7 +19,6 @@
 -export([load/1, load/2, files/1, files/2, binary/1, binary/2]).
 -export([transform/2]).
 -export([dump/2, dump/3]).
--export([main/1]).
 -export([filename_of/1, line_of/1, value_of/1]).
 -export([deep_merge/2]).
 
@@ -47,9 +46,6 @@
 -include("hocon_private.hrl").
 
 -define(UNRESOLVABLE, '$unresolvable').
-
-main(Args) ->
-    hocon_cli:main(Args).
 
 -spec load(file:filename()) -> {ok, config()} | {error, term()}.
 load(Filename0) ->

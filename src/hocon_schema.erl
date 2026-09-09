@@ -31,7 +31,10 @@
     override/2,
     namespace/1,
     root_converter/2,
+    is_schema/1,
     resolve_struct_name/2,
+    resolve_path/2,
+    resolve_path/3,
     root_names/1,
     field_schema/2,
     path/1,
@@ -283,6 +286,69 @@ resolve_struct_name(Schema, StructName) ->
         false -> throw({unknown_struct_name, Schema, StructName})
     end.
 
+%% @doc Resolve a path to its field schema, or return `false` if it is invalid.
+-spec resolve_path(schema(), name() | [name()]) -> field_schema() | false.
+resolve_path(Schema, Path0) ->
+    RootFields = [Field || {_BinName, Field} <- roots(Schema)],
+    resolve_path(Schema, RootFields, Path0).
+
+%% @doc Resolve a path from an explicit set of root fields.
+-spec resolve_path(schema(), [field()], name() | [name()]) -> field_schema() | false.
+resolve_path(Schema, Roots, Path0) ->
+    case hocon_util:split_path(Path0) of
+        [RootName | Path] ->
+            resolve_field_path(Schema, Roots, RootName, Path);
+        [] ->
+            false
+    end.
+
+resolve_field_path(Schema, Fields, Name, Path) ->
+    case resolve_field(Fields, Name) of
+        false -> false;
+        FieldSchema -> resolve_subschema_path(Schema, FieldSchema, Path)
+    end.
+
+resolve_field([], _Name) ->
+    false;
+resolve_field([{_, FieldSchema} = Field | Fields], Name) ->
+    case lists:member(bin(Name), name_and_aliases(Field)) of
+        true -> FieldSchema;
+        false -> resolve_field(Fields, Name)
+    end.
+
+resolve_subschema_path(_Schema, SubSchema, []) ->
+    SubSchema;
+resolve_subschema_path(Schema, SubSchema, Path) ->
+    resolve_type_path(Schema, field_schema(SubSchema, type), Path).
+
+resolve_type_path(Schema, Name, [FieldName | Path]) when is_list(Name) ->
+    resolve_field_path(Schema, fields(Schema, Name), FieldName, Path);
+resolve_type_path(Schema, ?REF(Name), [FieldName | Path]) ->
+    resolve_field_path(Schema, fields(Schema, Name), FieldName, Path);
+resolve_type_path(_Schema, ?R_REF(Module, Name), [FieldName | Path]) ->
+    resolve_field_path(Module, fields(Module, Name), FieldName, Path);
+resolve_type_path(Schema, ?LAZY(Type), Path) ->
+    resolve_subschema_path(Schema, Type, Path);
+resolve_type_path(Schema, ?ARRAY(Type), [Name | Path]) ->
+    case hocon_util:is_array_index(Name) of
+        {true, _} -> resolve_subschema_path(Schema, Type, Path);
+        false -> false
+    end;
+resolve_type_path(Schema, ?UNION(Types, _), Path) ->
+    resolve_union_path(Schema, hoconsc:union_members(Types), Path);
+resolve_type_path(Schema, ?MAP(_, Type), [_ | Path]) ->
+    resolve_subschema_path(Schema, Type, Path);
+resolve_type_path(_Schema, _Type, _Path) ->
+    false.
+
+resolve_union_path(_Schema, [], _Path) ->
+    false;
+resolve_union_path(Schema, [Type | Types], Path) ->
+    case resolve_subschema_path(Schema, Type, Path) of
+        false -> resolve_union_path(Schema, Types, Path);
+        SubSchema -> SubSchema
+    end.
+
 %% @doc Get all root names from a schema.
 -spec root_names(schema()) -> [binary()].
 root_names(Schema) -> [Name || {Name, _} <- roots(Schema)].
@@ -344,6 +410,22 @@ fields_and_meta(#{fields := Fields}, Name) when is_function(Fields) ->
     ensure_struct_meta(Fields(Name));
 fields_and_meta(#{fields := Fields}, Name) when is_map(Fields) ->
     ensure_struct_meta(maps:get(Name, Fields)).
+
+-spec is_schema(module()) -> boolean() | {error, _Reason}.
+is_schema(Module) ->
+    case code:ensure_loaded(Module) of
+        {module, Module} ->
+            Callbacks = ?MODULE:behaviour_info(callbacks),
+            OptionalCallbacks = ?MODULE:behaviour_info(optional_callbacks),
+            lists:all(
+                fun({Function, Arity}) ->
+                    erlang:function_exported(Module, Function, Arity)
+                end,
+                Callbacks -- OptionalCallbacks
+            );
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
 maybe_add_desc(Mod, Name, Meta) ->
     case erlang:function_exported(Mod, desc, 1) of

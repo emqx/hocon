@@ -17,8 +17,6 @@
 %% tconf: typed-config
 -module(hocon_tconf).
 
--elvis([{elvis_style, god_modules, disable}]).
-
 %% data validation and transformation
 -export([map/2, map/3, map/4]).
 -export([translate/3]).
@@ -60,7 +58,9 @@
     %% format converted values back to HOCON or JSON serializable map
     %% (with default value filled)
     make_serializable => boolean(),
-    format => map | richmap,
+    %% Options relevant to `richmap`:
+    %%  * `keep_source` retains pre-conversion values on primitive richmap nodes.
+    format => map | richmap | {richmap, #{keep_source => boolean()}},
     stack => [name()],
     schema => schema(),
     check_lazy => boolean(),
@@ -215,13 +215,23 @@ assert_integrity_failure(Schema, Rest, Conf, Name, Reason) ->
     ).
 
 merge_opts(Default, Opts) ->
-    maps:merge(
-        Default#{
-            apply_override_envs => false,
-            atom_key => false
-        },
-        Opts
+    normalize_format(
+        maps:merge(
+            Default#{
+                apply_override_envs => false,
+                atom_key => false
+            },
+            Opts
+        )
     ).
+
+normalize_format(#{format := {richmap, FormatOpts}} = Opts) ->
+    Opts#{
+        format => richmap,
+        richmap_keep_source => maps:get(keep_source, FormatOpts, false)
+    };
+normalize_format(Opts) ->
+    Opts.
 
 %% @doc Check richmap input against schema.
 %% Returns a new config with:
@@ -476,7 +486,7 @@ map_fields_cont([{_, FieldSchema} = Field | Fields], Conf0, Acc, Opts) ->
                 ),
                 erlang:raise(C, Err, St)
         end,
-    Conf1 = put_value(Opts, FieldName, unbox(Opts, FValue), Conf0),
+    Conf1 = put_value(Opts, FieldName, FValue, Conf0),
     %% now drop all aliases
     %% it is allowed to have both old and new names provided in the config
     %% but the first match wins.
@@ -505,7 +515,8 @@ map_one_field(FieldType, FieldSchema, FieldValue, Opts) ->
 
 map_one_field_non_hidden(FieldType, FieldSchema, FieldValue0, Opts) ->
     IsMakeSerializable = is_make_serializable(Opts),
-    {MaybeLog, FieldValue} = resolve_field_value(FieldSchema, FieldValue0, Opts),
+    FieldValue1 = clear_schema_metadata(FieldValue0),
+    {MaybeLog, FieldValue} = resolve_field_value(FieldSchema, FieldValue1, Opts),
     Converter = upgrade_converter(field_schema(FieldSchema, converter)),
     {Acc0, NewValue0} = map_field_maybe_convert(
         FieldType, FieldSchema, FieldValue, Opts, Converter
@@ -562,11 +573,18 @@ map_field_maybe_convert(Type, Schema, Value0, Opts, undefined) ->
 map_field_maybe_convert(Type, Schema, Value0, Opts, Converter) ->
     case do_apply_converter(Converter, Value0, Opts) of
         {ok, Value1} ->
-            {Mapped, Value2} = map_field(Type, Schema, Value1, Opts),
-            {Mapped, ensure_obfuscate_sensitive(Opts, Schema, Value2)};
+            {Mapped, Value2, SelectedType} = map_field_with_type(Type, Schema, Value1, Opts),
+            Value3 = preserve_converted_source(Opts, SelectedType, Value0, Value2),
+            {Mapped, ensure_obfuscate_sensitive(Opts, Schema, Value3)};
         Errors ->
             Errors
     end.
+
+map_field_with_type(?UNION(_, _) = Type, Schema, Value, Opts) ->
+    map_union_field(Type, Schema, Value, Opts);
+map_field_with_type(Type, Schema, Value, Opts) ->
+    {Mapped, NewValue} = map_field(Type, Schema, Value, Opts),
+    {Mapped, NewValue, Type}.
 
 do_apply_converter(Converter, Value0, Opts) ->
     Value1 = ensure_plain(Value0),
@@ -650,28 +668,14 @@ map_field(Ref, FieldSchema, Value0, #{schema := Schema} = Opts) when is_list(Ref
         Errors ->
             Errors
     end;
-map_field(?UNION(Types0, _), Schema0, Value, Opts) ->
-    try select_union_members(Types0, Value, Opts) of
-        Types ->
-            F = fun(Type) ->
-                %% go deep with union member's type, but all
-                %% other schema information should be inherited from the enclosing schema
-                Schema = sub_schema(Schema0, Type),
-                map_field(Type, Schema, Value, Opts)
-            end,
-            case do_map_union(Types, F, #{}, Opts) of
-                {ok, {Mapped, NewValue}} -> {Mapped, NewValue};
-                Errors -> {Errors, Value}
-            end
-    catch
-        throw:Reason ->
-            {validation_errs(Opts, Reason), Value}
-    end;
+map_field(?UNION(_, _) = Type, Schema, Value, Opts) ->
+    {Mapped, NewValue, _SelectedType} = map_union_field(Type, Schema, Value, Opts),
+    {Mapped, NewValue};
 map_field(?LAZY(Type), Schema, Value, Opts) ->
     SubType = sub_type(Schema, Type),
     case maps:get(check_lazy, Opts, false) of
         true -> map_field(SubType, Schema, Value, Opts);
-        false -> {[], Value}
+        false -> {[], mark_typeclass(SubType, Opts, Value)}
     end;
 map_field(?ARRAY(Type), Schema, Value0, Opts) ->
     %% array needs an unbox
@@ -686,7 +690,7 @@ map_field(?ARRAY(Type), Schema, Value0, Opts) ->
                 %% assert
                 true = is_list(NewArray),
                 %% and we need to box it back
-                Boxed = boxit(Opts, NewArray, Value0),
+                Boxed = mark_array(Opts, boxit(Opts, NewArray, Value0)),
                 {Mapped, ensure_obfuscate_sensitive(Opts, Schema, Boxed)};
             {error, Reasons} ->
                 {[{error, Reasons}], Value0}
@@ -717,11 +721,32 @@ map_field(Type, Schema, Value0, Opts) ->
         Validators = get_validators(Schema, Type, Opts),
         ValidationResult = validate(Opts, Schema, ConvertedValue, Validators),
         Value1 = boxit(Opts, ConvertedValue, Value0),
-        {ValidationResult, ensure_obfuscate_sensitive(Opts, Schema, Value1)}
+        Value2 = preserve_source(Opts, Value0, PlainValue, Value1),
+        {ValidationResult, ensure_obfuscate_sensitive(Opts, Schema, Value2)}
     catch
         {hocon_schema_builtin, Error} ->
             ValidationErrors = validation_errs(Opts, Error, obfuscate(Schema, PlainValue)),
             {ValidationErrors, ensure_obfuscate_sensitive(Opts, Schema, Value0)}
+    end.
+
+map_union_field(?UNION(Types0, _) = UnionType, Schema0, Value, Opts) ->
+    try select_union_members(Types0, Value, Opts) of
+        Types ->
+            F = fun(Type) ->
+                %% go deep with union member's type, but all
+                %% other schema information should be inherited from the enclosing schema
+                Schema = sub_schema(Schema0, Type),
+                map_field_with_type(Type, Schema, Value, Opts)
+            end,
+            case do_map_union(Types, F, #{}, Opts) of
+                {ok, {Mapped, NewValue, SelectedType}} ->
+                    {Mapped, NewValue, SelectedType};
+                Errors ->
+                    {Errors, Value, UnionType}
+            end
+    catch
+        throw:Reason ->
+            {validation_errs(Opts, Reason), Value, UnionType}
     end.
 
 eval_builtin_converter(PlainValue, Type, Opts) ->
@@ -862,10 +887,10 @@ do_map_union([], _TypeCheck, PerTypeResult, Opts) ->
             })
     end;
 do_map_union([Type | Types], TypeCheck, PerTypeResult, Opts) ->
-    {Mapped, Value} = TypeCheck(Type),
+    {Mapped, Value, SelectedType} = TypeCheck(Type),
     case find_errors(Mapped) of
         ok ->
-            {ok, {Mapped, Value}};
+            {ok, {Mapped, Value, SelectedType}};
         {error, Reasons} ->
             do_map_union(
                 Types,
@@ -939,58 +964,17 @@ check_env(Schema, Roots, Ns, EnvVarName) ->
         false ->
             %% bad format
             ignore;
-        [RootName | Path] ->
-            case is_field(Roots, RootName) of
-                {true, Type} ->
-                    case is_path(Schema, Type, Path) of
-                        true -> keep;
-                        false -> warn
-                    end;
+        [RootName | _] = Path ->
+            case hocon_schema:resolve_path(Schema, Roots, [RootName]) of
                 false ->
-                    %% unknown root
-                    ignore
+                    %% unknown or unselected root
+                    ignore;
+                _RootSchema ->
+                    case hocon_schema:resolve_path(Schema, Roots, Path) of
+                        false -> warn;
+                        _Schema -> keep
+                    end
             end
-    end.
-
-is_field([], _Name) ->
-    false;
-is_field([{_, FieldSc} = Field | Fields], Name) ->
-    Names = name_and_aliases(Field),
-    case lists:member(bin(Name), Names) of
-        true ->
-            Type = hocon_schema:field_schema(FieldSc, type),
-            {true, Type};
-        false ->
-            is_field(Fields, Name)
-    end.
-
-is_path(_Schema, _Name, []) ->
-    true;
-is_path(Schema, Name, Path) when is_list(Name) ->
-    is_path2(Schema, Name, Path);
-is_path(Schema, ?REF(Name), Path) ->
-    is_path2(Schema, Name, Path);
-is_path(_Schema, ?R_REF(Module, Name), Path) ->
-    is_path2(Module, Name, Path);
-is_path(Schema, ?LAZY(Type), Path) ->
-    is_path(Schema, Type, Path);
-is_path(Schema, ?ARRAY(Type), [Name | Path]) ->
-    case hocon_util:is_array_index(Name) of
-        {true, _} -> is_path(Schema, Type, Path);
-        false -> false
-    end;
-is_path(Schema, ?UNION(Types, _), Path) ->
-    lists:any(fun(T) -> is_path(Schema, T, Path) end, hoconsc:union_members(Types));
-is_path(Schema, ?MAP(_, Type), [_ | Path]) ->
-    is_path(Schema, Type, Path);
-is_path(_Schema, _Type, _Path) ->
-    false.
-
-is_path2(Schema, RefName, [Name | Path]) ->
-    Fields = hocon_schema:fields(Schema, RefName),
-    case is_field(Fields, Name) of
-        {true, Type} -> is_path(Schema, Type, Path);
-        false -> false
     end.
 
 %% EMQX_FOO__BAR -> ["foo", "bar"]
@@ -1070,7 +1054,7 @@ ensure_obfuscate_sensitive(Opts, Schema, Val) ->
         true ->
             UnboxVal = unbox(Opts, Val),
             UnboxVal1 = obfuscate(Schema, UnboxVal),
-            boxit(Opts, UnboxVal1, Val);
+            drop_obfuscation_metadata(Opts, Schema, boxit(Opts, UnboxVal1, Val));
         false ->
             Val
     end.
@@ -1109,11 +1093,91 @@ unbox(Boxed) ->
         false -> error({bad_richmap, Boxed})
     end.
 
-boxit(#{format := map}, Value, _OldValue) -> Value;
+boxit(#{format := map}, Value, _ValueIn) -> Value;
 boxit(#{format := richmap}, Value, undefined) -> boxit(Value, ?NULL_BOX);
 boxit(#{format := richmap}, Value, Box) -> boxit(Value, Box).
 
 boxit(Value, Box) -> Box#{?HOCON_V => Value}.
+
+%% Keep only the structural distinction that cannot be inferred from an Erlang value.
+mark_typeclass(?LAZY(Type), Opts, Value) ->
+    mark_typeclass(Type, Opts, Value);
+mark_typeclass(?ARRAY(_), Opts, Value) ->
+    mark_array(Opts, Value);
+mark_typeclass(_Type, _Opts, Value) ->
+    Value.
+
+mark_array(#{format := richmap}, #{?HOCON_V := _} = Box) ->
+    SchemaMetadata = maps:get(?HOCON_SCHEMA, Box, #{}),
+    Box#{?HOCON_SCHEMA => SchemaMetadata#{typeclass => array}};
+mark_array(_Opts, Value) ->
+    Value.
+
+clear_schema_metadata(#{?HOCON_V := _, ?HOCON_SCHEMA := _} = Box) ->
+    maps:remove(?HOCON_SCHEMA, Box);
+clear_schema_metadata(Value) ->
+    Value.
+
+drop_obfuscation_metadata(#{format := richmap}, Schema, Box0) ->
+    Box = maps:remove(?HOCON_SOURCE, Box0),
+    case field_schema(Schema, sensitive) of
+        true ->
+            clear_schema_metadata(Box);
+        {true, _} ->
+            clear_schema_metadata(Box);
+        _ ->
+            Box
+    end;
+drop_obfuscation_metadata(_Opts, _Schema, Value) ->
+    Value.
+
+preserve_source(
+    #{format := richmap, richmap_keep_source := true},
+    #{?HOCON_SOURCE := Source},
+    _ValuePlain,
+    #{?HOCON_V := _} = Box
+) ->
+    with_source(Source, Box);
+preserve_source(
+    #{format := richmap, richmap_keep_source := true},
+    ValueIn,
+    ValuePlain,
+    #{?HOCON_V := _} = Box
+) when ValueIn =/= undefined ->
+    with_source(ValuePlain, Box);
+preserve_source(_Opts, _ValueIn, _ValuePlain, Box) ->
+    Box.
+
+preserve_converted_source(Opts, Type, ValueIn, ValueOut) ->
+    case is_primitive_source_type(Type) of
+        true -> preserve_converted_source(Opts, ValueIn, ValueOut);
+        false -> ValueOut
+    end.
+
+is_primitive_source_type(?UNION(Types, _)) ->
+    lists:all(fun is_primitive_source_type/1, hoconsc:union_members(Types));
+is_primitive_source_type(Type) ->
+    is_primitive_type(Type).
+
+preserve_converted_source(
+    #{format := richmap, richmap_keep_source := true},
+    #{?HOCON_SOURCE := Source},
+    #{?HOCON_V := _} = Box
+) ->
+    with_source(Source, Box);
+preserve_converted_source(
+    #{format := richmap, richmap_keep_source := true},
+    ValueIn,
+    #{?HOCON_V := _} = Box
+) when ValueIn =/= undefined ->
+    with_source(ensure_plain(ValueIn), Box);
+preserve_converted_source(_Opts, _ValueIn, ValueOut) ->
+    ValueOut.
+
+with_source(Source, #{?HOCON_V := Source} = Box) ->
+    maps:remove(?HOCON_SOURCE, Box);
+with_source(Source, Box) ->
+    Box#{?HOCON_SOURCE => Source}.
 
 %% nested boxing
 maybe_mkrich(_, undefined, _Box) ->
@@ -1163,6 +1227,8 @@ do_get_field_value(#{format := map}, Path, Conf) ->
 %% put (maybe deep) value to map/richmap
 %% e.g. "path.to.my.value"
 put_value(_Opts, _Path, undefined, Conf) ->
+    Conf;
+put_value(#{format := richmap}, _Path, #{?HOCON_V := undefined}, Conf) ->
     Conf;
 put_value(#{format := richmap} = Opts, Path, V, Conf) ->
     hocon_maps:deep_put(Path, V, Conf, Opts);

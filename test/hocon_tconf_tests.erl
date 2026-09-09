@@ -117,6 +117,246 @@ default_value_test() ->
         hocon_tconf:make_serializable(?MODULE, Res, #{})
     ).
 
+keep_source_test() ->
+    {ok, RichConf} = hocon:binary(
+        "bar.field1 = foo, bar.host = localhost",
+        #{format => richmap}
+    ),
+    Checked = hocon_tconf:check(?MODULE, RichConf, #{
+        format => {richmap, #{keep_source => true}}
+    }),
+    ?assertEqual("foo", hocon_maps:get("bar.field1", Checked)),
+    ?assertEqual(<<"foo">>, hocon_maps:get_source("bar.field1", Checked)),
+    ?assertEqual(<<"localhost">>, hocon_maps:get_source("bar.host", Checked)),
+    ?assertEqual(dummy, hocon_maps:get_source("bar.union_with_default", Checked)),
+    ?assertNotMatch(#{?HOCON_SOURCE := _}, hocon_maps:deep_get("bar", Checked)),
+    ?assertNotMatch(
+        #{?HOCON_SOURCE := _},
+        hocon_maps:deep_get("bar.union_with_default", Checked)
+    ),
+    ?assertMatch(
+        #{?HOCON_SOURCE := <<"foo">>},
+        hocon_maps:deep_get("bar.field1", Checked)
+    ),
+    {ok, UnchangedRichConf} = hocon:binary("value = 42", #{format => richmap}),
+    Unchanged = hocon_tconf:check(
+        #{roots => [{value, integer()}]},
+        UnchangedRichConf,
+        #{format => {richmap, #{keep_source => true}}}
+    ),
+    ?assertEqual(42, hocon_maps:get_source("value", Unchanged)),
+    ?assertNotMatch(#{?HOCON_SOURCE := _}, hocon_maps:deep_get("value", Unchanged)),
+    WithoutSource = hocon_tconf:check(?MODULE, RichConf, #{
+        format => {richmap, #{keep_source => false}}
+    }),
+    ?assertNotMatch(#{?HOCON_SOURCE := _}, hocon_maps:deep_get("bar.field1", WithoutSource)),
+    Redacted = hocon_tconf:check(?MODULE, RichConf, #{
+        format => {richmap, #{keep_source => true}},
+        obfuscate_sensitive_values => true
+    }),
+    ?assertEqual(<<"******">>, hocon_maps:get_source("bar.field1", Redacted)),
+    ?assertNotMatch(#{?HOCON_SOURCE := _}, hocon_maps:deep_get("bar.field1", Redacted)).
+
+array_typeclass_test() ->
+    Schema = #{
+        roots => [
+            {provided, hoconsc:array(integer())},
+            {default, hoconsc:mk(hoconsc:array(integer()), #{default => [1, 2]})},
+            {converted, hoconsc:mk(hoconsc:array(integer()), #{converter => fun five_to_array/2})},
+            {string, hoconsc:mk(string(), #{default => "hello"})},
+            {sensitive,
+                hoconsc:mk(hoconsc:array(integer()), #{
+                    default => [6],
+                    sensitive => {true, fun(_) -> "masked" end}
+                })}
+        ]
+    },
+    {ok, RichConf} = hocon:binary("provided = [3, 4], converted = five", #{
+        format => richmap
+    }),
+    Checked = hocon_tconf:check(Schema, RichConf, #{format => richmap}),
+    lists:foreach(
+        fun(Name) ->
+            ?assertMatch(
+                #{?HOCON_SCHEMA := #{typeclass := array}},
+                hocon_maps:deep_get(Name, Checked)
+            )
+        end,
+        ["provided", "default", "converted", "sensitive"]
+    ),
+    ?assertNotMatch(
+        #{?HOCON_SCHEMA := _},
+        hocon_maps:deep_get("string", Checked)
+    ),
+    ?assertEqual(3, hocon_maps:get_source("provided.1", Checked)),
+    ?assertEqual(1, hocon_maps:get_source("default.1", Checked)),
+    ?assertEqual(5, hocon_maps:get_source("converted.1", Checked)),
+    ?assertEqual(undefined, hocon_maps:get_source("string.1", Checked)),
+    ?assertEqual(
+        #{
+            <<"provided">> => [3, 4],
+            <<"default">> => [1, 2],
+            <<"converted">> => [5],
+            <<"string">> => "hello",
+            <<"sensitive">> => [6]
+        },
+        hocon_util:richmap_to_map(Checked)
+    ),
+    Redacted = hocon_tconf:check(Schema, RichConf, #{
+        format => richmap,
+        obfuscate_sensitive_values => true
+    }),
+    ?assertMatch(
+        #{?HOCON_SCHEMA := #{typeclass := array}},
+        hocon_maps:deep_get("provided", Redacted)
+    ),
+    ?assertNotMatch(
+        #{?HOCON_SCHEMA := _},
+        hocon_maps:deep_get("sensitive", Redacted)
+    ),
+    ?assertEqual("masked", hocon_maps:get_source("sensitive", Redacted)),
+    ?assertEqual(undefined, hocon_maps:get_source("sensitive.1", Redacted)).
+
+lazy_array_typeclass_test() ->
+    Schema = #{
+        roots => [
+            {foo, hoconsc:mk(hoconsc:lazy(hoconsc:array(integer())), #{default => [1, 2]})},
+            {converted,
+                hoconsc:mk(hoconsc:lazy(hoconsc:array(integer())), #{
+                    converter => fun five_to_array/2
+                })}
+        ]
+    },
+    {ok, RichConf} = hocon:binary("converted = five", #{format => richmap}),
+    Checked = hocon_tconf:check(Schema, RichConf, #{format => richmap}),
+    ?assertNotEqual(false, hocon_schema:resolve_path(Schema, "foo.1")),
+    lists:foreach(
+        fun(Name) ->
+            ?assertMatch(
+                #{?HOCON_SCHEMA := #{typeclass := array}},
+                hocon_maps:deep_get(Name, Checked)
+            )
+        end,
+        ["foo", "converted"]
+    ),
+    ?assertEqual(1, hocon_maps:get_source("foo.1", Checked)),
+    ?assertEqual(5, hocon_maps:get_source("converted.1", Checked)).
+
+keep_source_nested_converters_test() ->
+    Sc = #{
+        roots => [{root, hoconsc:ref(node)}],
+        fields => #{
+            node => [
+                {count, hoconsc:mk(integer(), #{converter => fun word_to_integer/2})},
+                {child, hoconsc:ref(child)}
+            ],
+            child => [
+                {enabled, hoconsc:mk(boolean(), #{converter => fun word_to_boolean/2})}
+            ]
+        }
+    },
+    Checked = check_keep_source(Sc, "root {count = one, child.enabled = enabled}"),
+    ?assertEqual(
+        #{<<"count">> => 1, <<"child">> => #{<<"enabled">> => true}},
+        hocon_maps:get("root", Checked)
+    ),
+    ?assertEqual(
+        #{<<"count">> => <<"one">>, <<"child">> => #{<<"enabled">> => <<"enabled">>}},
+        hocon_maps:get_source("root", Checked)
+    ),
+    ?assertEqual(<<"one">>, hocon_maps:get_source("root.count", Checked)),
+    ?assertEqual(<<"enabled">>, hocon_maps:get_source("root.child.enabled", Checked)).
+
+keep_source_struct_converter_test() ->
+    Sc = #{
+        roots => [{root, hoconsc:ref(node)}],
+        fields => #{
+            node => [
+                {count, hoconsc:mk(integer(), #{converter => fun word_to_integer/2})},
+                {child, hoconsc:ref(child)}
+            ],
+            child => [
+                {enabled, hoconsc:mk(boolean(), #{converter => fun word_to_boolean/2})}
+            ]
+        },
+        root_converter => #{node => fun convert_legacy_node/2}
+    },
+    Checked = check_keep_source(
+        Sc,
+        "root {legacy_count = one, legacy_child.legacy_enabled = enabled}"
+    ),
+    ?assertEqual(
+        #{<<"count">> => 1, <<"child">> => #{<<"enabled">> => true}},
+        hocon_maps:get("root", Checked)
+    ),
+    ?assertEqual(
+        #{<<"count">> => <<"one">>, <<"child">> => #{<<"enabled">> => <<"enabled">>}},
+        hocon_maps:get_source("root", Checked)
+    ),
+    ?assertEqual(<<"one">>, hocon_maps:get_source("root.count", Checked)),
+    ?assertEqual(<<"enabled">>, hocon_maps:get_source("root.child.enabled", Checked)).
+
+keep_source_struct_union_test() ->
+    Sc = #{
+        roots => [{value, hoconsc:union([hoconsc:ref(node), integer()])}],
+        fields => #{
+            node => [
+                {count, hoconsc:mk(integer(), #{converter => fun word_to_integer/2})},
+                {child, hoconsc:ref(child)}
+            ],
+            child => [
+                {enabled, hoconsc:mk(boolean(), #{converter => fun word_to_boolean/2})}
+            ]
+        }
+    },
+    Checked = check_keep_source(Sc, "value {count = one, child.enabled = enabled}"),
+    ?assertEqual(
+        #{<<"count">> => 1, <<"child">> => #{<<"enabled">> => true}},
+        hocon_maps:get("value", Checked)
+    ),
+    ?assertEqual(
+        #{<<"count">> => <<"one">>, <<"child">> => #{<<"enabled">> => <<"enabled">>}},
+        hocon_maps:get_source("value", Checked)
+    ).
+
+keep_source_primitive_union_test() ->
+    Sc = #{
+        roots => [
+            {number,
+                hoconsc:mk(
+                    hoconsc:union([integer(), boolean()]),
+                    #{converter => fun word_to_integer/2}
+                )},
+            {flag, hoconsc:union([integer(), boolean()])}
+        ]
+    },
+    Checked = check_keep_source(Sc, "number = one, flag = \"true\""),
+    ?assertEqual(1, hocon_maps:get("number", Checked)),
+    ?assertEqual(true, hocon_maps:get("flag", Checked)),
+    ?assertEqual(<<"one">>, hocon_maps:get_source("number", Checked)),
+    ?assertEqual(<<"true">>, hocon_maps:get_source("flag", Checked)).
+
+word_to_integer(<<"one">>, _Opts) ->
+    1.
+
+word_to_boolean(<<"enabled">>, _Opts) ->
+    true.
+
+five_to_array(<<"five">>, _Opts) ->
+    [5].
+
+convert_legacy_node(
+    #{
+        <<"legacy_count">> := Count,
+        <<"legacy_child">> := #{<<"legacy_enabled">> := Enabled}
+    },
+    _Opts
+) ->
+    #{
+        <<"count">> => Count,
+        <<"child">> => #{<<"enabled">> => Enabled}
+    }.
+
 obfuscate_sensitive_values_test() ->
     Conf = "{bar.field1: \"foo\"}",
     Res = check(Conf, #{format => richmap}),
@@ -317,6 +557,12 @@ check_plain(Str) ->
 check_plain(Str, Opts) ->
     {ok, Map} = hocon:binary(Str, #{}),
     hocon_tconf:check_plain(?MODULE, Map, Opts).
+
+check_keep_source(Schema, Str) ->
+    {ok, RichMap} = hocon:binary(Str, #{format => richmap}),
+    hocon_tconf:check(Schema, RichMap, #{
+        format => {richmap, #{keep_source => true}}
+    }).
 
 mapping_test_() ->
     F = fun(Str) ->

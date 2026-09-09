@@ -39,8 +39,62 @@ deep_get_test_() ->
         ?_assertEqual(1, F("a=1", "a", ?HOCON_V)),
         ?_assertMatch(#{line := 1}, F("a=1", "a", ?METADATA)),
         ?_assertEqual(1, F("a={b=1}", "a.b", ?HOCON_V)),
-        ?_assertEqual(undefined, F("a={b=1}", "a.c", ?HOCON_V))
+        ?_assertEqual(undefined, F("a={b=1}", "a.c", ?HOCON_V)),
+        ?_assertEqual(1, F("a=[1,2]", "a.1", ?HOCON_V))
     ].
+
+get_source_test() ->
+    RichMap = #{
+        ?HOCON_V => #{
+            <<"converted">> => #{?HOCON_V => converted, ?HOCON_SOURCE => <<"source">>},
+            <<"unchanged">> => #{?HOCON_V => 42},
+            <<"nested">> => #{
+                ?HOCON_V => #{
+                    <<"converted">> => #{
+                        ?HOCON_V => nested_converted,
+                        ?HOCON_SOURCE => <<"nested source">>
+                    }
+                }
+            },
+            <<"array">> => #{
+                ?HOCON_SCHEMA => #{typeclass => array},
+                ?HOCON_V => [
+                    #{?HOCON_V => array_converted, ?HOCON_SOURCE => <<"array source">>},
+                    #{
+                        ?HOCON_V => #{
+                            <<"converted">> => #{
+                                ?HOCON_V => deeply_converted,
+                                ?HOCON_SOURCE => <<"deep source">>
+                            }
+                        }
+                    }
+                ]
+            },
+            <<"string">> => #{?HOCON_V => "hello"}
+        }
+    },
+    ?assertEqual(converted, hocon_maps:get("converted", RichMap)),
+    ?assertEqual(<<"source">>, hocon_maps:get_source("converted", RichMap)),
+    ?assertEqual(42, hocon_maps:get_source("unchanged", RichMap)),
+    ?assertEqual(
+        #{<<"converted">> => <<"nested source">>},
+        hocon_maps:get_source("nested", RichMap)
+    ),
+    ?assertEqual(
+        <<"nested source">>,
+        hocon_maps:get_source("nested.converted", RichMap)
+    ),
+    ?assertEqual(
+        [<<"array source">>, #{<<"converted">> => <<"deep source">>}],
+        hocon_maps:get_source("array", RichMap)
+    ),
+    ?assertEqual(<<"array source">>, hocon_maps:get_source("array.1", RichMap)),
+    ?assertEqual(
+        <<"deep source">>,
+        hocon_maps:get_source("array.2.converted", RichMap)
+    ),
+    ?assertEqual(undefined, hocon_maps:get_source("string.1", RichMap)),
+    ?assertEqual(missing, hocon_maps:get_source("unknown", RichMap, missing)).
 
 deep_get(Path, Conf, Param) ->
     case hocon_maps:deep_get(Path, Conf) of
@@ -99,3 +153,12 @@ key_not_found_test() ->
         {key_not_found, <<"d">>, 1},
         hocon_maps:get(["a", "b", "d"], #{<<"a">> => #{<<"b">> => 1}})
     ).
+
+array_get_test_() ->
+    Conf = #{<<"foo">> => [#{<<"int">> => 1}]},
+    [
+        ?_assertEqual(1, hocon_maps:get("foo.1.int", Conf)),
+        ?_assertEqual(undefined, hocon_maps:get("foo.0.int", Conf)),
+        ?_assertEqual(undefined, hocon_maps:get("foo.2.int", Conf)),
+        ?_assertEqual(undefined, hocon_maps:get("foo.x.int", Conf))
+    ].

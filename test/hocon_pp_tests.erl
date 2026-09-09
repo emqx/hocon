@@ -214,6 +214,23 @@ load_binary_pp_test() ->
     ?assertEqual(<<"root.val.f1 = 43\n">>, flatten(M2)),
     ok.
 
+flat_dump_checked_string_test() ->
+    Sc = #{
+        roots => [{string, string()}, {array, hoconsc:array(integer())}]
+    },
+    {ok, Raw} = hocon:binary("string = hello, array = [104, 101]", #{format => richmap}),
+    Checked = hocon_tconf:check(Sc, Raw, #{
+        format => {richmap, #{keep_source => true}}
+    }),
+    ?assertEqual(
+        <<
+            "array.1 = 104 # line=1\n"
+            "array.2 = 101 # line=1\n"
+            "string = hello # line=1\n"
+        >>,
+        flatten(Checked)
+    ).
+
 env_flat_pp_test() ->
     Sc = #{
         roots => [root],

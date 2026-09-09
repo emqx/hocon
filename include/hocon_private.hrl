@@ -19,6 +19,8 @@
 
 -define(METADATA, '$hcMeta').
 -define(HOCON_V, '$hcVal').
+-define(HOCON_SOURCE, '$hcSource').
 -define(HOCON_T, '$hcTyp').
+-define(HOCON_SCHEMA, '$scMeta').
 
 -endif.

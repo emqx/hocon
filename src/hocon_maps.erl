@@ -26,7 +26,7 @@
 
 %% Access maybe-rich map values,
 %% Always return plain value.
--export([get/2, get/3]).
+-export([get/2, get/3, get_source/2, get_source/3]).
 
 -export([flatten/2]).
 
@@ -158,6 +158,44 @@ get(Path, Map) ->
             do_get(hocon_util:split_path(Path), Map, map)
     end.
 
+%% @doc Get the source value from a maybe-rich map.
+%% Falls back to the current value when no source value was preserved.
+-spec get_source([name()] | name(), config()) -> term().
+get_source(Path, Map) ->
+    case is_richmap(Map) of
+        true ->
+            source_to_plain(deep_get(Path, Map));
+        false ->
+            do_get(hocon_util:split_path(Path), Map, map)
+    end.
+
+-spec get_source([name()] | name(), config(), term()) -> term().
+get_source(Path, Config, Default) ->
+    case get_source(Path, Config) of
+        undefined -> Default;
+        V -> V
+    end.
+
+source_to_plain(#{?HOCON_SOURCE := Source}) ->
+    source_to_plain(Source);
+source_to_plain(#{?HOCON_V := Value}) ->
+    source_to_plain(Value);
+source_to_plain(Map) when is_map(Map) ->
+    maps:fold(
+        fun
+            (?METADATA, _, Acc) -> Acc;
+            (?HOCON_T, _, Acc) -> Acc;
+            (?HOCON_SCHEMA, _, Acc) -> Acc;
+            (Key, Value, Acc) -> Acc#{Key => source_to_plain(Value)}
+        end,
+        #{},
+        Map
+    );
+source_to_plain(List) when is_list(List) ->
+    [source_to_plain(Value) || Value <- List];
+source_to_plain(Value) ->
+    Value.
+
 do_get([], Conf, _Format) ->
     Conf;
 do_get([H | T], Conf, Format) ->
@@ -166,9 +204,19 @@ do_get([H | T], Conf, Format) ->
 
 try_get(_Key, undefined, _Format) ->
     undefined;
-try_get(Key, Conf, richmap) ->
-    #{?HOCON_V := V} = Conf,
+%% Only schema-marked or parsed HOCON arrays may be traversed with numeric path segments.
+try_get(Key, #{?HOCON_T := array, ?HOCON_V := V}, richmap) when is_list(V) ->
     try_get(Key, V, map);
+try_get(
+    Key,
+    #{?HOCON_SCHEMA := #{typeclass := array}, ?HOCON_V := V},
+    richmap
+) when is_list(V) ->
+    try_get(Key, V, map);
+try_get(Key, #{?HOCON_V := V}, richmap) when is_map(V) ->
+    try_get(Key, V, map);
+try_get(_Key, #{?HOCON_V := _}, richmap) ->
+    undefined;
 try_get(Key, Conf, map) when is_map(Conf) ->
     case maps:get(Key, Conf, undefined) of
         undefined ->
@@ -184,7 +232,7 @@ try_get(Key, Conf, map) when is_map(Conf) ->
 try_get(Key, Conf, map) when is_list(Conf) ->
     try binary_to_integer(Key) of
         N ->
-            lists:nth(N, Conf)
+            list_nth(N, Conf)
     catch
         error:badarg ->
             undefined
@@ -192,6 +240,13 @@ try_get(Key, Conf, map) when is_list(Conf) ->
 %% get(["a", "b", "d"], #{<<"a">> => #{<<"b">> => 1}})
 try_get(Key, Conf, map) ->
     error({key_not_found, Key, Conf}).
+
+list_nth(1, [Value | _]) ->
+    Value;
+list_nth(N, [_ | Rest]) when N > 1 ->
+    list_nth(N - 1, Rest);
+list_nth(_N, _List) ->
+    undefined.
 
 %% @doc Recursively merge two maps.
 %% @see hocon:deep_merge/2 for more.
@@ -306,8 +361,14 @@ is_array_index(Maybe) ->
 flatten(Conf, Opts) ->
     lists:reverse(flatten(Conf, Opts, undefined, [], [])).
 
+flatten(#{?HOCON_T := array, ?HOCON_V := Value} = Conf, Opts, _Meta, Stack, Acc) ->
+    Meta = maps:get(?METADATA, Conf, undefined),
+    flatten_array(Value, Opts, Meta, Stack, Acc);
 flatten(Conf, Opts, Meta, Stack, Acc) when is_list(Conf) andalso Conf =/= [] ->
-    flatten_l(Conf, Opts, Meta, Stack, Acc, lists:seq(1, length(Conf)));
+    case io_lib:printable_unicode_list(Conf) of
+        true -> flatten_value(Conf, Opts, Meta, Stack, Acc);
+        false -> flatten_array(Conf, Opts, Meta, Stack, Acc)
+    end;
 flatten(#{?HOCON_V := Value} = Conf, Opts, _Meta, Stack, Acc) ->
     Meta = maps:get(?METADATA, Conf, undefined),
     flatten(Value, Opts, Meta, Stack, Acc);
@@ -315,6 +376,14 @@ flatten(Conf, Opts, Meta, Stack, Acc) when is_map(Conf) andalso Conf =/= ?EMPTY_
     {Keys, Values} = lists:unzip(maps:to_list(Conf)),
     flatten_l(Values, Opts, Meta, Stack, Acc, Keys);
 flatten(Value, Opts, Meta, Stack, Acc) ->
+    flatten_value(Value, Opts, Meta, Stack, Acc).
+
+flatten_array([], Opts, Meta, Stack, Acc) ->
+    flatten_value([], Opts, Meta, Stack, Acc);
+flatten_array(Value, Opts, Meta, Stack, Acc) ->
+    flatten_l(Value, Opts, Meta, Stack, Acc, lists:seq(1, length(Value))).
+
+flatten_value(Value, Opts, Meta, Stack, Acc) ->
     V =
         case maps:get(rich_value, Opts, false) of
             true -> #{?HOCON_V => Value, ?METADATA => Meta};
