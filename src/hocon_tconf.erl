@@ -953,58 +953,17 @@ check_env(Schema, Roots, Ns, EnvVarName) ->
         false ->
             %% bad format
             ignore;
-        [RootName | Path] ->
-            case is_field(Roots, RootName) of
-                {true, Type} ->
-                    case is_path(Schema, Type, Path) of
-                        true -> keep;
-                        false -> warn
-                    end;
+        [RootName | _] = Path ->
+            case hocon_schema:resolve_path(Schema, Roots, [RootName]) of
                 false ->
-                    %% unknown root
-                    ignore
+                    %% unknown or unselected root
+                    ignore;
+                _RootSchema ->
+                    case hocon_schema:resolve_path(Schema, Roots, Path) of
+                        false -> warn;
+                        _Schema -> keep
+                    end
             end
-    end.
-
-is_field([], _Name) ->
-    false;
-is_field([{_, FieldSc} = Field | Fields], Name) ->
-    Names = name_and_aliases(Field),
-    case lists:member(bin(Name), Names) of
-        true ->
-            Type = hocon_schema:field_schema(FieldSc, type),
-            {true, Type};
-        false ->
-            is_field(Fields, Name)
-    end.
-
-is_path(_Schema, _Name, []) ->
-    true;
-is_path(Schema, Name, Path) when is_list(Name) ->
-    is_path2(Schema, Name, Path);
-is_path(Schema, ?REF(Name), Path) ->
-    is_path2(Schema, Name, Path);
-is_path(_Schema, ?R_REF(Module, Name), Path) ->
-    is_path2(Module, Name, Path);
-is_path(Schema, ?LAZY(Type), Path) ->
-    is_path(Schema, Type, Path);
-is_path(Schema, ?ARRAY(Type), [Name | Path]) ->
-    case hocon_util:is_array_index(Name) of
-        {true, _} -> is_path(Schema, Type, Path);
-        false -> false
-    end;
-is_path(Schema, ?UNION(Types, _), Path) ->
-    lists:any(fun(T) -> is_path(Schema, T, Path) end, hoconsc:union_members(Types));
-is_path(Schema, ?MAP(_, Type), [_ | Path]) ->
-    is_path(Schema, Type, Path);
-is_path(_Schema, _Type, _Path) ->
-    false.
-
-is_path2(Schema, RefName, [Name | Path]) ->
-    Fields = hocon_schema:fields(Schema, RefName),
-    case is_field(Fields, Name) of
-        {true, Type} -> is_path(Schema, Type, Path);
-        false -> false
     end.
 
 %% EMQX_FOO__BAR -> ["foo", "bar"]

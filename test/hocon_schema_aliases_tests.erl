@@ -53,6 +53,47 @@ fields("root2") ->
         }}
     ].
 
+resolve_path_test() ->
+    ?assertMatch(
+        #{required := false},
+        hocon_schema:resolve_path(?MODULE, "root1.key1")
+    ),
+    assert_resolves_to(integer(), ?MODULE, "root1.key1"),
+    assert_resolves_to(integer(), ?MODULE, "old_root1.key1"),
+    assert_resolves_to(integer(), ?MODULE, "root2.old_key2"),
+    assert_resolves_to(string(), ?MODULE, "root2.key3"),
+    Roots = [
+        Field
+     || {_BinName, {Name, _} = Field} <- hocon_schema:roots(?MODULE), Name =:= "root2"
+    ],
+    assert_resolves_to(integer(), ?MODULE, Roots, "root2.old_key2"),
+    ?assertEqual(false, hocon_schema:resolve_path(?MODULE, Roots, "root1.key1")),
+    ?assertEqual(false, hocon_schema:resolve_path(?MODULE, "root2.key3.1")),
+    ?assertEqual(false, hocon_schema:resolve_path(?MODULE, "root2.unknown")),
+    ?assertEqual(false, hocon_schema:resolve_path(?MODULE, "unknown")),
+    ?assertEqual(false, hocon_schema:resolve_path(?MODULE, "")),
+    Schema = #{
+        roots => [
+            {items, hoconsc:array(hoconsc:ref(item))},
+            {values, hoconsc:map(name, hoconsc:union([integer(), hoconsc:ref(item)]))}
+        ],
+        fields => #{item => [{value, string()}]}
+    },
+    assert_resolves_to(string(), Schema, "items.1.value"),
+    assert_resolves_to(string(), Schema, "values.arbitrary.value"),
+    ?assertEqual(false, hocon_schema:resolve_path(Schema, "items.value")),
+    ?assertEqual(false, hocon_schema:resolve_path(Schema, "values.arbitrary.1")).
+
+assert_resolves_to(Type, Schema, Path) ->
+    SubSchema = hocon_schema:resolve_path(Schema, Path),
+    ?assertNotEqual(false, SubSchema),
+    ?assertEqual(Type, hocon_schema:field_schema(SubSchema, type)).
+
+assert_resolves_to(Type, Schema, Roots, Path) ->
+    SubSchema = hocon_schema:resolve_path(Schema, Roots, Path),
+    ?assertNotEqual(false, SubSchema),
+    ?assertEqual(Type, hocon_schema:field_schema(SubSchema, type)).
+
 %% test a root field can be safely renamed
 %% in this case, one of the root level fields in the test schema ?MODULE.
 %% old_root1 is renamed to root1
