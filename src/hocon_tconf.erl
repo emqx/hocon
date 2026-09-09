@@ -17,8 +17,6 @@
 %% tconf: typed-config
 -module(hocon_tconf).
 
--elvis([{elvis_style, god_modules, disable}]).
-
 %% data validation and transformation
 -export([map/2, map/3, map/4]).
 -export([translate/3]).
