@@ -647,6 +647,8 @@ print_values(Values) ->
         Values
     ).
 
+print_value(undefined) ->
+    "";
 print_value(V) ->
     hocon_pp:do(V, #{embedded => true, newline => ""}).
 

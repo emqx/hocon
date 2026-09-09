@@ -283,7 +283,12 @@ get_values(_Context) ->
     {?STATUS_SUCCESS, StringIndex} = capture(<<>>, fun() ->
         hocon_cli:run(Args ++ ["foo.setting.1"])
     end),
-    ?assertEqual(<<"undefined\n">>, StringIndex),
+    ?assertEqual(<<"\n">>, StringIndex),
+    EmptyStringArgs = ["get", "--schema-file", schema_file()],
+    {?STATUS_SUCCESS, EmptyString} = capture(<<"foo.setting = \"\"\n">>, fun() ->
+        hocon_cli:run(EmptyStringArgs ++ ["foo.setting", "foo.setting.1"])
+    end),
+    ?assertEqual(<<"foo.setting=\"\"\nfoo.setting.1=\n">>, EmptyString),
     {?STATUS_SUCCESS, Many} = capture(<<>>, fun() ->
         hocon_cli:run(Args ++ ["foo.min", "foo.max"])
     end),
@@ -337,9 +342,9 @@ get_nested_values(_Context) ->
     ?assertEqual(
         <<
             "foo.1.int=1\n"
-            "foo.x.int=undefined\n"
-            "foo.9.int=undefined\n"
-            "foo.0.int=undefined\n"
+            "foo.x.int=\n"
+            "foo.9.int=\n"
+            "foo.0.int=\n"
         >>,
         Output
     ).
@@ -368,7 +373,7 @@ get_default_string_through_mixed_union(_Context) ->
         hocon_cli:run(Args)
     end),
     ?assertEqual(?STATUS_SUCCESS, Status),
-    ?assertEqual(<<"undefined\n">>, Output).
+    ?assertEqual(<<"\n">>, Output).
 
 get_unknown_root(_Context) ->
     ?assertEqual(
