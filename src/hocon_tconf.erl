@@ -675,7 +675,7 @@ map_field(?LAZY(Type), Schema, Value, Opts) ->
     SubType = sub_type(Schema, Type),
     case maps:get(check_lazy, Opts, false) of
         true -> map_field(SubType, Schema, Value, Opts);
-        false -> {[], Value}
+        false -> {[], mark_typeclass(SubType, Opts, Value)}
     end;
 map_field(?ARRAY(Type), Schema, Value0, Opts) ->
     %% array needs an unbox
@@ -1100,6 +1100,13 @@ boxit(#{format := richmap}, Value, Box) -> boxit(Value, Box).
 boxit(Value, Box) -> Box#{?HOCON_V => Value}.
 
 %% Keep only the structural distinction that cannot be inferred from an Erlang value.
+mark_typeclass(?LAZY(Type), Opts, Value) ->
+    mark_typeclass(Type, Opts, Value);
+mark_typeclass(?ARRAY(_), Opts, Value) ->
+    mark_array(Opts, Value);
+mark_typeclass(_Type, _Opts, Value) ->
+    Value.
+
 mark_array(#{format := richmap}, #{?HOCON_V := _} = Box) ->
     SchemaMetadata = maps:get(?HOCON_SCHEMA, Box, #{}),
     Box#{?HOCON_SCHEMA => SchemaMetadata#{typeclass => array}};

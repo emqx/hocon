@@ -217,6 +217,31 @@ array_typeclass_test() ->
     ?assertEqual("masked", hocon_maps:get_source("sensitive", Redacted)),
     ?assertEqual(undefined, hocon_maps:get_source("sensitive.1", Redacted)).
 
+lazy_array_typeclass_test() ->
+    Schema = #{
+        roots => [
+            {foo, hoconsc:mk(hoconsc:lazy(hoconsc:array(integer())), #{default => [1, 2]})},
+            {converted,
+                hoconsc:mk(hoconsc:lazy(hoconsc:array(integer())), #{
+                    converter => fun five_to_array/2
+                })}
+        ]
+    },
+    {ok, RichConf} = hocon:binary("converted = five", #{format => richmap}),
+    Checked = hocon_tconf:check(Schema, RichConf, #{format => richmap}),
+    ?assertNotEqual(false, hocon_schema:resolve_path(Schema, "foo.1")),
+    lists:foreach(
+        fun(Name) ->
+            ?assertMatch(
+                #{?HOCON_SCHEMA := #{typeclass := array}},
+                hocon_maps:deep_get(Name, Checked)
+            )
+        end,
+        ["foo", "converted"]
+    ),
+    ?assertEqual(1, hocon_maps:get_source("foo.1", Checked)),
+    ?assertEqual(5, hocon_maps:get_source("converted.1", Checked)).
+
 keep_source_nested_converters_test() ->
     Sc = #{
         roots => [{root, hoconsc:ref(node)}],
