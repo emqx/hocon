@@ -418,7 +418,7 @@ get_values(#{keys := Keys} = Parsed) ->
             try
                 RootNames = lists:usort([root_name(Schema, Key) || Key <- Keys]),
                 {_, CheckedConf} = hocon_tconf:map(Schema, Conf, RootNames, tconf_opts_get()),
-                Values = [{Key, get_value(Schema, Key, CheckedConf)} || Key <- Keys],
+                Values = [{Key, hocon_maps:get_source(Key, CheckedConf)} || Key <- Keys],
                 print_values(Values),
                 ?STATUS_SUCCESS
             catch
@@ -433,12 +433,6 @@ get_values(#{keys := Keys} = Parsed) ->
             end
         end
     ).
-
-get_value(Schema, Key, Conf) ->
-    case hocon_schema:resolve_path(Schema, Key) of
-        false -> undefined;
-        _SubSchema -> hocon_maps:get_source(Key, Conf)
-    end.
 
 with_schema_and_conf(Parsed, Fun) ->
     case load_schema(Parsed) of

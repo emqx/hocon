@@ -32,7 +32,9 @@ roots() ->
                 hoconsc:union([typerefl:ip4_address(), hoconsc:ref(node)]),
                 #{converter => fun convert_ip_or_node/2}
             )},
-        {array_or_string_node, hoconsc:union([hoconsc:ref(array_node), hoconsc:ref(string_node)])}
+        {array_or_string_node, hoconsc:union([hoconsc:ref(array_node), hoconsc:ref(string_node)])},
+        {opaque_map, map()},
+        {opaque_list, list(integer())}
     ].
 
 fields(node) ->

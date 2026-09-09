@@ -42,6 +42,9 @@ cli_test_() ->
             {"do not index a string selected from an array-or-string union", fun() ->
                 get_default_string_through_mixed_union(Context)
             end},
+            {"get nested values from opaque containers", fun() ->
+                get_opaque_container_values(Context)
+            end},
             {"reject a key with an unknown schema root", fun() -> get_unknown_root(Context) end},
             {"generate application config and VM arguments", fun() -> generate(Context) end},
             {"log environment overrides during generation", fun() ->
@@ -374,6 +377,33 @@ get_default_string_through_mixed_union(_Context) ->
     end),
     ?assertEqual(?STATUS_SUCCESS, Status),
     ?assertEqual(<<"\n">>, Output).
+
+get_opaque_container_values(_Context) ->
+    Schema = hocon_cli_mixed_union_schema,
+    ?assertEqual(false, hocon_schema:resolve_path(Schema, "opaque_map.inner")),
+    ?assertEqual(false, hocon_schema:resolve_path(Schema, "opaque_list.2")),
+    Args = [
+        "get",
+        "--schema-file",
+        filename:join("test", "hocon_cli_mixed_union_schema.erl"),
+        "opaque_map.inner",
+        "opaque_list.2"
+    ],
+    {Status, Output} = capture(
+        <<
+            "opaque_map { inner = value }\n"
+            "opaque_list = [10, 20]\n"
+        >>,
+        fun() -> hocon_cli:run(Args) end
+    ),
+    ?assertEqual(?STATUS_SUCCESS, Status),
+    ?assertEqual(
+        <<
+            "opaque_map.inner=value\n"
+            "opaque_list.2=20\n"
+        >>,
+        Output
+    ).
 
 get_unknown_root(_Context) ->
     ?assertEqual(
