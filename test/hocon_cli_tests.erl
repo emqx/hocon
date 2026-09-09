@@ -274,6 +274,10 @@ get_values(_Context) ->
         hocon_cli:run(Args ++ ["foo.setting"])
     end),
     ?assertEqual(<<"hello\n">>, One),
+    {?STATUS_SUCCESS, StringIndex} = capture(<<>>, fun() ->
+        hocon_cli:run(Args ++ ["foo.setting.1"])
+    end),
+    ?assertEqual(<<"undefined\n">>, StringIndex),
     {?STATUS_SUCCESS, Many} = capture(<<>>, fun() ->
         hocon_cli:run(Args ++ ["foo.min", "foo.max"])
     end),
