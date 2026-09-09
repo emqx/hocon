@@ -572,12 +572,18 @@ map_field_maybe_convert(Type, Schema, Value0, Opts, undefined) ->
 map_field_maybe_convert(Type, Schema, Value0, Opts, Converter) ->
     case do_apply_converter(Converter, Value0, Opts) of
         {ok, Value1} ->
-            {Mapped, Value2} = map_field(Type, Schema, Value1, Opts),
-            Value3 = preserve_converted_source(Opts, Type, Value0, Value2),
+            {Mapped, Value2, SelectedType} = map_field_with_type(Type, Schema, Value1, Opts),
+            Value3 = preserve_converted_source(Opts, SelectedType, Value0, Value2),
             {Mapped, ensure_obfuscate_sensitive(Opts, Schema, Value3)};
         Errors ->
             Errors
     end.
+
+map_field_with_type(?UNION(_, _) = Type, Schema, Value, Opts) ->
+    map_union_field(Type, Schema, Value, Opts);
+map_field_with_type(Type, Schema, Value, Opts) ->
+    {Mapped, NewValue} = map_field(Type, Schema, Value, Opts),
+    {Mapped, NewValue, Type}.
 
 do_apply_converter(Converter, Value0, Opts) ->
     Value1 = ensure_plain(Value0),
@@ -661,23 +667,9 @@ map_field(Ref, FieldSchema, Value0, #{schema := Schema} = Opts) when is_list(Ref
         Errors ->
             Errors
     end;
-map_field(?UNION(Types0, _), Schema0, Value, Opts) ->
-    try select_union_members(Types0, Value, Opts) of
-        Types ->
-            F = fun(Type) ->
-                %% go deep with union member's type, but all
-                %% other schema information should be inherited from the enclosing schema
-                Schema = sub_schema(Schema0, Type),
-                map_field(Type, Schema, Value, Opts)
-            end,
-            case do_map_union(Types, F, #{}, Opts) of
-                {ok, {Mapped, NewValue}} -> {Mapped, NewValue};
-                Errors -> {Errors, Value}
-            end
-    catch
-        throw:Reason ->
-            {validation_errs(Opts, Reason), Value}
-    end;
+map_field(?UNION(_, _) = Type, Schema, Value, Opts) ->
+    {Mapped, NewValue, _SelectedType} = map_union_field(Type, Schema, Value, Opts),
+    {Mapped, NewValue};
 map_field(?LAZY(Type), Schema, Value, Opts) ->
     SubType = sub_type(Schema, Type),
     case maps:get(check_lazy, Opts, false) of
@@ -734,6 +726,26 @@ map_field(Type, Schema, Value0, Opts) ->
         {hocon_schema_builtin, Error} ->
             ValidationErrors = validation_errs(Opts, Error, obfuscate(Schema, PlainValue)),
             {ValidationErrors, ensure_obfuscate_sensitive(Opts, Schema, Value0)}
+    end.
+
+map_union_field(?UNION(Types0, _) = UnionType, Schema0, Value, Opts) ->
+    try select_union_members(Types0, Value, Opts) of
+        Types ->
+            F = fun(Type) ->
+                %% go deep with union member's type, but all
+                %% other schema information should be inherited from the enclosing schema
+                Schema = sub_schema(Schema0, Type),
+                map_field_with_type(Type, Schema, Value, Opts)
+            end,
+            case do_map_union(Types, F, #{}, Opts) of
+                {ok, {Mapped, NewValue, SelectedType}} ->
+                    {Mapped, NewValue, SelectedType};
+                Errors ->
+                    {Errors, Value, UnionType}
+            end
+    catch
+        throw:Reason ->
+            {validation_errs(Opts, Reason), Value, UnionType}
     end.
 
 eval_builtin_converter(PlainValue, Type, Opts) ->
@@ -874,10 +886,10 @@ do_map_union([], _TypeCheck, PerTypeResult, Opts) ->
             })
     end;
 do_map_union([Type | Types], TypeCheck, PerTypeResult, Opts) ->
-    {Mapped, Value} = TypeCheck(Type),
+    {Mapped, Value, SelectedType} = TypeCheck(Type),
     case find_errors(Mapped) of
         ok ->
-            {ok, {Mapped, Value}};
+            {ok, {Mapped, Value, SelectedType}};
         {error, Reasons} ->
             do_map_union(
                 Types,
