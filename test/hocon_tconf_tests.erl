@@ -987,20 +987,34 @@ atom_key_test() ->
     ).
 
 invalid_utf8_binary_test() ->
-    Sc = #{roots => [{val, binary()}]},
-    %% The HTTP API may take invalid UTF-8 characters as input.
-    PlainMap = #{<<"val">> => <<"您好-测试">>},
+    %% The HTTP API may take bytes which are not UTF-8 text as input. The error
+    %% names the reason and the size, and does not carry the bytes.
+    Check = fun(Type, Value) ->
+        hocon_tconf:check_plain(#{roots => [{val, Type}]}, #{<<"val">> => Value})
+    end,
+    %% Every character of this literal is truncated to its lowest byte, which
+    %% leaves a binary that is not UTF-8.
+    Truncated = <<"您好-测试">>,
     ?assertThrow(
         {_, [
             #{
                 kind := validation_error,
                 path := "val",
-                reason := #{expected := "binary()"},
-                value := {error, _, _}
+                reason := invalid_utf8,
+                size := 5
             }
         ]},
-        hocon_tconf:check_plain(Sc, PlainMap)
-    ).
+        Check(binary(), Truncated)
+    ),
+    %% The first bytes of a DER-encoded certificate. A permissive field type
+    %% rejects them too, rather than storing a conversion error.
+    Der = <<16#30, 16#82, 1, 16#80, 16#A0>>,
+    ?assertThrow(
+        {_, [#{kind := validation_error, path := "val", reason := invalid_utf8}]},
+        Check(term(), Der)
+    ),
+    %% Valid UTF-8 is unaffected.
+    ?assertEqual(#{<<"val">> => <<"ok">>}, Check(binary(), <<"ok">>)).
 
 atom_key_array_test() ->
     Sc = #{

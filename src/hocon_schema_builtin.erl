@@ -45,8 +45,18 @@ convert(Symbol, ?ENUM(_OfSymbols)) ->
 convert(Int, Type) when is_integer(Int) ->
     convert(integer_to_list(Int), Type);
 convert(Bin, Type) when is_binary(Bin) ->
-    Str = unicode:characters_to_list(Bin, utf8),
-    convert(Str, Type);
+    case unicode:characters_to_list(Bin, utf8) of
+        Str when is_list(Str) ->
+            convert(Str, Type);
+        _NotUnicode ->
+            %% Schema-checked input is text: a HOCON document, or a REST API
+            %% request. Bytes which are not UTF-8 have no string to convert
+            %% from. Before this check, `unicode:characters_to_list/2' returned
+            %% `{error, _, _}' or `{incomplete, _, _}', and that tuple became
+            %% the value: a `binary()' field then rejected its own value, and a
+            %% `term()' field stored the tuple.
+            throw({?MODULE, invalid_utf8})
+    end;
 convert(Str, Type) when is_list(Str) ->
     case io_lib:printable_unicode_list(Str) of
         true ->

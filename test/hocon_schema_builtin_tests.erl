@@ -76,6 +76,22 @@ builtin_check_test() ->
     ),
     ok.
 
+%% Bytes that are not UTF-8 text have no string to convert from.
+non_utf8_binary_convert_test() ->
+    %% The first bytes of a DER-encoded certificate.
+    Der = <<16#30, 16#82, 1, 16#80, 16#A0>>,
+    ?assertThrow({hocon_schema_builtin, invalid_utf8}, convert(Der)),
+    %% A truncated UTF-8 sequence.
+    ?assertThrow({hocon_schema_builtin, invalid_utf8}, convert(<<"caf", 16#C3>>)),
+    %% Valid UTF-8 still goes through the string conversion.
+    Utf8 = <<99, 97, 102, 195, 169>>,
+    ?assertEqual(Utf8, convert(Utf8)),
+    ?assertEqual(<<"plain">>, convert(<<"plain">>)),
+    ok.
+
+convert(Value) ->
+    hocon_schema_builtin:convert(Value, binary()).
+
 check_plain(Str) ->
     {ok, Map} = hocon:binary(Str, #{}),
     hocon_tconf:check_plain(?MODULE, Map, #{}).
