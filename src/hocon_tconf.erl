@@ -719,6 +719,11 @@ map_field(Type, Schema, Value0, Opts) ->
         Value1 = boxit(Opts, ConvertedValue, Value0),
         {ValidationResult, ensure_obfuscate_sensitive(Opts, Schema, Value1)}
     catch
+        {hocon_schema_builtin, invalid_utf8 = Error} ->
+            %% The value has no readable form, and may be a large blob: report
+            %% its size instead of the bytes.
+            Context = #{reason => Error, size => byte_size(PlainValue)},
+            {validation_errs(Opts, Context), ensure_obfuscate_sensitive(Opts, Schema, Value0)};
         {hocon_schema_builtin, Error} ->
             ValidationErrors = validation_errs(Opts, Error, obfuscate(Schema, PlainValue)),
             {ValidationErrors, ensure_obfuscate_sensitive(Opts, Schema, Value0)}
