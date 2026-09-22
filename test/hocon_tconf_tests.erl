@@ -1438,6 +1438,54 @@ not_array_test() ->
         hocon_tconf:check_plain(Sc, BadInput1)
     ).
 
+%% a partial check renames aliases and applies converters,
+%% but neither fills defaults nor reports missing required fields
+partial_check_test() ->
+    Sc = #{
+        roots => [
+            {r, hoconsc:mk(hoconsc:ref("partial"))}
+        ],
+        fields => #{
+            "partial" => [
+                {f1, hoconsc:mk(integer(), #{aliases => [old_f1]})},
+                {f2, hoconsc:mk(string(), #{required => true})},
+                {f3, hoconsc:mk(integer(), #{default => 3})},
+                {f4, hoconsc:mk(integer(), #{converter => fun(V, _) -> V + 1 end})},
+                {f5, hoconsc:mk(hoconsc:ref("partial_sub"), #{required => false})}
+            ],
+            "partial_sub" => [
+                {s1, hoconsc:mk(integer(), #{default => 1})}
+            ]
+        }
+    },
+    Conf = #{<<"r">> => #{<<"old_f1">> => 1, <<"f4">> => 4}},
+    ?assertEqual(
+        #{<<"r">> => #{<<"f1">> => 1, <<"f4">> => 5}},
+        hocon_tconf:check_plain(Sc, Conf, #{partial => true, make_serializable => true})
+    ),
+    ?assertEqual(
+        #{<<"r">> => #{<<"f1">> => 1, <<"f4">> => 5}},
+        hocon_tconf:check_plain(Sc, Conf, #{partial => true})
+    ),
+    ?VALIDATION_ERR(
+        #{reason := required_field, path := "r.f2"},
+        hocon_tconf:check_plain(Sc, Conf, #{make_serializable => true})
+    ),
+    Full = #{<<"r">> => #{<<"old_f1">> => 1, <<"f2">> => <<"x">>, <<"f4">> => 4}},
+    ?assertEqual(
+        #{
+            <<"r">> => #{
+                <<"f1">> => 1,
+                <<"f2">> => <<"x">>,
+                <<"f3">> => 3,
+                <<"f4">> => 5,
+                <<"f5">> => #{<<"s1">> => 1}
+            }
+        },
+        hocon_tconf:check_plain(Sc, Full, #{make_serializable => true})
+    ),
+    ok.
+
 converter_test() ->
     Sc = #{
         roots => [
