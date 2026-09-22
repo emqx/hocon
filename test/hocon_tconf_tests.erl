@@ -1240,6 +1240,44 @@ partial_check_test() ->
     ),
     ok.
 
+%% a partial check keeps a union value that does not select a member
+partial_check_union_test() ->
+    Selector = fun
+        (all_union_members) ->
+            [hoconsc:ref("partial_a"), hoconsc:ref("partial_b")];
+        ({value, #{<<"type">> := <<"a">>}}) ->
+            [hoconsc:ref("partial_a")];
+        ({value, #{<<"type">> := <<"b">>}}) ->
+            [hoconsc:ref("partial_b")];
+        ({value, _}) ->
+            throw(#{reason => unknown_type, expected => "a | b"})
+    end,
+    Sc = #{
+        roots => [{r, hoconsc:mk(hoconsc:union(Selector))}],
+        fields => #{
+            "partial_a" => [
+                {type, hoconsc:mk(hoconsc:enum([a]))},
+                {f1, hoconsc:mk(integer(), #{aliases => [old_f1]})}
+            ],
+            "partial_b" => [
+                {type, hoconsc:mk(hoconsc:enum([b]))},
+                {f2, hoconsc:mk(integer(), #{required => true})}
+            ]
+        }
+    },
+    Opts = #{partial => true, make_serializable => true},
+    NoType = #{<<"r">> => #{<<"old_f1">> => 1}},
+    ?assertEqual(NoType, hocon_tconf:check_plain(Sc, NoType, Opts)),
+    ?assertEqual(
+        #{<<"r">> => #{<<"type">> => <<"a">>, <<"f1">> => 1}},
+        hocon_tconf:check_plain(Sc, #{<<"r">> => #{<<"type">> => <<"a">>, <<"old_f1">> => 1}}, Opts)
+    ),
+    ?VALIDATION_ERR(
+        #{reason := unknown_type, path := "r"},
+        hocon_tconf:check_plain(Sc, NoType, #{make_serializable => true})
+    ),
+    ok.
+
 converter_test() ->
     Sc = #{
         roots => [
