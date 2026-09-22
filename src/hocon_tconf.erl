@@ -54,6 +54,12 @@
 
     %% default: false for map, true for check
     required => boolean(),
+    %% `partial` is false by default.
+    %% When set to `true`, the input is checked as a fragment of a config:
+    %% missing fields are neither filled with default values nor reported
+    %% as required, while the fields present are still converted and
+    %% renamed from aliases to their canonical names.
+    partial => boolean(),
 
     %% below options are generated internally and should not be passed in by callers
     %%
@@ -811,6 +817,8 @@ match_field_names(Expected, [{DfName, _DfValue} | Rest], Unknowns) ->
 match_field_name(Name, ExpectedNames) ->
     lists:partition(fun(N) -> bin(N) =:= bin(Name) end, ExpectedNames).
 
+is_required(#{partial := true}, _Schema) ->
+    false;
 is_required(Opts, Schema) ->
     case field_schema(Schema, required) of
         undefined -> maps:get(required, Opts, ?DEFAULT_REQUIRED);
@@ -902,6 +910,8 @@ resolve_field_value(Schema, FieldValue, Opts) ->
             {[], maybe_use_default(DefaultValue, FieldValue, Opts)}
     end.
 
+maybe_use_default(_Default, undefined, #{partial := true}) ->
+    undefined;
 maybe_use_default(Default, undefined, Opts) when Default =/= undefined ->
     maybe_mkrich(Opts, Default, ?META_BOX(made_for, default_value));
 maybe_use_default(_, Value, _Opts) ->
