@@ -57,6 +57,7 @@
     %% missing fields are neither filled with default values nor reported
     %% as required, while the fields present are still converted and
     %% renamed from aliases to their canonical names.
+    %% A union value that selects no member is kept as it is.
     partial => boolean(),
 
     %% below options are generated internally and should not be passed in by callers
@@ -574,6 +575,12 @@ maybe_computed(FieldSchema, #{} = CheckedValue, #{format := map} = Opts) ->
 maybe_computed(_FieldSchema, CheckedValue, _Opts) ->
     CheckedValue.
 
+%% A partial config may lack the fields that select the union member.
+union_errors(_Errors, Value, UnionType, #{partial := true}) ->
+    {[], Value, UnionType};
+union_errors(Errors, Value, UnionType, _Opts) ->
+    {Errors, Value, UnionType}.
+
 map_field_maybe_convert(Type, Schema, Value0, Opts, undefined) ->
     map_field(Type, Schema, Value0, Opts);
 map_field_maybe_convert(Type, Schema, Value0, Opts, Converter) ->
@@ -753,11 +760,11 @@ map_union_field(?UNION(Types0, _) = UnionType, Schema0, Value, Opts) ->
                 {ok, {Mapped, NewValue, SelectedType}} ->
                     {Mapped, NewValue, SelectedType};
                 Errors ->
-                    {Errors, Value, UnionType}
+                    union_errors(Errors, Value, UnionType, Opts)
             end
     catch
         throw:Reason ->
-            {validation_errs(Opts, Reason), Value, UnionType}
+            union_errors(validation_errs(Opts, Reason), Value, UnionType, Opts)
     end.
 
 eval_builtin_converter(PlainValue, Type, Opts) ->
