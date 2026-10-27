@@ -1524,6 +1524,36 @@ partial_check_union_test() ->
     ),
     ok.
 
+%% a partial check does not call the converter of a missing field
+partial_check_missing_field_converter_test() ->
+    Sc = #{
+        roots => [{r, hoconsc:mk(hoconsc:ref("partial_conv"))}],
+        fields => #{
+            "partial_conv" => [
+                {f1, hoconsc:mk(integer())},
+                {f2,
+                    hoconsc:mk(hoconsc:array(string()), #{
+                        converter => fun
+                            (undefined, _) -> [];
+                            (L, _) when is_list(L) -> L
+                        end
+                    })},
+                {f3,
+                    hoconsc:mk(hoconsc:ref("partial_conv_sub"), #{
+                        converter => fun(#{} = M, _) -> M end
+                    })}
+            ],
+            "partial_conv_sub" => [
+                {s1, hoconsc:mk(hoconsc:array(string()), #{converter => fun(_, _) -> [] end})}
+            ]
+        }
+    },
+    Conf = #{<<"r">> => #{<<"f1">> => 1}},
+    Opts = #{partial => true, make_serializable => true},
+    ?assertEqual(Conf, hocon_tconf:check_plain(Sc, Conf, Opts)),
+    ?assertEqual(Conf, hocon_tconf:check_plain(Sc, Conf, #{partial => true})),
+    ok.
+
 converter_test() ->
     Sc = #{
         roots => [

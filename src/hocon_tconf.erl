@@ -55,8 +55,8 @@
     %% `partial` is false by default.
     %% When set to `true`, the input is checked as a fragment of a config:
     %% missing fields are neither filled with default values nor reported
-    %% as required, while the fields present are still converted and
-    %% renamed from aliases to their canonical names.
+    %% as required, and their converters are not called. The fields present
+    %% are still converted and renamed from aliases to their canonical names.
     %% A union value that selects no member is kept as it is.
     partial => boolean(),
 
@@ -583,6 +583,10 @@ union_errors(Errors, Value, UnionType, _Opts) ->
 
 map_field_maybe_convert(Type, Schema, Value0, Opts, undefined) ->
     map_field(Type, Schema, Value0, Opts);
+%% A missing field stays missing in a partial check.
+%% A converter must not make a value for it.
+map_field_maybe_convert(Type, Schema, undefined, #{partial := true} = Opts, _Converter) ->
+    map_field(Type, Schema, undefined, Opts);
 map_field_maybe_convert(Type, Schema, Value0, Opts, Converter) ->
     case do_apply_converter(Converter, Value0, Opts) of
         {ok, Value1} ->
